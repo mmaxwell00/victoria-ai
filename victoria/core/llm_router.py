@@ -1,0 +1,225 @@
+import httpx
+from typing import AsyncIterator, Optional, TYPE_CHECKING
+from anthropic import AsyncAnthropic
+
+from victoria.config import settings, VICTORIA_SYSTEM_PROMPT
+
+if TYPE_CHECKING:
+    from victoria.tools.registry import ToolRegistry
+
+
+class LLMRouter:
+    """Routes queries to Ollama (local) or Claude (cloud) based on config or complexity."""
+
+    def __init__(self):
+        self._anthropic: Optional[AsyncAnthropic] = None
+
+    @property
+    def anthropic(self) -> AsyncAnthropic:
+        if self._anthropic is None:
+            self._anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        return self._anthropic
+
+    def _pick_backend(self, message: str, force: Optional[str] = None) -> str:
+        if force:
+            return force
+        if settings.default_llm == "claude":
+            return "claude"
+        # Route to Claude if query is long/complex (rough token estimate)
+        if len(message.split()) > settings.complex_query_threshold:
+            return "claude"
+        return "ollama"
+
+    async def chat(
+        self,
+        messages: list[dict],
+        force_backend: Optional[str] = None,
+        stream: bool = False,
+        system_prompt: Optional[str] = None,
+    ) -> tuple[str, str]:
+        """
+        Returns (response_text, backend_used).
+        Uses the last user message to decide routing.
+        """
+        last_user_msg = next(
+            (m["content"] for m in reversed(messages) if m["role"] == "user"), ""
+        )
+        backend = self._pick_backend(last_user_msg, force_backend)
+
+        if backend == "claude":
+            text = await self._claude(messages, system_prompt=system_prompt)
+        else:
+            text = await self._ollama(messages, system_prompt=system_prompt)
+
+        return text, backend
+
+    async def stream_chat(
+        self,
+        messages: list[dict],
+        force_backend: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+    ) -> AsyncIterator[tuple[str, str]]:
+        """Yields (chunk, backend_used) tuples."""
+        last_user_msg = next(
+            (m["content"] for m in reversed(messages) if m["role"] == "user"), ""
+        )
+        backend = self._pick_backend(last_user_msg, force_backend)
+
+        if backend == "claude":
+            async for chunk in self._claude_stream(messages, system_prompt=system_prompt):
+                yield chunk, backend
+        else:
+            async for chunk in self._ollama_stream(messages, system_prompt=system_prompt):
+                yield chunk, backend
+
+    async def chat_with_tools(
+        self,
+        messages: list[dict],
+        tool_registry: "ToolRegistry",
+        system_prompt: str,
+        force_backend: Optional[str] = None,
+    ) -> tuple[str, str]:
+        """Run the tool-calling loop. Returns (final_response_text, backend_used)."""
+        last_user_msg = next(
+            (m["content"] for m in reversed(messages) if m["role"] == "user"), ""
+        )
+        backend = self._pick_backend(last_user_msg, force_backend)
+
+        if backend == "claude":
+            text = await self._claude_with_tools(messages, tool_registry, system_prompt)
+        else:
+            text = await self._ollama_with_tools(messages, tool_registry, system_prompt)
+
+        return text, backend
+
+    async def _ollama(self, messages: list[dict], system_prompt: Optional[str] = None) -> str:
+        payload = {
+            "model": settings.ollama_model,
+            "messages": [{"role": "system", "content": system_prompt or VICTORIA_SYSTEM_PROMPT}] + messages,
+            "stream": False,
+        }
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{settings.ollama_base_url}/api/chat", json=payload
+            )
+            resp.raise_for_status()
+            return resp.json()["message"]["content"]
+
+    async def _ollama_stream(self, messages: list[dict], system_prompt: Optional[str] = None) -> AsyncIterator[str]:
+        import json as _json
+
+        payload = {
+            "model": settings.ollama_model,
+            "messages": [{"role": "system", "content": system_prompt or VICTORIA_SYSTEM_PROMPT}] + messages,
+            "stream": True,
+        }
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            async with client.stream(
+                "POST", f"{settings.ollama_base_url}/api/chat", json=payload
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if line.strip():
+                        data = _json.loads(line)
+                        if chunk := data.get("message", {}).get("content"):
+                            yield chunk
+
+    async def _claude(self, messages: list[dict], system_prompt: Optional[str] = None) -> str:
+        response = await self.anthropic.messages.create(
+            model=settings.claude_model,
+            max_tokens=1024,
+            system=system_prompt or VICTORIA_SYSTEM_PROMPT,
+            messages=messages,
+        )
+        return response.content[0].text
+
+    async def _claude_stream(self, messages: list[dict], system_prompt: Optional[str] = None) -> AsyncIterator[str]:
+        async with self.anthropic.messages.stream(
+            model=settings.claude_model,
+            max_tokens=1024,
+            system=system_prompt or VICTORIA_SYSTEM_PROMPT,
+            messages=messages,
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
+
+    async def _claude_with_tools(
+        self,
+        messages: list[dict],
+        tool_registry: "ToolRegistry",
+        system_prompt: str,
+    ) -> str:
+        working_messages = list(messages)
+        response = None
+        for _ in range(5):
+            response = await self.anthropic.messages.create(
+                model=settings.claude_model,
+                max_tokens=1024,
+                system=system_prompt,
+                messages=working_messages,
+                tools=tool_registry.get_anthropic_tools(),
+            )
+            if response.stop_reason == "end_turn":
+                for block in response.content:
+                    if hasattr(block, "text"):
+                        return block.text
+                return ""
+            if response.stop_reason == "tool_use":
+                # Add assistant turn (content is list of blocks — pass as-is to Anthropic)
+                working_messages.append({"role": "assistant", "content": response.content})
+                # Execute tools, collect results
+                tool_results = []
+                for block in response.content:
+                    if block.type == "tool_use":
+                        result = await tool_registry.execute(block.name, **block.input)
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                        })
+                working_messages.append({"role": "user", "content": tool_results})
+            else:
+                break
+        # Fallback: extract any text from last response
+        if response:
+            for block in response.content:
+                if hasattr(block, "text"):
+                    return block.text
+        return "I ran into a spot of bother processing that. Do try again."
+
+    async def _ollama_with_tools(
+        self,
+        messages: list[dict],
+        tool_registry: "ToolRegistry",
+        system_prompt: str,
+    ) -> str:
+        import json as _json
+
+        working_messages = [{"role": "system", "content": system_prompt}] + list(messages)
+        last_message: dict = {}
+        for _ in range(5):
+            payload = {
+                "model": settings.ollama_model,
+                "messages": working_messages,
+                "tools": tool_registry.get_ollama_tools(),
+                "stream": False,
+            }
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{settings.ollama_base_url}/api/chat", json=payload
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            last_message = data["message"]
+            tool_calls = last_message.get("tool_calls") or []
+            if not tool_calls:
+                return last_message.get("content", "")
+            working_messages.append(last_message)
+            for tc in tool_calls:
+                fn = tc["function"]
+                args = fn.get("arguments", {})
+                if isinstance(args, str):
+                    args = _json.loads(args)
+                result = await tool_registry.execute(fn["name"], **args)
+                working_messages.append({"role": "tool", "content": result})
+        return last_message.get("content", "")

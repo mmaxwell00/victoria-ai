@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Victoria</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app">
+
+    <header class="header">
+      <div class="header-brand">
+        <div class="header-avatar">V</div>
+        <div>
+          <div class="header-name">Victoria</div>
+          <div class="header-status" id="status-line">Ready</div>
+        </div>
+      </div>
+      <div class="header-controls">
+        <select id="backend-select" title="AI backend">
+          <option value="">Auto</option>
+          <option value="ollama">Ollama</option>
+          <option value="claude">Claude</option>
+        </select>
+        <button id="new-session-btn" title="Start a new conversation">New Chat</button>
+      </div>
+    </header>
+
+    <main class="chat-window" id="chat-window">
+      <div class="welcome" id="welcome">
+        <div class="welcome-avatar">V</div>
+        <h2 class="welcome-title">Good day, darling.</h2>
+        <p class="welcome-sub">I'm Victoria — brilliant, British, and entirely at your service.<br>What's on your mind?</p>
+        <div class="welcome-hints">
+          <button class="hint-chip" data-prompt="What can you help me with?">What can you help me with?</button>
+          <button class="hint-chip" data-prompt="Tell me something interesting.">Tell me something interesting.</button>
+          <button class="hint-chip" data-prompt="Give me a quick summary of how you work.">How do you work?</button>
+        </div>
+      </div>
+      <div class="messages" id="messages"></div>
+    </main>
+
+    <footer class="input-area">
+      <div class="input-wrapper">
+        <textarea
+          id="message-input"
+          placeholder="Ask me anything…"
+          rows="1"
+          autocomplete="off"
+          spellcheck="true"
+        ></textarea>
+        <button id="send-btn" title="Send (Enter)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+      <div class="input-hint">Enter to send · Shift+Enter for newline</div>
+    </footer>
+
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
