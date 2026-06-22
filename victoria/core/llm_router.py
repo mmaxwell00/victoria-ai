@@ -28,7 +28,7 @@ class LLMRouter:
         # Route to Claude if query is long/complex (rough token estimate)
         if len(message.split()) > settings.complex_query_threshold:
             return "claude"
-        return "ollama"
+        return settings.default_llm  # "ollama" or "docker"
 
     async def chat(
         self,
@@ -48,6 +48,8 @@ class LLMRouter:
 
         if backend == "claude":
             text = await self._claude(messages, system_prompt=system_prompt)
+        elif backend == "docker":
+            text = await self._docker(messages, system_prompt=system_prompt)
         else:
             text = await self._ollama(messages, system_prompt=system_prompt)
 
@@ -68,6 +70,9 @@ class LLMRouter:
         if backend == "claude":
             async for chunk in self._claude_stream(messages, system_prompt=system_prompt):
                 yield chunk, backend
+        elif backend == "docker":
+            async for chunk in self._docker_stream(messages, system_prompt=system_prompt):
+                yield chunk, backend
         else:
             async for chunk in self._ollama_stream(messages, system_prompt=system_prompt):
                 yield chunk, backend
@@ -87,6 +92,8 @@ class LLMRouter:
 
         if backend == "claude":
             text = await self._claude_with_tools(messages, tool_registry, system_prompt)
+        elif backend == "docker":
+            text = await self._docker_with_tools(messages, tool_registry, system_prompt)
         else:
             text = await self._ollama_with_tools(messages, tool_registry, system_prompt)
 
@@ -223,3 +230,81 @@ class LLMRouter:
                 result = await tool_registry.execute(fn["name"], **args)
                 working_messages.append({"role": "tool", "content": result})
         return last_message.get("content", "")
+
+    # ------------------------------------------------------------------ #
+    # Docker Model Runner (OpenAI-compatible API)                         #
+    # ------------------------------------------------------------------ #
+
+    async def _docker(self, messages: list[dict], system_prompt: Optional[str] = None) -> str:
+        payload = {
+            "model": settings.model_runner_model,
+            "messages": [{"role": "system", "content": system_prompt or VICTORIA_SYSTEM_PROMPT}] + messages,
+            "stream": False,
+        }
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{settings.model_runner_url}/chat/completions", json=payload
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"]
+
+    async def _docker_stream(self, messages: list[dict], system_prompt: Optional[str] = None) -> AsyncIterator[str]:
+        import json as _json
+
+        payload = {
+            "model": settings.model_runner_model,
+            "messages": [{"role": "system", "content": system_prompt or VICTORIA_SYSTEM_PROMPT}] + messages,
+            "stream": True,
+        }
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            async with client.stream(
+                "POST", f"{settings.model_runner_url}/chat/completions", json=payload
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if line.startswith("data: ") and line != "data: [DONE]":
+                        data = _json.loads(line[6:])
+                        if chunk := data.get("choices", [{}])[0].get("delta", {}).get("content"):
+                            yield chunk
+
+    async def _docker_with_tools(
+        self,
+        messages: list[dict],
+        tool_registry: "ToolRegistry",
+        system_prompt: str,
+    ) -> str:
+        import json as _json
+
+        working_messages = [{"role": "system", "content": system_prompt}] + list(messages)
+        last_message: dict = {}
+        for _ in range(5):
+            payload = {
+                "model": settings.model_runner_model,
+                "messages": working_messages,
+                "tools": tool_registry.get_ollama_tools(),  # OpenAI format
+                "stream": False,
+            }
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{settings.model_runner_url}/chat/completions", json=payload
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            choice = data["choices"][0]
+            last_message = choice["message"]
+            tool_calls = last_message.get("tool_calls") or []
+            if not tool_calls or choice.get("finish_reason") == "stop":
+                return last_message.get("content") or ""
+            working_messages.append(last_message)
+            for tc in tool_calls:
+                fn = tc["function"]
+                args = fn.get("arguments", {})
+                if isinstance(args, str):
+                    args = _json.loads(args)
+                result = await tool_registry.execute(fn["name"], **args)
+                working_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": result,
+                })
+        return last_message.get("content") or ""

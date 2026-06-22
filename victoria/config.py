@@ -8,11 +8,15 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # LLM routing
-    default_llm: Literal["ollama", "claude"] = "ollama"
+    default_llm: Literal["ollama", "claude", "docker"] = "ollama"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1"
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-4-6"
+
+    # Docker Model Runner (OpenAI-compatible, built into Docker Desktop)
+    model_runner_url: str = "http://localhost:12434/engines/llama.cpp/v1"
+    model_runner_model: str = "ai/llama3.2"
 
     # Complexity threshold — queries longer than this many tokens route to Claude
     complex_query_threshold: int = 200
