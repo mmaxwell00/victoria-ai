@@ -9,6 +9,8 @@ from victoria.core.memory import MemoryStore
 from victoria.core.llm_router import LLMRouter
 from victoria.core.conversation import ConversationManager
 from victoria.core.semantic_memory import SemanticMemory
+from victoria.core.user_profile import ProfileStore
+from victoria.core.profile_extractor import ProfileExtractor
 from victoria.tools import load_all_tools
 from victoria.tools.registry import registry as tool_registry
 from victoria.interfaces.api import router as api_router
@@ -33,11 +35,15 @@ app.add_middleware(
 memory = MemoryStore(db_path=settings.db_path)
 semantic_memory = SemanticMemory(db_path=settings.chromadb_path)
 llm_router = LLMRouter()
+profile_store = ProfileStore(db_path=settings.db_path)
+profile_extractor = ProfileExtractor(router=llm_router)
 manager = ConversationManager(
     memory=memory,
     router=llm_router,
     tool_registry=tool_registry,
     semantic_memory=semantic_memory,
+    profile_store=profile_store,
+    profile_extractor=profile_extractor,
 )
 
 app.include_router(api_router)
