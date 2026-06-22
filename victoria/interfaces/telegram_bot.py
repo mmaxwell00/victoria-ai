@@ -49,19 +49,68 @@ class VictoriaTelegramBot:
             "What's on your mind?"
         )
 
+    async def cmd_remember(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not context.args:
+            await update.message.reply_text("Usage: /remember I prefer concise answers")
+            return
+        memory = " ".join(context.args)
+        user_id = str(update.effective_user.id)
+        if self.manager.profile_store:
+            self.manager.profile_store.add_memory(user_id, memory)
+            await update.message.reply_text(
+                f"Noted and filed away: _{memory}_",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            await update.message.reply_text("Memory storage isn't available at the moment, darling.")
+
+    async def cmd_forget(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not context.args:
+            await update.message.reply_text("Usage: /forget <exact memory text>")
+            return
+        memory = " ".join(context.args)
+        user_id = str(update.effective_user.id)
+        if self.manager.profile_store:
+            removed = self.manager.profile_store.forget_memory(user_id, memory)
+            if removed:
+                await update.message.reply_text("Consider it forgotten, darling.")
+            else:
+                await update.message.reply_text(
+                    "I don't seem to have that on record. Use /profile to see what I know."
+                )
+        else:
+            await update.message.reply_text("Memory storage isn't available at the moment.")
+
+    async def cmd_profile(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = str(update.effective_user.id)
+        if self.manager.profile_store:
+            profile = self.manager.profile_store.get(user_id)
+            context_text = profile.to_system_context()
+            if context_text:
+                await update.message.reply_text(context_text)
+            else:
+                await update.message.reply_text(
+                    "I don't know much about you yet — chat with me for a bit and I'll start learning your style!"
+                )
+        else:
+            await update.message.reply_text("Profile storage isn't available at the moment.")
+
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "*Victoria — Command Reference*\n\n"
             "/start — Wake me up\n"
             "/new — Start a fresh conversation\n"
-            "/backend ollama|claude — Switch AI brain\n"
+            "/remember <text> — Tell me something to remember\n"
+            "/forget <text> — Make me forget something\n"
+            "/profile — See what I know about you\n"
+            "/backend ollama|claude|docker — Switch AI brain\n"
             "/help — This list\n\n"
             "Send voice messages and I'll transcribe them automatically.",
             parse_mode=ParseMode.MARKDOWN,
         )
 
     async def cmd_backend(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        allowed = ("ollama", "claude")
+        allowed = ("ollama", "claude", "docker")
         if not context.args or context.args[0] not in allowed:
             await update.message.reply_text(
                 f"Usage: /backend {'|'.join(allowed)}"
@@ -159,6 +208,9 @@ class VictoriaTelegramBot:
         app.add_handler(CommandHandler("new", self.cmd_new))
         app.add_handler(CommandHandler("help", self.cmd_help))
         app.add_handler(CommandHandler("backend", self.cmd_backend))
+        app.add_handler(CommandHandler("remember", self.cmd_remember))
+        app.add_handler(CommandHandler("forget", self.cmd_forget))
+        app.add_handler(CommandHandler("profile", self.cmd_profile))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
         app.add_handler(MessageHandler(filters.VOICE, self.handle_voice))
         return app

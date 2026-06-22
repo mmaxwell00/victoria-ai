@@ -6,6 +6,8 @@ import uuid
 if TYPE_CHECKING:
     from victoria.tools.registry import ToolRegistry
     from victoria.core.semantic_memory import SemanticMemory
+    from victoria.core.user_profile import ProfileStore
+    from victoria.core.profile_extractor import ProfileExtractor
 
 
 class ConversationManager:
@@ -15,24 +17,38 @@ class ConversationManager:
         router: LLMRouter,
         tool_registry: Optional["ToolRegistry"] = None,
         semantic_memory: Optional["SemanticMemory"] = None,
+        profile_store: Optional["ProfileStore"] = None,
+        profile_extractor: Optional["ProfileExtractor"] = None,
     ):
         self.memory = memory
         self.router = router
         self.tool_registry = tool_registry
         self.semantic_memory = semantic_memory
+        self.profile_store = profile_store
+        self.profile_extractor = profile_extractor
 
     def new_session_id(self) -> str:
         return str(uuid.uuid4())
 
-    def _build_system_prompt(self, user_message: str, session_id: str) -> str:
+    def _build_system_prompt(self, user_message: str, session_id: str, user_id: str = "default") -> str:
         from victoria.config import VICTORIA_SYSTEM_PROMPT
-        if not self.semantic_memory or not self.semantic_memory.available:
-            return VICTORIA_SYSTEM_PROMPT
-        memories = self.semantic_memory.search(user_message, n=3, exclude_session=session_id)
-        if not memories:
-            return VICTORIA_SYSTEM_PROMPT
-        context = "\n".join(f"- {m['content'][:200]}" for m in memories)
-        return VICTORIA_SYSTEM_PROMPT + f"\n\nRelevant context from past conversations:\n{context}"
+        base = VICTORIA_SYSTEM_PROMPT
+
+        # 1. Inject user profile
+        if self.profile_store:
+            profile = self.profile_store.get(user_id)
+            profile_context = profile.to_system_context()
+            if profile_context:
+                base = base + "\n\n" + profile_context
+
+        # 2. Inject semantic memory (existing logic, unchanged)
+        if self.semantic_memory and self.semantic_memory.available:
+            memories = self.semantic_memory.search(user_message, n=3, exclude_session=session_id)
+            if memories:
+                context = "\n".join(f"- {m['content'][:200]}" for m in memories)
+                base = base + f"\n\nRelevant context from past conversations:\n{context}"
+
+        return base
 
     async def chat(
         self,
@@ -48,7 +64,13 @@ class ConversationManager:
         history = self.memory.get_history(session_id)
         history.append({"role": "user", "content": user_message})
 
-        system_prompt = self._build_system_prompt(user_message, session_id)
+        # Detect and store explicit memory requests (regex, instant)
+        if self.profile_extractor and self.profile_store:
+            memory = self.profile_extractor.detect_explicit_memory(user_message)
+            if memory:
+                self.profile_store.add_memory(user_id, memory)
+
+        system_prompt = self._build_system_prompt(user_message, session_id, user_id)
 
         if self.tool_registry and len(self.tool_registry) > 0:
             response, backend = await self.router.chat_with_tools(
@@ -65,6 +87,10 @@ class ConversationManager:
         if self.semantic_memory:
             self.semantic_memory.add(session_id, "user", user_message)
             self.semantic_memory.add(session_id, "assistant", response)
+
+        if self.profile_extractor and self.profile_store:
+            import asyncio
+            asyncio.create_task(self._update_profile_async(user_id, user_message, response))
 
         return {
             "session_id": session_id,
@@ -88,7 +114,7 @@ class ConversationManager:
 
         self.memory.add_message(session_id, "user", user_message)
 
-        system_prompt = self._build_system_prompt(user_message, session_id)
+        system_prompt = self._build_system_prompt(user_message, session_id, user_id)
 
         full_response = []
         backend_used = "ollama"
@@ -107,4 +133,20 @@ class ConversationManager:
             self.semantic_memory.add(session_id, "user", user_message)
             self.semantic_memory.add(session_id, "assistant", complete)
 
+        if self.profile_extractor and self.profile_store:
+            import asyncio
+            asyncio.create_task(self._update_profile_async(user_id, user_message, complete))
+
         yield {"session_id": session_id, "chunk": "", "backend": backend_used, "done": True}
+
+    async def _update_profile_async(self, user_id: str, user_message: str, response: str) -> None:
+        try:
+            profile = self.profile_store.get(user_id)
+            updated = await self.profile_extractor.extract_from_turn(
+                profile, user_message, response, user_id=user_id
+            )
+            if not updated.is_empty() and updated != profile:
+                self.profile_store.save(updated)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).debug("Background profile update failed", exc_info=True)
