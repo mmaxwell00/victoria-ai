@@ -22,9 +22,9 @@ victoria-ai/
 │   │   ├── profile_extractor.py# Regex + LLM style learning from conversations
 │   │   └── transcription.py    # Whisper speech-to-text
 │   ├── interfaces/
-│   │   ├── api.py              # REST API (chat, stream, history)
+│   │   ├── api.py              # REST API (chat, stream, history, profile)
 │   │   ├── telegram_bot.py     # Telegram bot interface
-│   │   └── static/             # Web chat UI (HTML/CSS/JS, SSE streaming)
+│   │   └── static/             # JARVIS-style HUD web interface (HTML/CSS/JS)
 │   ├── tools/
 │   │   ├── registry.py         # Decorator-based tool registry
 │   │   ├── web_search.py       # DuckDuckGo search (no API key)
@@ -155,7 +155,7 @@ curl http://localhost:12434/engines/llama.cpp/v1/models
 
 ## Running Victoria
 
-### Web chat UI
+### Web chat UI (JARVIS-style HUD)
 
 ```bash
 uvicorn victoria.main:app --reload
@@ -163,11 +163,23 @@ uvicorn victoria.main:app --reload
 
 Open **http://localhost:8000** in your browser.
 
-Features:
-- Streaming responses (text appears word by word)
-- Session persistence across browser refreshes
-- Backend selector (Auto / Ollama / Claude)
-- New Chat button to start a fresh session
+The interface is a full-screen dark HUD inspired by the Iron Man JARVIS OS — dark navy background, teal panel headers, red digit clock, and a rotating arc reactor ring as the chat backdrop.
+
+**Left sidebar**
+- Operator profile — name, communication style, topic count, preference count
+- Memory banks — live list of all stored explicit memories
+- Session log — today's and total session counts with a fill bar
+
+**Center**
+- Rotating V.I.C.T.O.R.I.A. arc reactor ring (glows and pulses while thinking)
+- Chat messages overlaid on the ring — `OPERATOR` / `VICTORIA` labels with `HH:MM:SS` timestamps
+- Each response gets a backend badge: `[DOCKER]`, `[OLLAMA]`, or `[CLAUDE]`
+
+**Right sidebar**
+- System status — active backend, tool count, memory status, API health
+- Backend selector (Auto / Docker Model Runner / Ollama / Claude)
+- Active tools list
+- Last response status
 
 ### Terminal chat
 
@@ -175,7 +187,7 @@ Features:
 python scripts/chat.py
 ```
 
-Type `claude` or `ollama` during a session to switch backends on the fly. Type `quit` to exit.
+Type `claude`, `ollama`, or `docker` during a session to switch backends on the fly. Type `quit` to exit.
 
 ### Telegram bot
 
@@ -197,7 +209,7 @@ python scripts/run_telegram.py
 | `/remember <text>` | Store a persistent memory |
 | `/forget <text>` | Remove a memory (exact match) |
 | `/profile` | See everything Victoria knows about you |
-| `/backend ollama\|claude\|docker` | Switch AI brain for this session |
+| `/backend docker\|ollama\|claude` | Switch AI brain for this session |
 | `/help` | Full command list |
 
 Voice notes are transcribed automatically via Whisper.
@@ -292,7 +304,7 @@ Things to remember:
 - prefers dark mode UIs
 ```
 
-Use `/profile` in Telegram (or query `GET /v1/sessions/{user_id}`) to inspect your profile at any time.
+Use `/profile` in Telegram or `GET /v1/profile/{user_id}` via the API to inspect your profile at any time. The web HUD shows your profile, memories, and session stats live in the left sidebar.
 
 ---
 
@@ -311,10 +323,18 @@ curl -X POST http://localhost:8000/v1/chat/stream \
   -H "Content-Type: application/json" \
   -d '{"message": "Tell me about Python generators", "user_id": "mark"}'
 
-# Conversation history
+# Force a specific backend for one request
+curl -X POST http://localhost:8000/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Explain quantum entanglement", "user_id": "mark", "backend": "claude"}'
+
+# Conversation history for a session
 curl http://localhost:8000/v1/sessions/mark
 
-# Health check
+# User profile (preferences, memories, style)
+curl http://localhost:8000/v1/profile/mark
+
+# Health check (includes tool count + memory status)
 curl http://localhost:8000/health
 ```
 
@@ -345,4 +365,4 @@ curl http://localhost:8000/health
 python3 -m pytest tests/ -v
 ```
 
-83 tests across memory, conversation, tools, voice, Telegram, user profiles, and API layers.
+83 tests across memory, conversation, tools, voice, Telegram, user profiles, API, and profile integration layers.
