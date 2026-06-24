@@ -65,3 +65,20 @@ async def get_history(
     user_id: str, session_id: str, mgr: ConversationManager = Depends(get_manager)
 ):
     return mgr.memory.get_history(session_id)
+
+
+@router.get("/profile/{user_id}")
+async def get_profile(user_id: str, mgr: ConversationManager = Depends(get_manager)):
+    if not mgr.profile_store:
+        return {"user_id": user_id, "available": False}
+    profile = mgr.profile_store.get(user_id)
+    return {
+        "user_id": profile.user_id,
+        "name": profile.name,
+        "communication_style": profile.communication_style,
+        "preferences": profile.preferences,
+        "topics_of_interest": profile.topics_of_interest,
+        "explicit_memories": profile.explicit_memories,
+        "updated_at": profile.updated_at,
+        "available": True,
+    }

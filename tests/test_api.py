@@ -46,7 +46,7 @@ async def test_index_page(client):
     async with client as c:
         resp = await c.get("/")
     assert resp.status_code == 200
-    assert "Victoria" in resp.text
+    assert "VICTORIA" in resp.text
 
 
 @pytest.mark.asyncio
