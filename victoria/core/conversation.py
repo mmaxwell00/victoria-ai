@@ -44,6 +44,15 @@ def _escalation_alpha(text: str) -> str:
 # The bracketed token, tolerant of spacing/case: "[ESCALATE]", "[ escalate ]".
 _SENTINEL_RE = re.compile(r"\[\s*escalate\s*\]", re.IGNORECASE)
 
+# When the user declines escalation, the local model answers best-effort and
+# must NOT emit the escalation token (we don't want to re-offer in a loop).
+_BEST_EFFORT_INSTRUCTION = (
+    "\n\nThe user has declined escalating to another model, so answer this "
+    "question yourself as best you can from your own knowledge. Do NOT use any "
+    "escalation token. If you're genuinely unsure, say so briefly and give your "
+    "best attempt anyway."
+)
+
 if TYPE_CHECKING:
     from victoria.tools.registry import ToolRegistry
     from victoria.core.semantic_memory import SemanticMemory
@@ -174,6 +183,26 @@ class ConversationManager:
             return {"session_id": session_id, "response": reply, "backend": "victoria"}
         return self._finalize(session_id, user_id, question, answer, "claude")
 
+    async def _answer_locally_best_effort(self, session_id, user_id, question, history) -> tuple[str, str]:
+        """Answer *question* on the local model without offering escalation.
+
+        Used when the user declines escalation — they still want a best-effort
+        local answer, not a dead end. Returns (response, backend).
+        """
+        local_backend = self._local_backend()
+        system_prompt = self._build_system_prompt(question, session_id, user_id) + _BEST_EFFORT_INSTRUCTION
+        messages = list(history) + [{"role": "user", "content": question}]
+        try:
+            response, backend = await self._local_answer(messages, system_prompt, local_backend)
+        except Exception:
+            logger.exception("Local best-effort answer failed")
+            response, backend = "", local_backend
+        # Strip any stray sentinel — we promised not to re-offer.
+        response = _SENTINEL_RE.sub("", response or "").strip()
+        if not response:
+            response = "I'm afraid I can't do that one justice on my own just now, but there it is."
+        return response, backend
+
     def _victoria_system_prompt(self) -> str:
         from victoria.config import VICTORIA_SYSTEM_PROMPT
         return VICTORIA_SYSTEM_PROMPT
@@ -228,8 +257,13 @@ class ConversationManager:
                 sys_prompt = self._build_system_prompt(question, session_id, user_id)
                 return await self._answer_with_claude(session_id, user_id, question, sys_prompt)
             if decision == "no":
-                self._pending_escalation.pop(session_id, None)
+                question = self._pending_escalation.pop(session_id, None)
                 self.memory.add_message(session_id, "user", user_message)
+                if question:
+                    response, backend = await self._answer_locally_best_effort(
+                        session_id, user_id, question, history
+                    )
+                    return self._finalize(session_id, user_id, question, response, backend)
                 reply = "Righto — I'll leave that one be. What else can I do for you?"
                 self.memory.add_message(session_id, "assistant", reply, llm_used="victoria")
                 return {"session_id": session_id, "response": reply, "backend": "victoria"}
@@ -297,7 +331,20 @@ class ConversationManager:
                     yield ev
                 return
             if decision == "no":
-                self._pending_escalation.pop(session_id, None)
+                question = self._pending_escalation.pop(session_id, None)
+                if question:
+                    response, backend = await self._answer_locally_best_effort(
+                        session_id, user_id, question, history
+                    )
+                    self.memory.add_message(session_id, "assistant", response, llm_used=backend)
+                    if self.semantic_memory:
+                        self.semantic_memory.add(session_id, "user", question)
+                        self.semantic_memory.add(session_id, "assistant", response)
+                    if self.profile_extractor and self.profile_store:
+                        self._spawn_profile_update(user_id, question, response)
+                    yield {"session_id": session_id, "chunk": response, "backend": backend, "done": False}
+                    yield {"session_id": session_id, "chunk": "", "backend": backend, "done": True}
+                    return
                 reply = "Righto — I'll leave that one be. What else can I do for you?"
                 self.memory.add_message(session_id, "assistant", reply, llm_used="victoria")
                 yield {"session_id": session_id, "chunk": reply, "backend": "victoria", "done": False}
