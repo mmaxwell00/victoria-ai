@@ -31,8 +31,8 @@ class ElevenLabsTTSEngine(TTSEngine):
         self._voice_id = settings.elevenlabs_voice_id
         self._model = settings.elevenlabs_model
 
-    async def speak(self, text: str) -> None:
-        """Synthesize *text* via ElevenLabs API and play it through the default audio output."""
+    async def _fetch_mp3(self, text: str) -> bytes:
+        """Call the ElevenLabs API and return raw MP3 bytes."""
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{self._voice_id}"
         headers = {
             "xi-api-key": self._api_key,
@@ -47,7 +47,15 @@ class ElevenLabsTTSEngine(TTSEngine):
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(url, headers=headers, json=body)
             response.raise_for_status()
-            mp3_bytes = response.content
+            return response.content
+
+    async def synthesize(self, text: str) -> tuple[bytes, str]:
+        """Synthesize *text* to MP3 bytes (no playback — for the web UI)."""
+        return await self._fetch_mp3(text), "audio/mpeg"
+
+    async def speak(self, text: str) -> None:
+        """Synthesize *text* via ElevenLabs API and play it through the default audio output."""
+        mp3_bytes = await self._fetch_mp3(text)
 
         # Playback blocks on sd.wait() — run it in an executor so the event
         # loop stays responsive for the duration of the audio.

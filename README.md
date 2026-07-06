@@ -193,6 +193,14 @@ The interface is a full-screen dark HUD inspired by the Iron Man JARVIS OS — d
 - Active tools list
 - Last response status
 
+**Talk to her (voice in the browser)**
+
+The composer has two extra controls next to **Send**:
+- 🎙 **Mic** — click to start recording, click again to stop. Your speech is transcribed (Whisper) and sent as a message; replies to voice input are spoken back automatically.
+- 🔊 **Speaker** — toggle to have *every* reply read aloud, not just answers to voice input.
+
+Voice runs through two endpoints — `POST /v1/transcribe` (audio → text) and `POST /v1/tts` (text → audio) — using the same Whisper + Piper/ElevenLabs stack as the terminal voice interface. It needs the **Piper voice model** downloaded (see [Voice interface](#voice-interface) below) and `python-multipart` (in `requirements.txt`). The mic uses your browser's microphone, so grant permission when prompted; switch to a natural cloud voice by setting `TTS_ENGINE=elevenlabs` (see config).
+
 ### Terminal chat
 
 ```bash
@@ -350,6 +358,14 @@ curl http://localhost:8000/v1/sessions/mark
 
 # User profile (preferences, memories, style)
 curl http://localhost:8000/v1/profile/mark
+
+# Speech-to-text — transcribe an audio clip
+curl -X POST http://localhost:8000/v1/transcribe -F "audio=@clip.webm"
+
+# Text-to-speech — synthesize speech (saves audio to a file)
+curl -X POST http://localhost:8000/v1/tts \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Good evening, Mark."}' --output victoria.wav
 
 # Health check (includes tool count + memory status)
 curl http://localhost:8000/health
