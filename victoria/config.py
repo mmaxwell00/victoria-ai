@@ -28,6 +28,17 @@ class Settings(BaseSettings):
     # Claude (only when anthropic_api_key is configured)
     complex_query_threshold: int = 200
 
+    # Escalation — when a local model can't answer, Victoria asks permission to
+    # escalate to the Claude Code CLI (uses your Claude subscription, no API key).
+    escalation_enabled: bool = True
+    claude_cli_command: str = "claude"          # binary on PATH
+    claude_cli_model: str = "sonnet"            # alias or full model id
+    claude_cli_timeout: int = 120               # seconds
+    # Read-only tools Claude may use non-interactively when answering (space or
+    # comma separated). WebSearch/WebFetch let it answer real-time questions;
+    # nothing else is pre-approved, so it can't run shell or edit files.
+    claude_cli_allowed_tools: str = "WebSearch WebFetch"
+
     # Memory
     db_path: str = "data/victoria.db"
     chromadb_path: str = "data/chromadb"
@@ -61,3 +72,26 @@ Your style:
 - Use British spellings (colour, organise, favour, etc.)
 
 You have access to conversation history and can recall context from earlier in the session. If you're given tools, use them when the question warrants it rather than guessing."""
+
+# Sentinel the local model emits when it genuinely can't answer — Victoria uses
+# it to decide whether to offer escalating to a cloud model.
+ESCALATION_SENTINEL = "[ESCALATE]"
+
+# Appended to the system prompt for LOCAL backends only, so the small local
+# model can flag that a question is beyond it instead of guessing.
+ESCALATION_INSTRUCTION = f"""
+
+## ESCALATION PROTOCOL (obey this exactly)
+You are a small local model. When a question needs information or ability you do NOT have, you must hand it off rather than apologise or guess.
+
+If ANY of these are true, your ENTIRE reply must be this exact token and nothing else — no apology, no explanation, no punctuation:
+{ESCALATION_SENTINEL}
+
+Escalate (reply {ESCALATION_SENTINEL}) when the question asks for:
+- current, real-time or recent information (today's news, prices, weather-now, scores, "right now")
+- facts you are not sure about, or that you would have to guess at
+- specialised depth, long analysis, coding, or maths you cannot do reliably
+- anything your available tools cannot answer
+
+NEVER write "I can't find", "I don't have access", "I'm not sure", "as of my last update", or similar. In every one of those cases, reply with {ESCALATION_SENTINEL} instead.
+For anything you genuinely CAN answer well, just answer normally and do not mention this protocol."""
