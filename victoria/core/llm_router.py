@@ -1,8 +1,14 @@
+import asyncio
+import logging
+import tempfile
+
 import httpx
 from typing import AsyncIterator, Optional, TYPE_CHECKING
 from anthropic import AsyncAnthropic
 
 from victoria.config import settings, VICTORIA_SYSTEM_PROMPT
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from victoria.tools.registry import ToolRegistry
@@ -245,6 +251,60 @@ class LLMRouter:
                 result = await tool_registry.execute(fn["name"], **args)
                 working_messages.append({"role": "tool", "content": result})
         return last_message.get("content", "")
+
+    # ------------------------------------------------------------------ #
+    # Claude Code CLI (uses the local Claude subscription — no API key)   #
+    # ------------------------------------------------------------------ #
+
+    async def claude_cli(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+        """Answer via the Claude Code CLI in headless print mode.
+
+        Uses the machine's Claude subscription auth (never the API key), so it
+        works without ANTHROPIC_API_KEY. Runs from a neutral temp directory so
+        it doesn't pick up the current project's CLAUDE.md context.
+        """
+        args = [
+            settings.claude_cli_command,
+            "-p", prompt,
+            "--model", settings.claude_cli_model,
+        ]
+        if system_prompt:
+            args += ["--append-system-prompt", system_prompt]
+        # Pre-approve read-only tools so Claude can answer real-time questions
+        # without stalling on a permission prompt it can't answer in headless mode.
+        allowed = (settings.claude_cli_allowed_tools or "").replace(",", " ").split()
+        if allowed:
+            args += ["--allowedTools", *allowed]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=tempfile.gettempdir(),
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                f"Claude Code CLI ('{settings.claude_cli_command}') was not found on "
+                f"PATH. Install it, or set CLAUDE_CLI_COMMAND in .env."
+            ) from exc
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=settings.claude_cli_timeout
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise RuntimeError(
+                f"Claude Code CLI timed out after {settings.claude_cli_timeout}s."
+            )
+
+        if proc.returncode != 0:
+            detail = (stderr.decode(errors="replace").strip() or "no error output")[:300]
+            raise RuntimeError(f"Claude Code CLI failed (exit {proc.returncode}): {detail}")
+
+        return stdout.decode(errors="replace").strip()
 
     # ------------------------------------------------------------------ #
     # Docker Model Runner (OpenAI-compatible API)                         #
