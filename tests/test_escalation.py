@@ -92,18 +92,37 @@ async def test_yes_after_offer_escalates_to_claude():
     assert router.claude_cli.await_args.args[0] == "Hard question"
 
 
-async def test_no_after_offer_cancels():
+async def test_no_after_offer_falls_back_to_local_answer():
+    """Declining escalation should still get a best-effort local answer, not a dead end."""
     router = MagicMock()
-    router.chat = AsyncMock(return_value=(ESCALATION_SENTINEL, "docker"))
+    # 1st call → sentinel (offer). 2nd call (after "no") → a real local answer.
+    router.chat = AsyncMock(side_effect=[(ESCALATION_SENTINEL, "docker"),
+                                          ("My best guess is Paris.", "docker")])
     router.claude_cli = AsyncMock()
     mgr = make_manager(router)
 
     await mgr.chat("Hard question", session_id="s1")
     result = await mgr.chat("no thanks", session_id="s1")
 
-    assert result["backend"] == "victoria"
+    assert result["backend"] == "docker"                 # answered locally
+    assert result["response"] == "My best guess is Paris."
     assert "s1" not in mgr._pending_escalation
-    router.claude_cli.assert_not_called()
+    router.claude_cli.assert_not_called()                # never went to Claude
+
+
+async def test_no_fallback_strips_stray_sentinel():
+    """If the best-effort local answer still emits a sentinel, it's stripped (no re-offer)."""
+    router = MagicMock()
+    router.chat = AsyncMock(side_effect=[(ESCALATION_SENTINEL, "docker"),
+                                          ("[ESCALATE]", "docker")])
+    mgr = make_manager(router)
+
+    await mgr.chat("Hard question", session_id="s1")
+    result = await mgr.chat("no", session_id="s1")
+
+    assert result["backend"] == "docker"
+    assert "ESCALATE" not in result["response"]          # stripped, not re-offered
+    assert "s1" not in mgr._pending_escalation
 
 
 async def test_other_reply_while_pending_is_treated_as_new_question():
