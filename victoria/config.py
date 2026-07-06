@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     # Docker Model Runner (OpenAI-compatible, built into Docker Desktop)
     model_runner_url: str = "http://localhost:12434/engines/llama.cpp/v1"
-    model_runner_model: str = "ai/llama3.2"
+    model_runner_model: str = "ai/qwen2.5:latest"
 
     # Complexity threshold — queries longer than this many words route to
     # Claude (only when anthropic_api_key is configured)
