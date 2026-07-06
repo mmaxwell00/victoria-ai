@@ -90,3 +90,61 @@ def test_ollama_tools_format():
         assert "name" in fn
         assert "description" in fn
         assert "parameters" in fn
+
+
+# ------------------------------------------------------------------ #
+# Calculator — exponentiation bounds (DoS guard)                       #
+# ------------------------------------------------------------------ #
+
+def test_calculate_normal_pow_still_works():
+    from victoria.tools.calculator import calculate
+    assert calculate("2 ** 10") == "2 ** 10 = 1024"
+
+
+def test_calculate_huge_exponent_rejected():
+    """Regression: '9**9**9' must return an error instantly, not hang."""
+    import time
+    from victoria.tools.calculator import calculate
+    start = time.monotonic()
+    result = calculate("9**9**9")
+    elapsed = time.monotonic() - start
+    assert "error" in result.lower()
+    assert elapsed < 1.0, f"took {elapsed:.1f}s — DoS guard not effective"
+
+
+def test_calculate_huge_base_rejected():
+    from victoria.tools.calculator import calculate
+    # inner 2**1000 ~ 1e301 exceeds the base bound for the outer **
+    result = calculate("(2**1000) ** 500")
+    assert "error" in result.lower()
+
+
+# ------------------------------------------------------------------ #
+# Weather — URL encoding                                               #
+# ------------------------------------------------------------------ #
+
+async def test_weather_url_encodes_location():
+    """Regression: 'New York' and path metacharacters must be percent-encoded."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    import victoria.tools.weather as weather_mod
+
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, *a, **kw): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url):
+            captured["url"] = url
+            resp = MagicMock()
+            resp.text = "New York: ☀️ +25°C"
+            resp.raise_for_status = MagicMock()
+            return resp
+
+    with patch.object(weather_mod.httpx, "AsyncClient", FakeClient):
+        await weather_mod.get_weather("New York")
+        assert captured["url"] == "https://wttr.in/New%20York?format=3"
+
+        await weather_mod.get_weather("x/../etc?foo=bar")
+        assert "?foo" not in captured["url"].replace("?format=3", "")
+        assert "/.." not in captured["url"]

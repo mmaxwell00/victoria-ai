@@ -6,6 +6,12 @@ class Settings(BaseSettings):
     # App
     app_name: str = "Victoria"
     debug: bool = False
+    # CORS — the web UI is served same-origin, so only local dev origins are
+    # needed. Extend via CORS_ORIGINS in .env if you host the UI elsewhere.
+    cors_origins: list[str] = [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
 
     # LLM routing
     default_llm: Literal["ollama", "claude", "docker"] = "ollama"
@@ -18,7 +24,8 @@ class Settings(BaseSettings):
     model_runner_url: str = "http://localhost:12434/engines/llama.cpp/v1"
     model_runner_model: str = "ai/llama3.2"
 
-    # Complexity threshold — queries longer than this many tokens route to Claude
+    # Complexity threshold — queries longer than this many words route to
+    # Claude (only when anthropic_api_key is configured)
     complex_query_threshold: int = 200
 
     # Memory

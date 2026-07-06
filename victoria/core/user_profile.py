@@ -52,6 +52,10 @@ class ProfileStore:
     def __init__(self, db_path: str = "data/victoria.db"):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        # WAL + busy_timeout: this file is shared with MemoryStore and written
+        # from background tasks — avoids "database is locked" errors.
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA busy_timeout=5000")
         self._init_schema()
 
     def _init_schema(self):

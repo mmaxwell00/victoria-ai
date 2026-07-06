@@ -43,3 +43,64 @@ def test_history_limit(store):
 
     history = store.get_history("sess-3", limit=20)
     assert len(history) == 20
+
+
+def test_get_history_window_starts_on_user_message(tmp_path):
+    """Regression: when the limit slices mid-conversation, leading assistant
+    messages must be dropped (Anthropic requires the first message be 'user')."""
+    store = MemoryStore(db_path=str(tmp_path / "trim.db"))
+    store.get_or_create_session("s1", "u1")
+    # 6 turns = 12 messages; limit=5 would start on an assistant message
+    for i in range(6):
+        store.add_message("s1", "user", f"question {i}")
+        store.add_message("s1", "assistant", f"answer {i}")
+
+    history = store.get_history("s1", limit=5)
+    assert history, "history should not be empty"
+    assert history[0]["role"] == "user"
+    # Last message is still the most recent one
+    assert history[-1]["content"] == "answer 5"
+
+
+def test_get_history_all_assistant_returns_empty(tmp_path):
+    store = MemoryStore(db_path=str(tmp_path / "trim2.db"))
+    store.get_or_create_session("s2", "u1")
+    store.add_message("s2", "assistant", "unprompted remark")
+    assert store.get_history("s2") == []
+
+
+def test_wal_mode_and_concurrent_writes(tmp_path):
+    """Both stores share one DB file; concurrent writes must not raise
+    'database is locked'."""
+    import threading
+    from victoria.core.user_profile import ProfileStore
+
+    db = str(tmp_path / "shared.db")
+    mem = MemoryStore(db_path=db)
+    prof = ProfileStore(db_path=db)
+
+    assert mem.conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+    mem.get_or_create_session("s1", "u1")
+    errors = []
+
+    def write_messages():
+        try:
+            for i in range(50):
+                mem.add_message("s1", "user", f"m{i}")
+        except Exception as e:
+            errors.append(e)
+
+    def write_profiles():
+        try:
+            for i in range(50):
+                prof.add_memory("u1", f"memory {i}")
+        except Exception as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=write_messages), threading.Thread(target=write_profiles)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    assert not errors, f"concurrent writes failed: {errors}"
+    assert len(prof.get("u1").explicit_memories) == 50

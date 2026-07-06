@@ -9,6 +9,10 @@ class MemoryStore:
     def __init__(self, db_path: str = "data/victoria.db"):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        # WAL + busy_timeout: several connections share this file (ProfileStore,
+        # background profile updates) — avoids "database is locked" errors.
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA busy_timeout=5000")
         self._init_schema()
 
     def _init_schema(self):
@@ -54,6 +58,14 @@ class MemoryStore:
         self.conn.commit()
         return {"id": session_id, "user_id": user_id, "channel": channel}
 
+    def get_session(self, session_id: str) -> Optional[dict]:
+        row = self.conn.execute(
+            "SELECT id, user_id, channel FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "user_id": row[1], "channel": row[2]}
+
     def add_message(
         self,
         session_id: str,
@@ -78,7 +90,12 @@ class MemoryStore:
                ORDER BY id DESC LIMIT ?""",
             (session_id, limit),
         ).fetchall()
-        return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
+        history = [{"role": r[0], "content": r[1]} for r in reversed(rows)]
+        # The window must start on a user message — the Anthropic API rejects
+        # conversations whose first message is from the assistant.
+        while history and history[0]["role"] != "user":
+            history.pop(0)
+        return history
 
     def list_sessions(self, user_id: str) -> list[dict]:
         rows = self.conn.execute(

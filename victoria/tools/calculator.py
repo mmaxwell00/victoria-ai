@@ -14,6 +14,23 @@ _SAFE_OPS = {
     ast.UAdd: operator.pos,
 }
 
+# Bounds for exponentiation — unrestricted ** lets a chat message like
+# "9**9**9" pin the CPU indefinitely on bignum arithmetic.
+_MAX_POW_EXPONENT = 1000
+_MAX_POW_BASE = 1e100
+
+
+def _safe_pow(base: float, exp: float) -> float:
+    if abs(exp) > _MAX_POW_EXPONENT or abs(base) > _MAX_POW_BASE:
+        raise ValueError(
+            f"Exponentiation out of range (|base| <= {_MAX_POW_BASE:g}, "
+            f"|exponent| <= {_MAX_POW_EXPONENT})"
+        )
+    return operator.pow(base, exp)
+
+
+_SAFE_OPS[ast.Pow] = _safe_pow
+
 
 def _eval_node(node: ast.AST) -> float:
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):

@@ -89,3 +89,39 @@ async def test_sessions_endpoint(client):
         resp = await c.get("/v1/sessions/mark")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+
+
+def test_history_endpoint_checks_session_ownership(client_and_manager=None):
+    """Regression: /v1/sessions/{user}/{session}/history must 404 when the
+    session does not belong to that user (previously user_id was ignored)."""
+    import tempfile, os
+    from unittest.mock import MagicMock
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from victoria.core.memory import MemoryStore
+    from victoria.core.conversation import ConversationManager
+    from victoria.interfaces.api import router, get_manager
+
+    with tempfile.TemporaryDirectory() as tmp:
+        memory = MemoryStore(db_path=os.path.join(tmp, "t.db"))
+        memory.get_or_create_session("sess-a", "alice")
+        memory.add_message("sess-a", "user", "secret question")
+
+        mgr = ConversationManager(memory=memory, router=MagicMock())
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_manager] = lambda: mgr
+        client = TestClient(app)
+
+        # Owner can read
+        resp = client.get("/v1/sessions/alice/sess-a/history")
+        assert resp.status_code == 200
+        assert resp.json()[0]["content"] == "secret question"
+
+        # Another user cannot
+        resp = client.get("/v1/sessions/mallory/sess-a/history")
+        assert resp.status_code == 404
+
+        # Unknown session 404s
+        resp = client.get("/v1/sessions/alice/no-such-session/history")
+        assert resp.status_code == 404

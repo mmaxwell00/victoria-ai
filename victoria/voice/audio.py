@@ -24,7 +24,7 @@ async def record_until_silence(
 
     Returns int16 numpy array suitable for Whisper, or None if only silence captured.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def _blocking_record() -> Optional[np.ndarray]:
         import sounddevice as sd  # lazy import — avoids PortAudio at module load time

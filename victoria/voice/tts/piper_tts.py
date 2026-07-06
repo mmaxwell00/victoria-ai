@@ -19,17 +19,26 @@ class PiperTTSEngine(TTSEngine):
         self._voice = None
 
     def _load_voice(self):
-        """Import and instantiate PiperVoice, loading model from settings."""
+        """Import and instantiate PiperVoice, loading model from settings.
+
+        The loaded voice is cached on the instance — loading the ONNX model
+        from disk on every utterance adds seconds of latency.
+        """
+        if self._voice is not None:
+            return self._voice
+
         global PiperVoice
         if PiperVoice is None:
             from piper.voice import PiperVoice as _PiperVoice  # noqa: PLC0415
             PiperVoice = _PiperVoice
 
+        import os  # noqa: PLC0415
         model_path = settings.piper_model_path
-        if not __import__("os").path.exists(model_path):
+        if not os.path.exists(model_path):
             raise FileNotFoundError(f"Piper model not found: {model_path}")
 
-        return PiperVoice.load(model_path)
+        self._voice = PiperVoice.load(model_path)
+        return self._voice
 
     def _synthesize_and_play(self, text: str) -> None:
         """Synchronous synthesis + playback — called in an executor thread."""
@@ -62,5 +71,5 @@ class PiperTTSEngine(TTSEngine):
 
     async def speak(self, text: str) -> None:
         """Synthesize *text* and play it through the default audio output."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._synthesize_and_play, text)

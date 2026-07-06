@@ -13,6 +13,7 @@ class LLMRouter:
 
     def __init__(self):
         self._anthropic: Optional[AsyncAnthropic] = None
+        self._http: Optional[httpx.AsyncClient] = None
 
     @property
     def anthropic(self) -> AsyncAnthropic:
@@ -20,13 +21,29 @@ class LLMRouter:
             self._anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key)
         return self._anthropic
 
+    @property
+    def http(self) -> httpx.AsyncClient:
+        """Shared client for the local backends — reuses connections instead
+        of building a new pool per request."""
+        if self._http is None or self._http.is_closed:
+            self._http = httpx.AsyncClient(timeout=60.0)
+        return self._http
+
+    async def aclose(self) -> None:
+        if self._http is not None and not self._http.is_closed:
+            await self._http.aclose()
+
     def _pick_backend(self, message: str, force: Optional[str] = None) -> str:
         if force:
             return force
         if settings.default_llm == "claude":
             return "claude"
-        # Route to Claude if query is long/complex (rough token estimate)
-        if len(message.split()) > settings.complex_query_threshold:
+        # Route to Claude if query is long/complex (word count as a rough
+        # complexity proxy) — but only if an API key is actually configured.
+        if (
+            settings.anthropic_api_key
+            and len(message.split()) > settings.complex_query_threshold
+        ):
             return "claude"
         return settings.default_llm  # "ollama" or "docker"
 
@@ -105,12 +122,11 @@ class LLMRouter:
             "messages": [{"role": "system", "content": system_prompt or VICTORIA_SYSTEM_PROMPT}] + messages,
             "stream": False,
         }
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{settings.ollama_base_url}/api/chat", json=payload
-            )
-            resp.raise_for_status()
-            return resp.json()["message"]["content"]
+        resp = await self.http.post(
+            f"{settings.ollama_base_url}/api/chat", json=payload
+        )
+        resp.raise_for_status()
+        return resp.json()["message"]["content"]
 
     async def _ollama_stream(self, messages: list[dict], system_prompt: Optional[str] = None) -> AsyncIterator[str]:
         import json as _json
@@ -120,16 +136,16 @@ class LLMRouter:
             "messages": [{"role": "system", "content": system_prompt or VICTORIA_SYSTEM_PROMPT}] + messages,
             "stream": True,
         }
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST", f"{settings.ollama_base_url}/api/chat", json=payload
-            ) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if line.strip():
-                        data = _json.loads(line)
-                        if chunk := data.get("message", {}).get("content"):
-                            yield chunk
+        async with self.http.stream(
+            "POST", f"{settings.ollama_base_url}/api/chat", json=payload,
+            timeout=120.0,
+        ) as resp:
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if line.strip():
+                    data = _json.loads(line)
+                    if chunk := data.get("message", {}).get("content"):
+                        yield chunk
 
     async def _claude(self, messages: list[dict], system_prompt: Optional[str] = None) -> str:
         response = await self.anthropic.messages.create(
@@ -211,12 +227,11 @@ class LLMRouter:
                 "tools": tool_registry.get_ollama_tools(),
                 "stream": False,
             }
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.post(
-                    f"{settings.ollama_base_url}/api/chat", json=payload
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            resp = await self.http.post(
+                f"{settings.ollama_base_url}/api/chat", json=payload
+            )
+            resp.raise_for_status()
+            data = resp.json()
             last_message = data["message"]
             tool_calls = last_message.get("tool_calls") or []
             if not tool_calls:
@@ -241,12 +256,11 @@ class LLMRouter:
             "messages": [{"role": "system", "content": system_prompt or VICTORIA_SYSTEM_PROMPT}] + messages,
             "stream": False,
         }
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{settings.model_runner_url}/chat/completions", json=payload
-            )
-            resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+        resp = await self.http.post(
+            f"{settings.model_runner_url}/chat/completions", json=payload
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
 
     async def _docker_stream(self, messages: list[dict], system_prompt: Optional[str] = None) -> AsyncIterator[str]:
         import json as _json
@@ -256,16 +270,16 @@ class LLMRouter:
             "messages": [{"role": "system", "content": system_prompt or VICTORIA_SYSTEM_PROMPT}] + messages,
             "stream": True,
         }
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST", f"{settings.model_runner_url}/chat/completions", json=payload
-            ) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if line.startswith("data: ") and line != "data: [DONE]":
-                        data = _json.loads(line[6:])
-                        if chunk := data.get("choices", [{}])[0].get("delta", {}).get("content"):
-                            yield chunk
+        async with self.http.stream(
+            "POST", f"{settings.model_runner_url}/chat/completions", json=payload,
+            timeout=120.0,
+        ) as resp:
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if line.startswith("data: ") and line != "data: [DONE]":
+                    data = _json.loads(line[6:])
+                    if chunk := data.get("choices", [{}])[0].get("delta", {}).get("content"):
+                        yield chunk
 
     async def _docker_with_tools(
         self,
@@ -284,12 +298,11 @@ class LLMRouter:
                 "tools": tool_registry.get_ollama_tools(),  # OpenAI format
                 "stream": False,
             }
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.post(
-                    f"{settings.model_runner_url}/chat/completions", json=payload
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            resp = await self.http.post(
+                f"{settings.model_runner_url}/chat/completions", json=payload
+            )
+            resp.raise_for_status()
+            data = resp.json()
             choice = data["choices"][0]
             last_message = choice["message"]
             tool_calls = last_message.get("tool_calls") or []
