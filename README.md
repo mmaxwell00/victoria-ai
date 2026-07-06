@@ -22,9 +22,9 @@ victoria-ai/
 │   │   ├── profile_extractor.py# Regex + LLM style learning from conversations
 │   │   └── transcription.py    # Whisper speech-to-text
 │   ├── interfaces/
-│   │   ├── api.py              # REST API (chat, stream, history, profile)
-│   │   ├── telegram_bot.py     # Telegram bot interface
-│   │   └── static/             # JARVIS-style HUD web interface (HTML/CSS/JS)
+│   │   ├── api.py              # REST API (chat, stream, history, profile) — /v1 prefix
+│   │   └── telegram_bot.py     # Telegram bot interface
+│   ├── static/                 # JARVIS-style HUD web interface (HTML/CSS/JS)
 │   ├── tools/
 │   │   ├── registry.py         # Decorator-based tool registry
 │   │   ├── web_search.py       # DuckDuckGo search (no API key)
@@ -356,6 +356,29 @@ curl http://localhost:8000/health
 | User profiles | SQLite |
 | Web search tool | DuckDuckGo (no API key) |
 | Containerisation | Docker Compose |
+
+---
+
+## Troubleshooting
+
+**Chat returns `502` / logs show `model not found` (404 from the Model Runner)**
+`MODEL_RUNNER_MODEL` must match an id from `docker model ls` *exactly*, including
+any tag. Pulling `ai/llama3.2` can resolve to a tagged id such as
+`ai/llama3.2:3B-Q4_K_M` — in that case set `MODEL_RUNNER_MODEL` to the full id.
+
+```bash
+docker model ls                                            # see the exact id
+curl http://localhost:12434/engines/llama.cpp/v1/models    # or query the runner
+```
+
+**`pip install` fails with `In --require-hashes mode, all requirements must have their versions pinned`**
+Your environment (a `pip.conf` or `PIP_REQUIRE_HASHES` env var) enforces hashed,
+fully-pinned installs, which `requirements.txt` does not provide. For a one-off
+install without changing your global config:
+
+```bash
+PIP_REQUIRE_HASHES=false pip install -r requirements.txt
+```
 
 ---
 
