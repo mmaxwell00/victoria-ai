@@ -250,6 +250,23 @@ class LLMRouter:
     # Docker Model Runner (OpenAI-compatible API)                         #
     # ------------------------------------------------------------------ #
 
+    def _raise_for_docker_status(self, resp: httpx.Response) -> None:
+        """Raise a clear, actionable error for Model Runner failures.
+
+        A 404 almost always means MODEL_RUNNER_MODEL doesn't match a model the
+        runner actually has loaded — the id must match `docker model ls` exactly,
+        including any tag (e.g. ai/llama3.2:3B-Q4_K_M). Without this, a typo'd
+        model name surfaces to the caller as an opaque 500.
+        """
+        if resp.status_code == 404:
+            raise RuntimeError(
+                f"Docker Model Runner has no model named "
+                f"'{settings.model_runner_model}'. Run `docker model ls` and set "
+                f"MODEL_RUNNER_MODEL in .env to the exact id shown there "
+                f"(including any tag)."
+            )
+        resp.raise_for_status()
+
     async def _docker(self, messages: list[dict], system_prompt: Optional[str] = None) -> str:
         payload = {
             "model": settings.model_runner_model,
@@ -259,7 +276,7 @@ class LLMRouter:
         resp = await self.http.post(
             f"{settings.model_runner_url}/chat/completions", json=payload
         )
-        resp.raise_for_status()
+        self._raise_for_docker_status(resp)
         return resp.json()["choices"][0]["message"]["content"]
 
     async def _docker_stream(self, messages: list[dict], system_prompt: Optional[str] = None) -> AsyncIterator[str]:
@@ -274,7 +291,7 @@ class LLMRouter:
             "POST", f"{settings.model_runner_url}/chat/completions", json=payload,
             timeout=120.0,
         ) as resp:
-            resp.raise_for_status()
+            self._raise_for_docker_status(resp)
             async for line in resp.aiter_lines():
                 if line.startswith("data: ") and line != "data: [DONE]":
                     data = _json.loads(line[6:])
@@ -301,7 +318,7 @@ class LLMRouter:
             resp = await self.http.post(
                 f"{settings.model_runner_url}/chat/completions", json=payload
             )
-            resp.raise_for_status()
+            self._raise_for_docker_status(resp)
             data = resp.json()
             choice = data["choices"][0]
             last_message = choice["message"]
