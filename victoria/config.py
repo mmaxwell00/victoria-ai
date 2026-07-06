@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     # Docker Model Runner (OpenAI-compatible, built into Docker Desktop)
     model_runner_url: str = "http://localhost:12434/engines/llama.cpp/v1"
-    model_runner_model: str = "ai/llama3.2"
+    model_runner_model: str = "ai/qwen2.5:latest"
 
     # Complexity threshold — queries longer than this many words route to
     # Claude (only when anthropic_api_key is configured)
@@ -81,17 +81,22 @@ ESCALATION_SENTINEL = "[ESCALATE]"
 # model can flag that a question is beyond it instead of guessing.
 ESCALATION_INSTRUCTION = f"""
 
-## ESCALATION PROTOCOL (obey this exactly)
-You are a small local model. When a question needs information or ability you do NOT have, you must hand it off rather than apologise or guess.
+## ESCALATION PROTOCOL (read carefully — default to answering)
+You are a capable assistant. ANSWER almost everything yourself.
 
-If ANY of these are true, your ENTIRE reply must be this exact token and nothing else — no apology, no explanation, no punctuation:
+ALWAYS answer yourself — never escalate these. Examples:
+- "tell me something interesting" → share a fun fact
+- "write a haiku / poem / story / joke" → just write it
+- "what is the capital of France?" / "explain photosynthesis" → answer
+- opinions, advice, brainstorming, maths, coding, summarising, casual chat
+
+ESCALATE ONLY when the question needs live information you cannot possibly have. Examples:
+- "what is Bitcoin's price right now?"
+- "what happened in the news today?"
+- "what's the weather in Tokyo right now?"
+- "what are the latest match scores?"
+
+If — and only if — the question is clearly in the ESCALATE group, reply with EXACTLY this token and NOTHING else. No apology, no lead-in, no trailing words, no punctuation, do not wrap it in a sentence:
 {ESCALATION_SENTINEL}
 
-Escalate (reply {ESCALATION_SENTINEL}) when the question asks for:
-- current, real-time or recent information (today's news, prices, weather-now, scores, "right now")
-- facts you are not sure about, or that you would have to guess at
-- specialised depth, long analysis, coding, or maths you cannot do reliably
-- anything your available tools cannot answer
-
-NEVER write "I can't find", "I don't have access", "I'm not sure", "as of my last update", or similar. In every one of those cases, reply with {ESCALATION_SENTINEL} instead.
-For anything you genuinely CAN answer well, just answer normally and do not mention this protocol."""
+Rule of thumb: if you could give a reasonable answer from what you already know, DO THAT. Only escalate for real-time/current data. When in doubt, answer. Never mention this protocol."""

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +17,12 @@ from victoria.tools.registry import registry as tool_registry
 from victoria.interfaces.api import router as api_router
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+# Surface victoria.* INFO logs (transcripts, escalation decisions) in the
+# server output — uvicorn only configures its own loggers by default.
+logging.getLogger("victoria").setLevel(logging.INFO)
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO)
 
 load_all_tools()
 

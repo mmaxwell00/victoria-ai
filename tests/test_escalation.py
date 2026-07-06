@@ -92,18 +92,37 @@ async def test_yes_after_offer_escalates_to_claude():
     assert router.claude_cli.await_args.args[0] == "Hard question"
 
 
-async def test_no_after_offer_cancels():
+async def test_no_after_offer_falls_back_to_local_answer():
+    """Declining escalation should still get a best-effort local answer, not a dead end."""
     router = MagicMock()
-    router.chat = AsyncMock(return_value=(ESCALATION_SENTINEL, "docker"))
+    # 1st call → sentinel (offer). 2nd call (after "no") → a real local answer.
+    router.chat = AsyncMock(side_effect=[(ESCALATION_SENTINEL, "docker"),
+                                          ("My best guess is Paris.", "docker")])
     router.claude_cli = AsyncMock()
     mgr = make_manager(router)
 
     await mgr.chat("Hard question", session_id="s1")
     result = await mgr.chat("no thanks", session_id="s1")
 
-    assert result["backend"] == "victoria"
+    assert result["backend"] == "docker"                 # answered locally
+    assert result["response"] == "My best guess is Paris."
     assert "s1" not in mgr._pending_escalation
-    router.claude_cli.assert_not_called()
+    router.claude_cli.assert_not_called()                # never went to Claude
+
+
+async def test_no_fallback_strips_stray_sentinel():
+    """If the best-effort local answer still emits a sentinel, it's stripped (no re-offer)."""
+    router = MagicMock()
+    router.chat = AsyncMock(side_effect=[(ESCALATION_SENTINEL, "docker"),
+                                          ("[ESCALATE]", "docker")])
+    mgr = make_manager(router)
+
+    await mgr.chat("Hard question", session_id="s1")
+    result = await mgr.chat("no", session_id="s1")
+
+    assert result["backend"] == "docker"
+    assert "ESCALATE" not in result["response"]          # stripped, not re-offered
+    assert "s1" not in mgr._pending_escalation
 
 
 async def test_other_reply_while_pending_is_treated_as_new_question():
@@ -173,20 +192,101 @@ async def test_local_backend_gets_escalation_instruction():
 # Reply classification
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("msg", ["yes", "Yes", "y", "sure", "ok", "go ahead",
-                                  "claude", "yes please", "Do it!"])
+# Includes the punctuated/casing forms Whisper produces from spoken replies.
+@pytest.mark.parametrize("msg", ["yes", "Yes", "Yes.", "Yes!", "Yeah.", "Yep!",
+                                  "y", "sure", "Sure.", "ok", "Okay.", "go ahead",
+                                  "Go ahead.", "claude", "yes please", "Yes, please.",
+                                  "Do it!", "Absolutely."])
 def test_classify_affirmative(msg):
     assert ConversationManager._classify_reply(msg) == "yes"
 
 
-@pytest.mark.parametrize("msg", ["no", "No", "nope", "cancel", "no thanks", "forget it"])
+@pytest.mark.parametrize("msg", ["no", "No", "No.", "nope", "Nope!", "cancel",
+                                  "no thanks", "No, thanks.", "forget it"])
 def test_classify_negative(msg):
     assert ConversationManager._classify_reply(msg) == "no"
 
 
-@pytest.mark.parametrize("msg", ["what's 2+2?", "tell me about London", "maybe later"])
+@pytest.mark.parametrize("msg", ["what's 2+2?", "tell me about London", "maybe later", ""])
 def test_classify_other(msg):
     assert ConversationManager._classify_reply(msg) == "other"
+
+
+# The sentinel must be recognised even when the model drops brackets / adds punctuation.
+@pytest.mark.parametrize("text", ["[ESCALATE]", "ESCALATE", "escalate", "escalate.",
+                                   " [escalate] ", "**[ESCALATE]**", "[ESCALATE"])
+def test_escalation_signal_matches_loosely(text):
+    assert ConversationManager._is_escalation_signal(text) is True
+    assert ConversationManager._needs_escalation(text) is True
+
+
+@pytest.mark.parametrize("text", ["I could escalate this to Claude if you like",
+                                   "The answer is 42.", "Escalate the ticket to tier 2 first."])
+def test_escalation_signal_ignores_real_answers(text):
+    assert ConversationManager._is_escalation_signal(text) is False
+
+
+async def test_bracketless_sentinel_triggers_offer_not_leak():
+    """Regression: a bare 'ESCALATE' (no brackets) must offer escalation, not leak."""
+    router = MagicMock()
+    router.chat = AsyncMock(return_value=("ESCALATE", "docker"))
+    mgr = make_manager(router)
+
+    result = await mgr.chat("current gold price?", session_id="s1")
+    assert result["backend"] == "victoria"          # offered escalation
+    assert "ESCALATE" not in result["response"]       # sentinel not shown
+    assert "s1" in mgr._pending_escalation
+
+
+async def test_prose_plus_sentinel_triggers_offer_not_leak():
+    """Regression: chatter with [ESCALATE] appended must offer, not leak the token."""
+    router = MagicMock()
+    router.chat = AsyncMock(return_value=(
+        "A dramatic pause! I've reached the end of my rope. Shall I escalate? [ESCALATE]",
+        "docker",
+    ))
+    mgr = make_manager(router)
+
+    result = await mgr.chat("gold vs silver?", session_id="s1")
+    assert result["backend"] == "victoria"
+    assert "ESCALATE" not in result["response"]
+    assert "end of my rope" not in result["response"]   # chatter suppressed too
+    assert mgr._pending_escalation["s1"] == "gold vs silver?"
+
+
+@pytest.mark.parametrize("text", [
+    "Some waffle here. [ESCALATE]",
+    "[escalate]",
+    "I really can't say. [ ESCALATE ]",
+])
+def test_needs_escalation_detects_embedded_token(text):
+    assert ConversationManager._needs_escalation(text) is True
+
+
+async def test_stream_bracketless_sentinel_is_swallowed():
+    router = MagicMock()
+    router.stream_chat = _stream_of("ESCA", "LATE")   # arrives in pieces, no brackets
+    mgr = make_manager(router)
+
+    events = [e async for e in mgr.stream_chat("gold price?", session_id="s1")]
+    text = "".join(e["chunk"] for e in events)
+    assert "ESCA" not in text                          # never leaked to the user
+    assert "?" in text                                 # asked permission instead
+    assert mgr._pending_escalation["s1"] == "gold price?"
+
+
+async def test_stream_prose_plus_sentinel_is_swallowed():
+    """Streaming chatter that ends in [ESCALATE] must offer, never leak either part."""
+    router = MagicMock()
+    router.stream_chat = _stream_of("Well now, ", "let me think… ", "[ESCALATE]")
+    mgr = make_manager(router)
+
+    events = [e async for e in mgr.stream_chat("gold vs silver?", session_id="s1")]
+    text = "".join(e["chunk"] for e in events)
+    assert "ESCALATE" not in text
+    assert "let me think" not in text                  # prose held back (full-buffer)
+    assert mgr._pending_escalation["s1"] == "gold vs silver?"
+    assert events[-1]["backend"] == "victoria"
 
 
 # ---------------------------------------------------------------------------
