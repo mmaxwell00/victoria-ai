@@ -79,6 +79,18 @@ victoria-ai/
 2. **Semantic memory** — ChromaDB vector search across all past sessions; relevant context surfaces automatically
 3. **User profile** — persistent preferences, style, and explicit memories injected into every system prompt
 
+### Local-first escalation (ask before going to the cloud)
+
+Victoria always tries the **local model first**. If it genuinely can't answer — a real-time question, something outside its knowledge, or a backend error — it doesn't guess. It **pauses and asks you**:
+
+> *"I'm afraid that one's rather beyond my local wits just now. Shall I put it to Claude for a proper answer? (yes / no)"*
+
+Reply **yes** and she escalates to the **Claude Code CLI** — which uses your existing Claude **subscription**, so no API key is required. Reply **no** (or just ask something else) and nothing leaves your machine. Escalated answers may use read-only web search (`WebSearch`/`WebFetch`) so real-time questions get real answers.
+
+How the local model signals it's stuck: local backends are given an *escalation protocol* in their system prompt and emit a hidden `[ESCALATE]` token, which Victoria intercepts (it never reaches you). Empty replies and backend errors trigger the same offer. Toggle the whole feature with `ESCALATION_ENABLED`; configure it via the `CLAUDE_CLI_*` settings below.
+
+> Requires the [Claude Code CLI](https://claude.com/claude-code) installed and logged in (`claude` on your PATH). Adding ChatGPT as an alternative is a planned follow-up.
+
 ---
 
 ## Prerequisites
@@ -265,6 +277,11 @@ All settings are in `.env` (copy from `.env.example`).
 | `ANTHROPIC_API_KEY` | _(empty)_ | Anthropic key for Claude fallback |
 | `CLAUDE_MODEL` | `claude-sonnet-4-6` | Claude model ID |
 | `COMPLEX_QUERY_THRESHOLD` | `200` | Word count above which queries escalate to Claude |
+| `ESCALATION_ENABLED` | `true` | Try local first; ask before escalating to Claude when it can't answer |
+| `CLAUDE_CLI_COMMAND` | `claude` | Claude Code CLI binary used for escalation (uses your subscription) |
+| `CLAUDE_CLI_MODEL` | `sonnet` | Model alias/id for the Claude Code CLI |
+| `CLAUDE_CLI_TIMEOUT` | `120` | Seconds before a CLI escalation call is aborted |
+| `CLAUDE_CLI_ALLOWED_TOOLS` | `WebSearch WebFetch` | Read-only tools Claude may use non-interactively when answering |
 | `TTS_ENGINE` | `piper` | TTS backend: `piper` (free) or `elevenlabs` (paid) |
 | `ELEVENLABS_API_KEY` | _(empty)_ | ElevenLabs key (only if `TTS_ENGINE=elevenlabs`) |
 | `WAKE_WORD` | `hello victoria` | Voice activation phrase |
