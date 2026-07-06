@@ -43,7 +43,7 @@ class WakeWordDetector:
         # Stream microphone audio in 80ms chunks, feed to openwakeword
         # When score > self.threshold, return
         import sounddevice as sd
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _blocking_listen():
             with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype='int16',
@@ -60,7 +60,7 @@ class WakeWordDetector:
 
     async def _keyboard_fallback(self) -> None:
         print("\n[Wake word mic unavailable — press Enter to activate Victoria]")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, input)
 
 
@@ -69,5 +69,5 @@ class SimplePhraseDetector:
 
     async def wait_for_wake_word(self) -> None:
         print("\n[Press Enter to speak to Victoria]")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, input)

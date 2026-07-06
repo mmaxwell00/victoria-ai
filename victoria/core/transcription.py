@@ -15,7 +15,7 @@ def _load_model():
 
 async def transcribe_audio(file_path: str) -> str:
     """Transcribe an audio file (OGG, WAV, MP3, etc.) and return the text."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def _run():
         model = _load_model()

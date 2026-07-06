@@ -24,6 +24,13 @@ _COMPILED = [re.compile(p, re.IGNORECASE) for p in _MEMORY_PATTERNS]
 # LLM extraction only runs every N turns to avoid overhead
 EXTRACT_EVERY_N_TURNS = 5
 
+# Neutral system prompt for the extraction call — the Victoria persona prompt
+# actively works against "return ONLY valid JSON".
+_EXTRACTION_SYSTEM_PROMPT = (
+    "You are a data extraction engine. You respond with valid JSON only — "
+    "no prose, no markdown fences, no explanations."
+)
+
 
 class ProfileExtractor:
     """Extracts and updates user preferences from conversation turns.
@@ -50,7 +57,8 @@ class ProfileExtractor:
         """
         msg = message.strip()
         for pattern in _COMPILED:
-            m = pattern.match(msg)
+            # search(), not match() — "Hey Victoria, remember that…" should hit
+            m = pattern.search(msg)
             if m:
                 memory = m.group(1).strip().rstrip(".")
                 return memory if memory else None
@@ -105,8 +113,16 @@ Guidelines:
 - Return empty lists if nothing is clearly new"""
 
         try:
+            from victoria.config import settings
             messages = [{"role": "user", "content": prompt}]
-            text, _ = await self.router.chat(messages)
+            # Pin to the configured default backend: the extraction prompt is
+            # long enough to trip the length-based Claude escalation, which
+            # would silently bill an API call on every extraction.
+            text, _ = await self.router.chat(
+                messages,
+                force_backend=settings.default_llm,
+                system_prompt=_EXTRACTION_SYSTEM_PROMPT,
+            )
             # Strip markdown code fences if present
             text = text.strip()
             if text.startswith("```"):

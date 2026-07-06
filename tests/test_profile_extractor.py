@@ -147,3 +147,36 @@ async def test_extract_from_turn_bad_json():
         profile, "hello", "hi", user_id="u1"
     )
     assert result is profile
+
+
+async def test_extract_from_turn_pins_backend_and_neutral_prompt():
+    """Regression: extraction must not auto-escalate to Claude and must not
+    use the Victoria persona system prompt (it breaks JSON-only output)."""
+    router = MagicMock()
+    router.chat = AsyncMock(
+        return_value=('{"new_preferences": [], "new_topics": [], "style_note": null}', "ollama")
+    )
+    extractor = _make_extractor(router)
+    profile = _blank_profile()
+
+    for _ in range(EXTRACT_EVERY_N_TURNS):
+        await extractor.extract_from_turn(profile, "hello", "hi", user_id="u1")
+
+    router.chat.assert_called_once()
+    kwargs = router.chat.call_args.kwargs
+    from victoria.config import settings, VICTORIA_SYSTEM_PROMPT
+    assert kwargs.get("force_backend") == settings.default_llm
+    system_prompt = kwargs.get("system_prompt")
+    assert system_prompt and system_prompt != VICTORIA_SYSTEM_PROMPT
+    assert "JSON" in system_prompt
+
+
+def test_detect_explicit_memory_mid_sentence():
+    """Regression: 'Hey Victoria, remember that…' must be detected (search, not match)."""
+    router = MagicMock()
+    extractor = _make_extractor(router)
+    assert (
+        extractor.detect_explicit_memory("Hey Victoria, remember that I'm vegetarian")
+        == "I'm vegetarian"
+    )
+    assert extractor.detect_explicit_memory("what's the weather?") is None

@@ -16,7 +16,7 @@ import uuid
 async def main():
     memory = MemoryStore(db_path=settings.db_path)
     router = LLMRouter()
-    manager = ConversationManager(memory=memory, llm_router=router)
+    manager = ConversationManager(memory=memory, router=router)
     session_id = str(uuid.uuid4())
 
     print("Victoria AI — Sprint 1 CLI")
