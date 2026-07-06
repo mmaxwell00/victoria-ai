@@ -8,20 +8,50 @@ from victoria.config import (
 from typing import AsyncIterator, Optional, TYPE_CHECKING
 import asyncio
 import logging
+import re
 import uuid
 
 logger = logging.getLogger(__name__)
 
-# How the user answers Victoria's "shall I escalate?" prompt.
-_AFFIRMATIVE = {
+# How the user answers Victoria's "shall I escalate?" prompt. Speech-to-text
+# adds punctuation/casing ("Yes.", "Yeah!"), so we normalise before matching.
+# Single words that clearly mean yes/no on their own.
+_AFFIRMATIVE_WORDS = {
     "y", "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "please", "pls",
-    "go", "go on", "go ahead", "do it", "escalate", "claude", "use claude",
-    "yes please", "please do", "fire away", "aye",
+    "escalate", "claude", "aye", "affirmative", "absolutely", "definitely",
+    "yea", "yup", "ya",
 }
-_NEGATIVE = {
-    "n", "no", "nope", "nah", "cancel", "stop", "don't", "dont", "leave it",
-    "no thanks", "no thank you", "forget it", "never mind", "nevermind",
+_NEGATIVE_WORDS = {
+    "n", "no", "nope", "nah", "cancel", "stop", "dont", "forget", "nevermind",
+    "negative",
 }
+# Multi-word answers (already punctuation-stripped + single-spaced).
+_AFFIRMATIVE_PHRASES = {
+    "go on", "go ahead", "do it", "use claude", "yes please", "please do",
+    "fire away", "go for it", "yes claude", "ask claude",
+}
+_NEGATIVE_PHRASES = {
+    "leave it", "no thanks", "no thank you", "forget it", "never mind",
+    "leave it be",
+}
+
+# The local model's "I can't answer" signal, matched loosely: small models
+# often drop the brackets, add punctuation, OR bury the token at the end of a
+# chatty non-answer (e.g. "…shall I escalate? [ESCALATE]").
+def _escalation_alpha(text: str) -> str:
+    return re.sub(r"[^A-Za-z]", "", text or "").upper()
+
+# The bracketed token, tolerant of spacing/case: "[ESCALATE]", "[ escalate ]".
+_SENTINEL_RE = re.compile(r"\[\s*escalate\s*\]", re.IGNORECASE)
+
+# When the user declines escalation, the local model answers best-effort and
+# must NOT emit the escalation token (we don't want to re-offer in a loop).
+_BEST_EFFORT_INSTRUCTION = (
+    "\n\nThe user has declined escalating to another model, so answer this "
+    "question yourself as best you can from your own knowledge. Do NOT use any "
+    "escalation token. If you're genuinely unsure, say so briefly and give your "
+    "best attempt anyway."
+)
 
 if TYPE_CHECKING:
     from victoria.tools.registry import ToolRegistry
@@ -65,18 +95,45 @@ class ConversationManager:
         return settings.default_llm if settings.default_llm in ("docker", "ollama") else "docker"
 
     @staticmethod
-    def _needs_escalation(response: str) -> bool:
-        """True when the local model signalled it couldn't answer."""
+    def _is_escalation_signal(text: str) -> bool:
+        """True when *text* as a whole IS the escalation sentinel, matched loosely.
+
+        Accepts "[ESCALATE]", "ESCALATE", "escalate.", "**[escalate]**", etc. —
+        small local models are inconsistent about the exact brackets/casing.
+        """
+        return _escalation_alpha(text) == "ESCALATE"
+
+    @classmethod
+    def _needs_escalation(cls, response: str) -> bool:
+        """True when the local model gave nothing usable / signalled it can't answer.
+
+        Fires on an empty reply, on a bare sentinel, OR when the bracketed
+        [ESCALATE] token appears anywhere — small models often append it to a
+        chatty non-answer instead of replying with the token alone.
+        """
         stripped = (response or "").strip()
-        return not stripped or ESCALATION_SENTINEL in stripped
+        if not stripped:
+            return True
+        if _SENTINEL_RE.search(stripped):
+            return True
+        return cls._is_escalation_signal(stripped)
 
     @staticmethod
     def _classify_reply(message: str) -> str:
-        """Interpret a reply to the escalation prompt: 'yes' / 'no' / 'other'."""
-        norm = message.strip().lower().rstrip("!.")
-        if norm in _AFFIRMATIVE or norm.split()[:1] == ["claude"]:
+        """Interpret a reply to the escalation prompt: 'yes' / 'no' / 'other'.
+
+        Robust to speech-to-text output: strips punctuation, lowercases, and
+        collapses whitespace before matching ("Yes." / "Yeah!" / "Yes, please").
+        """
+        norm = re.sub(r"[^a-z\s]", " ", (message or "").lower())
+        norm = re.sub(r"\s+", " ", norm).strip()
+        if not norm:
+            return "other"
+        words = norm.split()
+        first = words[0]
+        if norm in _AFFIRMATIVE_PHRASES or first in _AFFIRMATIVE_WORDS:
             return "yes"
-        if norm in _NEGATIVE:
+        if norm in _NEGATIVE_PHRASES or first in _NEGATIVE_WORDS:
             return "no"
         return "other"
 
@@ -126,6 +183,26 @@ class ConversationManager:
             return {"session_id": session_id, "response": reply, "backend": "victoria"}
         return self._finalize(session_id, user_id, question, answer, "claude")
 
+    async def _answer_locally_best_effort(self, session_id, user_id, question, history) -> tuple[str, str]:
+        """Answer *question* on the local model without offering escalation.
+
+        Used when the user declines escalation — they still want a best-effort
+        local answer, not a dead end. Returns (response, backend).
+        """
+        local_backend = self._local_backend()
+        system_prompt = self._build_system_prompt(question, session_id, user_id) + _BEST_EFFORT_INSTRUCTION
+        messages = list(history) + [{"role": "user", "content": question}]
+        try:
+            response, backend = await self._local_answer(messages, system_prompt, local_backend)
+        except Exception:
+            logger.exception("Local best-effort answer failed")
+            response, backend = "", local_backend
+        # Strip any stray sentinel — we promised not to re-offer.
+        response = _SENTINEL_RE.sub("", response or "").strip()
+        if not response:
+            response = "I'm afraid I can't do that one justice on my own just now, but there it is."
+        return response, backend
+
     def _victoria_system_prompt(self) -> str:
         from victoria.config import VICTORIA_SYSTEM_PROMPT
         return VICTORIA_SYSTEM_PROMPT
@@ -172,14 +249,21 @@ class ConversationManager:
         # --- Reply to a pending "shall I escalate?" prompt ----------------
         if settings.escalation_enabled and session_id in self._pending_escalation:
             decision = self._classify_reply(user_message)
+            logger.info("Escalation reply %r classified as %s (session %s)",
+                        user_message, decision, session_id)
             if decision == "yes":
                 question = self._pending_escalation.pop(session_id)
                 self.memory.add_message(session_id, "user", user_message)
                 sys_prompt = self._build_system_prompt(question, session_id, user_id)
                 return await self._answer_with_claude(session_id, user_id, question, sys_prompt)
             if decision == "no":
-                self._pending_escalation.pop(session_id, None)
+                question = self._pending_escalation.pop(session_id, None)
                 self.memory.add_message(session_id, "user", user_message)
+                if question:
+                    response, backend = await self._answer_locally_best_effort(
+                        session_id, user_id, question, history
+                    )
+                    return self._finalize(session_id, user_id, question, response, backend)
                 reply = "Righto — I'll leave that one be. What else can I do for you?"
                 self.memory.add_message(session_id, "assistant", reply, llm_used="victoria")
                 return {"session_id": session_id, "response": reply, "backend": "victoria"}
@@ -238,6 +322,8 @@ class ConversationManager:
         # --- Reply to a pending "shall I escalate?" prompt ----------------
         if settings.escalation_enabled and session_id in self._pending_escalation:
             decision = self._classify_reply(user_message)
+            logger.info("Escalation reply %r classified as %s (session %s)",
+                        user_message, decision, session_id)
             if decision == "yes":
                 question = self._pending_escalation.pop(session_id)
                 sys_prompt = self._build_system_prompt(question, session_id, user_id)
@@ -245,7 +331,20 @@ class ConversationManager:
                     yield ev
                 return
             if decision == "no":
-                self._pending_escalation.pop(session_id, None)
+                question = self._pending_escalation.pop(session_id, None)
+                if question:
+                    response, backend = await self._answer_locally_best_effort(
+                        session_id, user_id, question, history
+                    )
+                    self.memory.add_message(session_id, "assistant", response, llm_used=backend)
+                    if self.semantic_memory:
+                        self.semantic_memory.add(session_id, "user", question)
+                        self.semantic_memory.add(session_id, "assistant", response)
+                    if self.profile_extractor and self.profile_store:
+                        self._spawn_profile_update(user_id, question, response)
+                    yield {"session_id": session_id, "chunk": response, "backend": backend, "done": False}
+                    yield {"session_id": session_id, "chunk": "", "backend": backend, "done": True}
+                    return
                 reply = "Righto — I'll leave that one be. What else can I do for you?"
                 self.memory.add_message(session_id, "assistant", reply, llm_used="victoria")
                 yield {"session_id": session_id, "chunk": reply, "backend": "victoria", "done": False}
@@ -266,9 +365,10 @@ class ConversationManager:
         if settings.escalation_enabled and force_backend in (None, "", "auto", "docker", "ollama"):
             local_backend = force_backend if force_backend in ("docker", "ollama") else self._local_backend()
             local_system = system_prompt + ESCALATION_INSTRUCTION
-            sentinel_norm = ESCALATION_SENTINEL.upper()
+            # Buffer the whole local reply before emitting. Small models are
+            # inconsistent — they may prepend chatter to the [ESCALATE] token —
+            # so we can only reliably decide "answer vs escalate" once complete.
             buffer = ""
-            decided = False          # True once we know the output isn't the sentinel
             backend_used = local_backend
             failed = False
 
@@ -278,25 +378,14 @@ class ConversationManager:
                 ):
                     backend_used = backend
                     buffer += chunk
-                    if decided:
-                        yield {"session_id": session_id, "chunk": chunk, "backend": backend, "done": False}
-                        continue
-                    stripped = buffer.strip()
-                    if not stripped:
-                        continue  # only whitespace so far — can't tell yet
-                    if sentinel_norm.startswith(stripped.upper()):
-                        continue  # could still grow into the sentinel — keep buffering
-                    # Diverged from the sentinel: flush what we've held and stream on.
-                    decided = True
-                    yield {"session_id": session_id, "chunk": buffer, "backend": backend, "done": False}
             except Exception:
                 logger.exception("Local streaming failed; offering escalation")
                 failed = True
 
             complete = buffer.strip()
 
-            # Nothing streamed yet and the local model failed / bailed → offer Claude.
-            if not decided and (failed or self._needs_escalation(complete)):
+            # Empty, errored, or the model signalled it can't answer → offer Claude.
+            if failed or self._needs_escalation(complete):
                 self._pending_escalation[session_id] = user_message
                 prompt = self._escalation_prompt()
                 self.memory.add_message(session_id, "assistant", prompt, llm_used="victoria")
@@ -305,10 +394,7 @@ class ConversationManager:
                 yield {"session_id": session_id, "chunk": "", "backend": "victoria", "done": True}
                 return
 
-            # Held a short, non-sentinel answer that never got flushed — flush now.
-            if not decided and complete:
-                yield {"session_id": session_id, "chunk": buffer, "backend": backend_used, "done": False}
-
+            yield {"session_id": session_id, "chunk": complete, "backend": backend_used, "done": False}
             self.memory.add_message(session_id, "assistant", complete, llm_used=backend_used)
             if self.semantic_memory:
                 self.semantic_memory.add(session_id, "user", user_message)

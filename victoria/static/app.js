@@ -5,6 +5,9 @@ const state = {
   sessionId: localStorage.getItem('victoria_session') || null,
   isStreaming: false,
   userId: 'web',
+  speakReplies: localStorage.getItem('victoria_speak') === '1',
+  speakNext: false,      // set when input came from the mic → speak this reply
+  isRecording: false,
 };
 
 // ── DOM refs ───────────────────────────────────────────────────
@@ -12,6 +15,8 @@ const messagesEl    = document.getElementById('chat-messages');
 const welcome       = document.getElementById('welcome');
 const inputEl       = document.getElementById('message-input');
 const sendBtn       = document.getElementById('send-btn');
+const micBtn        = document.getElementById('mic-btn');
+const speakBtn      = document.getElementById('speak-btn');
 const backendSel    = document.getElementById('backend-select');
 const newSessionBtn = document.getElementById('new-session-btn');
 const statusPill    = document.getElementById('status-pill');
@@ -67,6 +72,7 @@ function setStreaming(on) {
   state.isStreaming = on;
   sendBtn.disabled = on;
   inputEl.disabled = on;
+  if (micBtn) micBtn.disabled = on;   // don't record while a reply is streaming
   document.querySelector('.hud').classList.toggle('listening', on);
   if (on) {
     setStatus('PROCESSING', 'var(--teal-bright)');
@@ -247,6 +253,13 @@ async function sendMessage(text) {
           badge.textContent = `[${backendLabel}]`;
           meta.appendChild(badge);
 
+          // Speak the reply aloud when spoken-replies is on, or when the
+          // query came in by voice.
+          if (state.speakReplies || state.speakNext) {
+            speakText(accumulated);
+          }
+          state.speakNext = false;
+
           // Refresh sidebar data (profile may have been updated)
           setTimeout(loadSidebarData, 2000);
         } else if (data.chunk) {
@@ -289,6 +302,97 @@ function resizeInput() {
   inputEl.style.height = 'auto';
   inputEl.style.height = Math.min(inputEl.scrollHeight, 100) + 'px';
 }
+
+// ── Voice: speech-to-text (mic) + text-to-speech (playback) ─────
+let mediaRecorder = null;
+let audioChunks   = [];
+let currentAudio  = null;
+
+function updateSpeakBtn() {
+  speakBtn.classList.toggle('active', state.speakReplies);
+  speakBtn.title = state.speakReplies ? 'Spoken replies: ON' : 'Spoken replies: OFF';
+}
+
+async function speakText(text) {
+  if (!text || !text.trim()) return;
+  try {
+    const resp = await fetch('/v1/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!resp.ok) { console.error('TTS HTTP', resp.status); return; }
+    const blob = await resp.blob();
+    if (currentAudio) { currentAudio.pause(); }
+    currentAudio = new Audio(URL.createObjectURL(blob));
+    currentAudio.play().catch(err => console.error('audio play failed', err));
+  } catch (err) {
+    console.error('TTS error', err);
+  }
+}
+
+async function transcribeAndSend(blob) {
+  setStatus('TRANSCRIBING', 'var(--teal-bright)');
+  const ext = blob.type.includes('ogg') ? 'ogg'
+            : blob.type.includes('mp4') ? 'mp4'
+            : blob.type.includes('wav') ? 'wav' : 'webm';
+  const fd = new FormData();
+  fd.append('audio', blob, `speech.${ext}`);
+  try {
+    const resp = await fetch('/v1/transcribe', { method: 'POST', body: fd });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const text = (data.text || '').trim();
+    if (!text) { setStatus('NO SPEECH HEARD', 'var(--red)'); return; }
+    // Echo what was heard so it's visible even before the bubble renders.
+    inputEl.value = text;
+    resizeInput();
+    state.speakNext = true;        // heard by voice → reply by voice
+    sendMessage(text);
+    inputEl.value = '';            // the user bubble now shows the text
+    resizeInput();
+  } catch (err) {
+    console.error('transcribe error', err);
+    setStatus('STT ERROR', 'var(--red)');
+  }
+}
+
+async function toggleRecording() {
+  if (state.isRecording) { mediaRecorder && mediaRecorder.stop(); return; }
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    setStatus('MIC UNSUPPORTED', 'var(--red)');
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
+    mediaRecorder.ondataavailable = e => { if (e.data.size) audioChunks.push(e.data); };
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      state.isRecording = false;
+      micBtn.classList.remove('recording');
+      const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+      if (blob.size) await transcribeAndSend(blob);
+    };
+    mediaRecorder.start();
+    state.isRecording = true;
+    micBtn.classList.add('recording');
+    setStatus('LISTENING', 'var(--teal-bright)');
+  } catch (err) {
+    console.error('mic error', err);
+    setStatus('MIC BLOCKED', 'var(--red)');
+  }
+}
+
+micBtn.addEventListener('click', toggleRecording);
+speakBtn.addEventListener('click', () => {
+  state.speakReplies = !state.speakReplies;
+  localStorage.setItem('victoria_speak', state.speakReplies ? '1' : '');
+  if (!state.speakReplies && currentAudio) currentAudio.pause();
+  updateSpeakBtn();
+});
+updateSpeakBtn();
 
 // ── Events ─────────────────────────────────────────────────────
 inputEl.addEventListener('input', resizeInput);
