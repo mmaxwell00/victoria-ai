@@ -91,9 +91,12 @@ async function loadSidebarData() {
         const memList = document.getElementById('memories-list');
         document.getElementById('mem-count').textContent = p.explicit_memories?.length || '0';
         if (p.explicit_memories?.length > 0) {
-          memList.innerHTML = p.explicit_memories
-            .map(m => `<div class="memory-item">${m}</div>`)
-            .join('');
+          memList.replaceChildren(...p.explicit_memories.map(m => {
+            const item = document.createElement('div');
+            item.className = 'memory-item';
+            item.textContent = m;
+            return item;
+          }));
         }
       }
     }

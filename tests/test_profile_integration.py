@@ -289,3 +289,36 @@ async def test_telegram_cmd_profile_empty():
 
     call_text = update.message.reply_text.call_args[0][0]
     assert "don't know much" in call_text
+
+
+async def test_background_profile_task_is_referenced():
+    """Regression: fire-and-forget profile tasks must be held in a strong
+    reference set until done, so they can't be garbage-collected mid-run."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from victoria.core.conversation import ConversationManager
+
+    manager = ConversationManager(
+        memory=MagicMock(),
+        router=MagicMock(),
+        profile_store=MagicMock(),
+        profile_extractor=MagicMock(),
+    )
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_update(*a, **kw):
+        started.set()
+        await release.wait()
+
+    manager._update_profile_async = slow_update
+    manager._spawn_profile_update("u1", "msg", "resp")
+
+    await started.wait()
+    assert len(manager._background_tasks) == 1
+
+    release.set()
+    await asyncio.gather(*manager._background_tasks)
+    await asyncio.sleep(0)  # let done-callbacks run
+    assert len(manager._background_tasks) == 0
