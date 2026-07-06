@@ -137,7 +137,7 @@ Open `.env` and set at minimum:
 ```bash
 # Use Docker Model Runner (built into Docker Desktop) — free, no API key
 DEFAULT_LLM=docker
-MODEL_RUNNER_MODEL=ai/llama3.2
+MODEL_RUNNER_MODEL=ai/qwen2.5:latest
 
 # Optional: add your Anthropic key to unlock Claude as a fallback
 ANTHROPIC_API_KEY=sk-ant-...
@@ -152,10 +152,12 @@ Victoria uses Docker Desktop's built-in Model Runner. Enable it first:
 Then pull a model:
 
 ```bash
-docker model pull ai/llama3.2        # ~2GB, fast, good for most tasks
+docker model pull ai/qwen2.5         # recommended — follows the escalation protocol reliably
 # or
-docker model pull ai/phi4            # ~9GB, slower, stronger reasoning
+docker model pull ai/llama3.2        # ~2GB, lighter, but over-escalates more often
 ```
+
+> **Model choice matters for escalation.** Victoria decides when to hand off to Claude by having the local model emit a hidden signal (see [Local-first escalation](#local-first-escalation-ask-before-going-to-the-cloud)). `ai/qwen2.5` follows that instruction well; very small models (e.g. `llama3.2:3B`) tend to over-escalate.
 
 Verify it's running:
 
@@ -279,7 +281,7 @@ All settings are in `.env` (copy from `.env.example`).
 |----------|---------|-------------|
 | `DEFAULT_LLM` | `docker` | Primary backend: `docker`, `ollama`, or `claude` |
 | `MODEL_RUNNER_URL` | `http://localhost:12434/engines/llama.cpp/v1` | Docker Model Runner endpoint |
-| `MODEL_RUNNER_MODEL` | `ai/llama3.2` | Model to use with Docker Model Runner |
+| `MODEL_RUNNER_MODEL` | `ai/qwen2.5:latest` | Model to use with Docker Model Runner |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama endpoint (if using Ollama) |
 | `OLLAMA_MODEL` | `llama3.1` | Ollama model name |
 | `ANTHROPIC_API_KEY` | _(empty)_ | Anthropic key for Claude fallback |
