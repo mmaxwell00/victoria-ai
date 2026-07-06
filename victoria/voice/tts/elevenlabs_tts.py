@@ -9,6 +9,7 @@ Additional dependency:
     pip install soundfile   # for decoding the MP3 response bytes
 """
 
+import asyncio
 import io
 import logging
 
@@ -43,12 +44,15 @@ class ElevenLabsTTSEngine(TTSEngine):
             "model_id": self._model,
         }
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(url, headers=headers, json=body)
             response.raise_for_status()
             mp3_bytes = response.content
 
-        self._play_mp3(mp3_bytes)
+        # Playback blocks on sd.wait() — run it in an executor so the event
+        # loop stays responsive for the duration of the audio.
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._play_mp3, mp3_bytes)
 
     def _play_mp3(self, mp3_bytes: bytes) -> None:
         """Decode MP3 bytes and play through sounddevice."""

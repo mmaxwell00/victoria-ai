@@ -124,3 +124,54 @@ async def test_handle_text_uses_force_backend(bot):
     await bot.handle_text(update, ctx)
     call_kwargs = bot.manager.chat.call_args[1]
     assert call_kwargs["force_backend"] == "claude"
+
+
+# ------------------------------------------------------------------ #
+# Voice handler — Markdown safety                                      #
+# ------------------------------------------------------------------ #
+
+@pytest.mark.asyncio
+async def test_handle_voice_no_parse_mode_with_dynamic_text(bot):
+    """Regression: transcriptions with Markdown metacharacters (_ * `) must
+    not be sent with a parse_mode, or Telegram rejects the message."""
+    tricky = "snake_case_name and *stars* and `ticks`"
+
+    bot.manager.chat = AsyncMock(return_value={
+        "session_id": "tg-42",
+        "response": "Got it — some_response_with_underscores",
+        "backend": "ollama",
+    })
+
+    update = _make_update()
+    update.message.voice.file_id = "voice-file-1"
+    status_msg = MagicMock()
+    status_msg.edit_text = AsyncMock()
+    update.message.reply_text = AsyncMock(return_value=status_msg)
+
+    ctx = _make_context()
+    ctx.bot.get_file = AsyncMock(return_value=MagicMock(download_to_drive=AsyncMock()))
+
+    with patch("victoria.core.transcription.transcribe_audio", new=AsyncMock(return_value=tricky)):
+        await bot.handle_voice(update, ctx)
+
+    # Every edit containing the transcription or model response must be plain text
+    for call in status_msg.edit_text.call_args_list:
+        text = call.args[0] if call.args else call.kwargs.get("text", "")
+        if tricky in text or "some_response" in text:
+            assert call.kwargs.get("parse_mode") is None, f"parse_mode used with dynamic text: {call!r}"
+    # Final message contains both transcription and response
+    final = status_msg.edit_text.call_args_list[-1]
+    final_text = final.args[0] if final.args else final.kwargs.get("text", "")
+    assert tricky in final_text and "some_response_with_underscores" in final_text
+
+
+@pytest.mark.asyncio
+async def test_cmd_remember_no_parse_mode(bot):
+    update = _make_update()
+    ctx = _make_context()
+    ctx.args = ["I", "use", "snake_case_naming"]
+    bot.manager.profile_store = MagicMock()
+    await bot.cmd_remember(update, ctx)
+    call = update.message.reply_text.call_args
+    assert "snake_case_naming" in call.args[0]
+    assert call.kwargs.get("parse_mode") is None

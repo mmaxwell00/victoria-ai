@@ -9,7 +9,10 @@ services:
     build: .
     command: uvicorn victoria.main:app --host 0.0.0.0 --port 8000
     ports:
-      - "8000:8000"
+      # Bind to loopback only — the API has no authentication, so exposing it
+      # on the LAN would let anyone read conversation history and chat on
+      # your API bill. Change to "8000:8000" only if you add auth.
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     environment:

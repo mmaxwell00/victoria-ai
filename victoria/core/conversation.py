@@ -1,6 +1,7 @@
 from victoria.core.memory import MemoryStore
 from victoria.core.llm_router import LLMRouter
 from typing import AsyncIterator, Optional, TYPE_CHECKING
+import asyncio
 import uuid
 
 if TYPE_CHECKING:
@@ -26,9 +27,17 @@ class ConversationManager:
         self.semantic_memory = semantic_memory
         self.profile_store = profile_store
         self.profile_extractor = profile_extractor
+        # Keep references to fire-and-forget tasks — asyncio only holds weak
+        # references, so unreferenced tasks can be garbage-collected mid-run.
+        self._background_tasks: set = set()
 
     def new_session_id(self) -> str:
         return str(uuid.uuid4())
+
+    def _spawn_profile_update(self, user_id: str, user_message: str, response: str) -> None:
+        task = asyncio.create_task(self._update_profile_async(user_id, user_message, response))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     def _build_system_prompt(self, user_message: str, session_id: str, user_id: str = "default") -> str:
         from victoria.config import VICTORIA_SYSTEM_PROMPT
@@ -72,6 +81,10 @@ class ConversationManager:
 
         system_prompt = self._build_system_prompt(user_message, session_id, user_id)
 
+        # Persist the user message up front (matching stream_chat) so it isn't
+        # lost when the LLM call fails.
+        self.memory.add_message(session_id, "user", user_message)
+
         if self.tool_registry and len(self.tool_registry) > 0:
             response, backend = await self.router.chat_with_tools(
                 history, self.tool_registry, system_prompt, force_backend
@@ -81,7 +94,6 @@ class ConversationManager:
                 history, force_backend=force_backend, system_prompt=system_prompt
             )
 
-        self.memory.add_message(session_id, "user", user_message)
         self.memory.add_message(session_id, "assistant", response, llm_used=backend)
 
         if self.semantic_memory:
@@ -89,8 +101,7 @@ class ConversationManager:
             self.semantic_memory.add(session_id, "assistant", response)
 
         if self.profile_extractor and self.profile_store:
-            import asyncio
-            asyncio.create_task(self._update_profile_async(user_id, user_message, response))
+            self._spawn_profile_update(user_id, user_message, response)
 
         return {
             "session_id": session_id,
@@ -134,8 +145,7 @@ class ConversationManager:
             self.semantic_memory.add(session_id, "assistant", complete)
 
         if self.profile_extractor and self.profile_store:
-            import asyncio
-            asyncio.create_task(self._update_profile_async(user_id, user_message, complete))
+            self._spawn_profile_update(user_id, user_message, complete)
 
         yield {"session_id": session_id, "chunk": "", "backend": backend_used, "done": True}
 

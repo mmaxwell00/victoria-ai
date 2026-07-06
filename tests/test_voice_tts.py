@@ -73,3 +73,60 @@ async def test_piper_speak_skips_if_no_model():
         ):
             # Must not raise — should log and return silently.
             await engine.speak("hello")
+
+
+def test_piper_caches_loaded_voice(tmp_path, monkeypatch):
+    """Regression: the Piper ONNX model must be loaded once, not per utterance."""
+    from unittest.mock import MagicMock, patch
+    import victoria.voice.tts.piper_tts as piper_mod
+    from victoria.voice.tts.piper_tts import PiperTTSEngine
+
+    model_file = tmp_path / "voice.onnx"
+    model_file.write_bytes(b"fake")
+    monkeypatch.setattr(piper_mod.settings, "piper_model_path", str(model_file))
+
+    fake_voice_cls = MagicMock()
+    fake_voice_cls.load.return_value = MagicMock(name="voice")
+    with patch.object(piper_mod, "PiperVoice", fake_voice_cls):
+        engine = PiperTTSEngine()
+        v1 = engine._load_voice()
+        v2 = engine._load_voice()
+
+    assert v1 is v2
+    fake_voice_cls.load.assert_called_once_with(str(model_file))
+
+
+async def test_elevenlabs_playback_runs_off_event_loop(monkeypatch):
+    """Regression: blocking MP3 playback must not run directly on the loop."""
+    import asyncio
+    import threading
+    from unittest.mock import MagicMock, patch
+    import victoria.voice.tts.elevenlabs_tts as el_mod
+    from victoria.voice.tts.elevenlabs_tts import ElevenLabsTTSEngine
+
+    monkeypatch.setattr(el_mod.settings, "elevenlabs_api_key", "test-key")
+    engine = ElevenLabsTTSEngine()
+
+    loop_thread = threading.current_thread()
+    played_on = []
+
+    def fake_play(mp3_bytes):
+        played_on.append(threading.current_thread())
+
+    engine._play_mp3 = fake_play
+
+    fake_resp = MagicMock()
+    fake_resp.content = b"mp3"
+    fake_resp.raise_for_status = MagicMock()
+
+    class FakeClient:
+        def __init__(self, *a, **kw): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, *a, **kw): return fake_resp
+
+    with patch.object(el_mod.httpx, "AsyncClient", FakeClient):
+        await engine.speak("hello")
+
+    assert played_on, "playback was never invoked"
+    assert played_on[0] is not loop_thread, "playback ran on the event loop thread"

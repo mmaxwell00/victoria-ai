@@ -237,6 +237,8 @@ async def test_llm_router_chat_with_tools_ollama_loop():
             return self._data
 
     class MockAsyncClient:
+        is_closed = False
+
         async def __aenter__(self):
             return self
 

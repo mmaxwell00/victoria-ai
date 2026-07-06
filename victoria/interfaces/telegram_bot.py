@@ -57,10 +57,9 @@ class VictoriaTelegramBot:
         user_id = str(update.effective_user.id)
         if self.manager.profile_store:
             self.manager.profile_store.add_memory(user_id, memory)
-            await update.message.reply_text(
-                f"Noted and filed away: _{memory}_",
-                parse_mode=ParseMode.MARKDOWN,
-            )
+            # No parse mode — user text can contain Markdown metacharacters
+            # that would make Telegram reject the message.
+            await update.message.reply_text(f'Noted and filed away: "{memory}"')
         else:
             await update.message.reply_text("Memory storage isn't available at the moment, darling.")
 
@@ -177,7 +176,9 @@ class VictoriaTelegramBot:
             )
             return
 
-        await status.edit_text(f"_{transcription}_\n\n…", parse_mode=ParseMode.MARKDOWN)
+        # Plain text throughout — transcriptions and model output can contain
+        # Markdown metacharacters that make Telegram reject the message.
+        await status.edit_text(f"🎤 {transcription}\n\n…")
 
         try:
             result = await self.manager.chat(
@@ -186,16 +187,12 @@ class VictoriaTelegramBot:
                 user_id=user_id,
                 channel=CHANNEL,
             )
-            await status.edit_text(
-                f"_{transcription}_\n\n{result['response']}",
-                parse_mode=ParseMode.MARKDOWN,
-            )
+            await status.edit_text(f"🎤 {transcription}\n\n{result['response']}")
         except Exception:
             logger.exception("Chat error after transcription")
             await status.edit_text(
-                f"_{transcription}_\n\n"
-                "Transcribed, but hit a snag generating a response. Sorry!",
-                parse_mode=ParseMode.MARKDOWN,
+                f"🎤 {transcription}\n\n"
+                "Transcribed, but hit a snag generating a response. Sorry!"
             )
 
     # ------------------------------------------------------------------ #
