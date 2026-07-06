@@ -1,7 +1,7 @@
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from victoria.config import settings
@@ -48,6 +48,13 @@ manager = ConversationManager(
 
 app.include_router(api_router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.exception_handler(RuntimeError)
+async def runtime_error_handler(request: Request, exc: RuntimeError):
+    """Surface backend misconfiguration (e.g. an unknown Model Runner model)
+    as a readable 502 instead of an opaque 500 Internal Server Error."""
+    return JSONResponse(status_code=502, content={"detail": str(exc)})
 
 
 @app.get("/health")
