@@ -72,6 +72,7 @@ function setStreaming(on) {
   state.isStreaming = on;
   sendBtn.disabled = on;
   inputEl.disabled = on;
+  if (micBtn) micBtn.disabled = on;   // don't record while a reply is streaming
   document.querySelector('.hud').classList.toggle('listening', on);
   if (on) {
     setStatus('PROCESSING', 'var(--teal-bright)');
@@ -343,8 +344,13 @@ async function transcribeAndSend(blob) {
     const data = await resp.json();
     const text = (data.text || '').trim();
     if (!text) { setStatus('NO SPEECH HEARD', 'var(--red)'); return; }
+    // Echo what was heard so it's visible even before the bubble renders.
+    inputEl.value = text;
+    resizeInput();
     state.speakNext = true;        // heard by voice → reply by voice
     sendMessage(text);
+    inputEl.value = '';            // the user bubble now shows the text
+    resizeInput();
   } catch (err) {
     console.error('transcribe error', err);
     setStatus('STT ERROR', 'var(--red)');

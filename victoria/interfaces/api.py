@@ -127,6 +127,7 @@ async def transcribe(audio: UploadFile = File(...)):
             tmp.write(data)
             tmp_path = tmp.name
         text = await transcribe_audio(tmp_path)
+        logger.info("Transcribed %d bytes (%s) → %r", len(data), audio.content_type, text)
     except Exception as exc:
         logger.exception("Transcription failed")
         raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}")
