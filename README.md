@@ -30,7 +30,10 @@ victoria-ai/
 │   │   ├── web_search.py       # DuckDuckGo search (no API key)
 │   │   ├── weather.py          # wttr.in weather (no API key)
 │   │   ├── datetime_tool.py    # Current date/time with timezone
-│   │   └── calculator.py       # Safe AST-based math evaluator
+│   │   ├── calculator.py       # Safe AST-based math evaluator
+│   │   └── skills_tools.py     # Skill use/save/list/delete tools
+│   ├── skills/
+│   │   └── store.py            # SkillStore — Markdown skill files (CRUD)
 │   └── voice/
 │       ├── conversation.py     # Voice session loop
 │       ├── wake_word.py        # "Hello Victoria" wake word detection
@@ -78,6 +81,16 @@ victoria-ai/
 1. **Session memory** — full conversation history within a session (SQLite)
 2. **Semantic memory** — ChromaDB vector search across all past sessions; relevant context surfaces automatically
 3. **User profile** — persistent preferences, style, and explicit memories injected into every system prompt
+
+### Skills (reusable instructions she can apply and create)
+
+Skills are named, reusable instruction sets — Markdown files in `skills/` — that Victoria applies when relevant and that you can ask her to create. They contain **instructions only** (no code), and persist across sessions so they accumulate over time.
+
+- **Use (auto + explicit):** she sees a short index of every skill each turn; when a skill is relevant (you name it, or it matches the request) its full instructions are injected and she follows them. Ships with `email-drafter` and `meeting-summariser`.
+- **Create (draft → confirm → save):** *"Create a skill called standup-update that formats my day into Yesterday / Today / Blockers."* She drafts the name, description, and steps, shows them, and asks — it's saved only after you say **yes**.
+- **List / delete:** *"What skills do you have?"* / *"Delete the standup-update skill."*
+
+Skills stay on the local model (they never escalate to the cloud), and creation uses a structured draft the app parses — no reliance on flaky tool-calling. Edit any skill by hand in `skills/*.md`.
 
 ### Local-first escalation (ask before going to the cloud)
 
@@ -297,6 +310,7 @@ All settings are in `.env` (copy from `.env.example`).
 | `WAKE_WORD` | `hello victoria` | Voice activation phrase |
 | `VOICE_SESSION_TIMEOUT` | `30` | Seconds of silence before returning to wake-word mode |
 | `TELEGRAM_BOT_TOKEN` | _(empty)_ | Token from @BotFather |
+| `SKILLS_PATH` | `skills` | Directory of Markdown skill files Victoria can apply and create |
 | `DB_PATH` | `data/victoria.db` | SQLite database (conversation history + user profiles) |
 | `CHROMADB_PATH` | `data/chromadb` | ChromaDB directory (semantic memory) |
 
