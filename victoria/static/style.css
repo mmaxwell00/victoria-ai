@@ -391,7 +391,11 @@ select#backend-select:focus { outline: none; border-color: var(--teal); }
 .welcome-sub {
   font-size: 10px;
   color: var(--text-dim);
-  letter-spacing: 4px;
+  letter-spacing: 2px;
+  max-width: 380px;
+  margin: 0 auto;
+  line-height: 1.7;
+  text-transform: uppercase;
 }
 .welcome-hints {
   display: flex;
