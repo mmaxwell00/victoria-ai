@@ -35,6 +35,8 @@ victoria-ai/
 │   ├── skills/
 │   │   ├── store.py            # SkillStore — Markdown skill files (CRUD)
 │   │   └── importer.py         # Fetch + discover skills from a GitHub repo/URL
+│   ├── mcp/
+│   │   └── manager.py          # MCP client — connect servers, expose their tools
 │   └── voice/
 │       ├── conversation.py     # Voice session loop
 │       ├── wake_word.py        # "Hello Victoria" wake word detection
@@ -95,6 +97,30 @@ Skills are named, reusable instruction sets — Markdown files in `skills/` — 
 Skills stay on the local model (they never escalate to the cloud), and creation uses a structured draft the app parses — no reliance on flaky tool-calling. Edit any skill by hand in `skills/*.md`.
 
 > **Trust note:** an imported skill is text that gets injected into Victoria's prompt and followed, so only import from repositories you trust — the review step (and the fact that skills are instructions-only, never executed code) is your safeguard.
+
+### MCP servers (connect external tools)
+
+Victoria is an **MCP client** — she can use tools from any [Model Context Protocol](https://modelcontextprotocol.io) server you configure, alongside her built-in tools and skills. Copy `mcp.example.json` to `mcp.json` and list your servers (Claude-Desktop-compatible format):
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/you/allow"],
+      "readOnly": true
+    }
+  }
+}
+```
+
+- **stdio** (`command`/`args`/`env`) and **remote SSE** (`url`/`headers`) servers are both supported.
+- On startup she connects each server, and its tools appear to her as `mcp__<server>__<tool>`. `GET /health` shows what connected.
+- **Guardrails, per server:** `disabled` (skip), `allowedTools` (whitelist), and `readOnly` (drops write-ish tools like create/update/delete/send). Every MCP call is logged.
+- **Trust:** MCP tools run under *your* credentials, so only add servers you trust. `mcp.json` is git-ignored since it may hold secrets; keep them in the servers' `env`.
+- A failing server is logged and skipped — it never blocks startup.
+
+> Tip: keep the exposed tool set small. A small local model can get lost among dozens of tools; complex multi-tool work is more reliable on the Claude backend.
 
 ### Local-first escalation (ask before going to the cloud)
 

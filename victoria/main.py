@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,7 @@ from victoria.core.user_profile import ProfileStore
 from victoria.core.profile_extractor import ProfileExtractor
 from victoria.tools import load_all_tools
 from victoria.tools.registry import registry as tool_registry
+from victoria.mcp import mcp_manager
 from victoria.interfaces.api import router as api_router
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -26,10 +28,23 @@ if not logging.getLogger().handlers:
 
 load_all_tools()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Connect configured MCP servers on startup; a failure never blocks boot.
+    try:
+        await mcp_manager.connect_all()
+    except Exception:
+        logging.getLogger("victoria").exception("MCP startup failed")
+    yield
+    await mcp_manager.aclose()
+
+
 app = FastAPI(
     title="Victoria AI",
     description="Your personal AI assistant — brilliant, British, and never boring.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -71,6 +86,7 @@ async def health():
         "name": settings.app_name,
         "tools": len(tool_registry),
         "semantic_memory": semantic_memory.available,
+        "mcp": mcp_manager.status(),
     }
 
 

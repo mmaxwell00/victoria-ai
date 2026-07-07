@@ -21,11 +21,18 @@ class ToolRegistry:
     def tool(self, name: str, description: str, parameters: dict) -> Callable:
         """Decorator: register a function as a Victoria tool."""
         def decorator(fn: Callable) -> Callable:
-            self._tools[name] = ToolDef(name=name, description=description,
-                                         parameters=parameters, fn=fn)
-            logger.debug("Registered tool: %s", name)
+            self.add(name, description, parameters, fn)
             return fn
         return decorator
+
+    def add(self, name: str, description: str, parameters: dict, fn: Callable) -> None:
+        """Programmatically register a tool (used for dynamic MCP tools)."""
+        self._tools[name] = ToolDef(name=name, description=description,
+                                    parameters=parameters, fn=fn)
+        logger.debug("Registered tool: %s", name)
+
+    def remove(self, name: str) -> None:
+        self._tools.pop(name, None)
 
     def get_anthropic_tools(self) -> list[dict]:
         """Return tools in Anthropic API format."""
