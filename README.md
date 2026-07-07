@@ -248,6 +248,8 @@ The interface is a full-screen dark HUD inspired by the Iron Man JARVIS OS — d
 **Right sidebar**
 - System status — active backend, tool count, memory status, API health
 - Backend selector (Auto / Docker Model Runner / Ollama / Claude)
+- **Local model selector** — pick which pulled Docker Model Runner model to use, switched **live** (no restart) and persisted to `.env`. It lists everything `docker model ls` has, and **★-marks a recommendation for your RAM** (detected via `sysctl`) — e.g. a 7B on a 16 GB machine, a 30B on 64 GB, a 70B on 128 GB. Backed by `GET /v1/models` + `POST /v1/models/select`.
+- Credentials Vault (see below)
 - Active tools list
 - Last response status
 

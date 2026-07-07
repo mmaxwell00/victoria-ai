@@ -173,6 +173,86 @@ async def vault_delete(name: str):
     return {"ok": removed, "names": get_vault().names()}
 
 
+class ModelSelectRequest(BaseModel):
+    model: str
+
+
+def _total_ram_gb() -> float:
+    """Total physical RAM in GB (macOS). 0.0 if it can't be read."""
+    import subprocess
+    try:
+        out = subprocess.run(["sysctl", "-n", "hw.memsize"],
+                             capture_output=True, text=True, timeout=5)
+        return round(int(out.stdout.strip()) / (1024 ** 3), 1)
+    except Exception:
+        return 0.0
+
+
+def _recommend_model(models: list, ram_gb: float):
+    """Biggest model whose weights fit ~55% of RAM; else the smallest available."""
+    sized = [m for m in models if m.get("size_gib")]
+    if not sized:
+        return models[0]["id"] if models else None
+    # Prefer the biggest that fits the budget; on a size tie, the larger context.
+    def rank(m):
+        return (m["size_gib"], m.get("context") or 0)
+    if ram_gb:
+        budget = ram_gb * 0.55
+        fits = [m for m in sized if m["size_gib"] <= budget]
+        if fits:
+            return max(fits, key=rank)["id"]
+    return min(sized, key=lambda m: m["size_gib"])["id"]
+
+
+def _persist_env(key: str, value: str, path: str = ".env") -> None:
+    """Upsert KEY=value in the .env file without disturbing other lines."""
+    p = os.path.abspath(path)
+    lines = []
+    if os.path.exists(p):
+        with open(p, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    out, found = [], False
+    for ln in lines:
+        if ln.strip().startswith(f"{key}="):
+            out.append(f"{key}={value}")
+            found = True
+        else:
+            out.append(ln)
+    if not found:
+        out.append(f"{key}={value}")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(out) + "\n")
+
+
+@router.get("/models")
+async def list_models(mgr: ConversationManager = Depends(get_manager)):
+    """Local models the Model Runner has pulled + the active one + a RAM-based rec."""
+    from victoria.config import settings
+    models = await mgr.router.available_models()
+    ram = _total_ram_gb()
+    return {
+        "models": models,
+        "active": settings.model_runner_model,
+        "recommended": _recommend_model(models, ram),
+        "ram_gb": ram,
+    }
+
+
+@router.post("/models/select")
+async def select_model(req: ModelSelectRequest, mgr: ConversationManager = Depends(get_manager)):
+    """Switch the active local model at runtime (and persist to .env)."""
+    from victoria.config import settings
+    models = await mgr.router.available_models()
+    ids = {m["id"] for m in models}
+    if req.model not in ids:
+        raise HTTPException(status_code=400,
+                            detail=f"Model '{req.model}' is not available. Pull it with `docker model pull`.")
+    settings.model_runner_model = req.model      # takes effect on the next message
+    _persist_env("MODEL_RUNNER_MODEL", req.model)
+    logger.info("Local model switched to %s", req.model)
+    return {"ok": True, "active": req.model}
+
+
 @router.post("/tts")
 async def tts(req: TTSRequest):
     """Synthesize speech for *text* and return the audio bytes."""

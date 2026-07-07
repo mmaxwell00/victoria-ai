@@ -39,6 +39,34 @@ class LLMRouter:
         if self._http is not None and not self._http.is_closed:
             await self._http.aclose()
 
+    async def available_models(self) -> list[dict]:
+        """List models the Docker Model Runner has pulled.
+
+        Returns [{id, size_gib, params, context}], best-effort — [] on error.
+        """
+        import re as _re
+        try:
+            resp = await self.http.get(f"{settings.model_runner_url}/models")
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+        except Exception:
+            logger.exception("Could not list Model Runner models")
+            return []
+        out = []
+        for m in data:
+            dmr = m.get("dmr", {}) or {}
+            size = None
+            match = _re.search(r"([\d.]+)\s*GiB", str(dmr.get("size", "")))
+            if match:
+                size = float(match.group(1))
+            out.append({
+                "id": m.get("id", ""),
+                "size_gib": size,
+                "params": dmr.get("parameters"),
+                "context": dmr.get("context_window"),
+            })
+        return out
+
     def _pick_backend(self, message: str, force: Optional[str] = None) -> str:
         if force:
             return force

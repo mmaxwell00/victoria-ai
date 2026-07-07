@@ -30,6 +30,8 @@ const vaultName     = document.getElementById('vault-name');
 const vaultValue    = document.getElementById('vault-value');
 const vaultStoreBtn = document.getElementById('vault-store-btn');
 const vaultCount    = document.getElementById('vault-count');
+const modelSelect   = document.getElementById('model-select');
+const modelHint     = document.getElementById('model-hint');
 const statusPill    = document.getElementById('status-pill');
 const footerStatus  = document.getElementById('footer-status');
 const sessionDisplay= document.getElementById('session-id-display');
@@ -315,6 +317,61 @@ function newSession() {
 function resizeInput() {
   inputEl.style.height = 'auto';
   inputEl.style.height = Math.min(inputEl.scrollHeight, 100) + 'px';
+}
+
+// ── Local model selector (Docker Model Runner, switch at runtime) ─
+function shortModelName(id) {
+  return id.replace(/^docker\.io\//, '').replace(/^ai\//, '');
+}
+
+async function loadModels() {
+  if (!modelSelect) return;
+  try {
+    const resp = await fetch('/v1/models');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const models = data.models || [];
+    if (!models.length) {
+      modelSelect.innerHTML = '<option value="">no models pulled</option>';
+      if (modelHint) modelHint.textContent = 'Pull one: docker model pull ai/qwen2.5';
+      return;
+    }
+    modelSelect.innerHTML = '';
+    for (const m of models) {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      const bits = [shortModelName(m.id)];
+      if (m.params) bits.push(String(m.params).trim());
+      if (m.context) bits.push(Math.round(m.context / 1000) + 'k ctx');
+      if (m.id === data.recommended) bits.push('★');
+      opt.textContent = bits.join(' · ');
+      if (m.id === data.active) opt.selected = true;
+      modelSelect.appendChild(opt);
+    }
+    if (modelHint) {
+      const rec = data.recommended ? shortModelName(data.recommended) : '—';
+      modelHint.textContent = `RAM ${data.ram_gb || '?'} GB · ★ recommended: ${rec}`;
+    }
+  } catch (err) { console.error('models load', err); }
+}
+
+async function selectModel() {
+  const model = modelSelect.value;
+  if (!model) return;
+  try {
+    const resp = await fetch('/v1/models/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    if (!resp.ok) { setStatus('MODEL SWITCH FAILED', 'var(--red)'); return; }
+    setStatus('MODEL → ' + shortModelName(model), 'var(--teal-bright)');
+  } catch (err) { console.error('model select', err); setStatus('MODEL SWITCH FAILED', 'var(--red)'); }
+}
+
+if (modelSelect) {
+  modelSelect.addEventListener('change', selectModel);
+  loadModels();
 }
 
 // ── Credentials vault (names only; values never leave the vault) ─
