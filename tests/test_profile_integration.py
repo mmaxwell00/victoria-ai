@@ -70,7 +70,10 @@ def test_build_system_prompt_empty_profile_unchanged():
     manager = _make_manager(profile_store=profile_store)
     result = manager._build_system_prompt("hello", "sess-1", "mark")
 
-    assert result == VICTORIA_SYSTEM_PROMPT
+    # Empty profile adds no profile context; the persona still leads the prompt.
+    # (A skills section is appended unconditionally — see test_skills.py.)
+    assert result.startswith(VICTORIA_SYSTEM_PROMPT)
+    assert "Relevant context from past conversations" not in result
 
 
 # ------------------------------------------------------------------ #

@@ -14,9 +14,15 @@ load_all_tools()
 # Registry tests
 # ---------------------------------------------------------------------------
 
+CORE_TOOLS = {"web_search", "get_weather", "get_datetime", "calculate"}
+SKILL_TOOLS = {"use_skill", "save_skill", "list_skills", "delete_skill"}
+
+
 def test_registry_registers_tool():
-    """After load_all_tools(), the registry should contain exactly 4 tools."""
-    assert len(registry) == 4
+    """After load_all_tools(), the registry contains the core + skill tools."""
+    names = set(registry._tools)
+    assert CORE_TOOLS <= names
+    assert SKILL_TOOLS <= names
 
 
 async def test_registry_execute_unknown_tool():
@@ -72,7 +78,7 @@ def test_get_datetime_invalid_tz():
 def test_anthropic_tools_format():
     tools = registry.get_anthropic_tools()
     assert isinstance(tools, list)
-    assert len(tools) == 4
+    assert len(tools) == len(registry._tools)
     for tool in tools:
         assert "name" in tool
         assert "description" in tool
@@ -82,7 +88,7 @@ def test_anthropic_tools_format():
 def test_ollama_tools_format():
     tools = registry.get_ollama_tools()
     assert isinstance(tools, list)
-    assert len(tools) == 4
+    assert len(tools) == len(registry._tools)
     for tool in tools:
         assert tool.get("type") == "function"
         assert "function" in tool
