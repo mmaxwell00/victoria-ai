@@ -33,8 +33,8 @@ def test_detect_explicit_memory_remember():
 
 def test_detect_explicit_memory_dont_forget():
     extractor = _make_extractor()
-    result = extractor.detect_explicit_memory("don't forget that I'm based in Alabama")
-    assert result == "I'm based in Alabama"
+    result = extractor.detect_explicit_memory("don't forget that I'm using metric units")
+    assert result == "I'm using metric units"
 
 
 def test_detect_explicit_memory_note_that():

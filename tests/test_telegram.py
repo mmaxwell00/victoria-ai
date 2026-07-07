@@ -33,7 +33,7 @@ def bot():
     return VictoriaTelegramBot(manager=manager)
 
 
-def _make_update(text="hello", user_id=42, first_name="Mark"):
+def _make_update(text="hello", user_id=42, first_name="Alex"):
     update = MagicMock()
     update.effective_user.id = user_id
     update.effective_user.first_name = first_name
@@ -60,7 +60,7 @@ async def test_cmd_start_greets_user(bot):
     await bot.cmd_start(update, ctx)
     update.message.reply_text.assert_called_once()
     call_text = update.message.reply_text.call_args[0][0]
-    assert "Mark" in call_text
+    assert "Alex" in call_text
     assert "Victoria" in call_text
 
 

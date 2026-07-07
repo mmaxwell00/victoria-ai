@@ -52,7 +52,7 @@ class ProfileExtractor:
 
         Examples:
           "remember that I prefer bullet points" → "I prefer bullet points"
-          "don't forget that I'm based in Alabama" → "I'm based in Alabama"
+          "don't forget that I'm using metric units" → "I'm using metric units"
           "what's the weather?" → None
         """
         msg = message.strip()

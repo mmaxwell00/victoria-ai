@@ -13,20 +13,20 @@ def store():
 
 
 def test_create_session(store):
-    session = store.get_or_create_session("sess-1", user_id="mark", channel="api")
+    session = store.get_or_create_session("sess-1", user_id="alex", channel="api")
     assert session["id"] == "sess-1"
-    assert session["user_id"] == "mark"
+    assert session["user_id"] == "alex"
 
 
 def test_idempotent_session(store):
-    store.get_or_create_session("sess-1", user_id="mark")
-    store.get_or_create_session("sess-1", user_id="mark")
-    sessions = store.list_sessions("mark")
+    store.get_or_create_session("sess-1", user_id="alex")
+    store.get_or_create_session("sess-1", user_id="alex")
+    sessions = store.list_sessions("alex")
     assert len(sessions) == 1
 
 
 def test_add_and_retrieve_messages(store):
-    store.get_or_create_session("sess-2", user_id="mark")
+    store.get_or_create_session("sess-2", user_id="alex")
     store.add_message("sess-2", "user", "Hello Victoria")
     store.add_message("sess-2", "assistant", "Hello, darling!", llm_used="ollama")
 
@@ -37,7 +37,7 @@ def test_add_and_retrieve_messages(store):
 
 
 def test_history_limit(store):
-    store.get_or_create_session("sess-3", user_id="mark")
+    store.get_or_create_session("sess-3", user_id="alex")
     for i in range(30):
         store.add_message("sess-3", "user", f"msg {i}")
 

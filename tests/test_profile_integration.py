@@ -34,7 +34,7 @@ def _make_manager(
     )
 
 
-def _make_profile(name="Mark", empty=False):
+def _make_profile(name="Alex", empty=False):
     profile = MagicMock()
     profile.name = name
     profile.is_empty = MagicMock(return_value=empty)
@@ -52,14 +52,14 @@ def _make_profile(name="Mark", empty=False):
 # ------------------------------------------------------------------ #
 
 def test_build_system_prompt_includes_profile():
-    profile = _make_profile(name="Mark")
+    profile = _make_profile(name="Alex")
     profile_store = MagicMock()
     profile_store.get = MagicMock(return_value=profile)
 
     manager = _make_manager(profile_store=profile_store)
-    result = manager._build_system_prompt("hello", "sess-1", "mark")
+    result = manager._build_system_prompt("hello", "sess-1", "alex")
 
-    assert "Mark" in result
+    assert "Alex" in result
 
 
 def test_build_system_prompt_empty_profile_unchanged():
@@ -68,7 +68,7 @@ def test_build_system_prompt_empty_profile_unchanged():
     profile_store.get = MagicMock(return_value=profile)
 
     manager = _make_manager(profile_store=profile_store)
-    result = manager._build_system_prompt("hello", "sess-1", "mark")
+    result = manager._build_system_prompt("hello", "sess-1", "alex")
 
     # Empty profile adds no profile context; the persona still leads the prompt.
     # (A skills section is appended unconditionally — see test_skills.py.)
@@ -114,7 +114,7 @@ async def test_chat_detects_explicit_memory():
 @pytest.mark.asyncio
 async def test_chat_fires_background_profile_update():
     profile = _make_profile()
-    updated_profile = _make_profile(name="Mark Updated")
+    updated_profile = _make_profile(name="Alex Updated")
     updated_profile.is_empty = MagicMock(return_value=False)
 
     profile_extractor = MagicMock()
@@ -149,7 +149,7 @@ async def test_chat_fires_background_profile_update():
 @pytest.mark.asyncio
 async def test_stream_chat_fires_background_profile_update():
     profile = _make_profile()
-    updated_profile = _make_profile(name="Mark Updated")
+    updated_profile = _make_profile(name="Alex Updated")
     updated_profile.is_empty = MagicMock(return_value=False)
 
     profile_extractor = MagicMock()
@@ -189,7 +189,7 @@ async def test_stream_chat_fires_background_profile_update():
 # Telegram command handlers                                            #
 # ------------------------------------------------------------------ #
 
-def _make_update(text="hello", user_id=42, first_name="Mark"):
+def _make_update(text="hello", user_id=42, first_name="Alex"):
     update = MagicMock()
     update.effective_user.id = user_id
     update.effective_user.first_name = first_name
@@ -260,7 +260,7 @@ async def test_telegram_cmd_forget_not_found():
 async def test_telegram_cmd_profile_with_data():
     profile = MagicMock()
     profile.to_system_context = MagicMock(
-        return_value="About this user:\nThe user's name is Mark."
+        return_value="About this user:\nThe user's name is Alex."
     )
 
     profile_store = MagicMock()
@@ -273,7 +273,7 @@ async def test_telegram_cmd_profile_with_data():
     await bot.cmd_profile(update, ctx)
 
     call_text = update.message.reply_text.call_args[0][0]
-    assert "Mark" in call_text
+    assert "Alex" in call_text
 
 
 @pytest.mark.asyncio

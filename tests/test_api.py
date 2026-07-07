@@ -86,7 +86,7 @@ async def test_stream_endpoint(client):
 @pytest.mark.asyncio
 async def test_sessions_endpoint(client):
     async with client as c:
-        resp = await c.get("/v1/sessions/mark")
+        resp = await c.get("/v1/sessions/alex")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
 

@@ -129,7 +129,7 @@ async def test_piper_synthesize_uses_synthesize_wav():
 )
 async def test_piper_synthesize_real_model_produces_wav():
     from victoria.voice.tts.piper_tts import PiperTTSEngine
-    audio, mime = await PiperTTSEngine().synthesize("Hello Mark.")
+    audio, mime = await PiperTTSEngine().synthesize("Hello Alex.")
     assert mime == "audio/wav"
     assert audio[:4] == b"RIFF"
     assert len(audio) > 1000
