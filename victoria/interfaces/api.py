@@ -138,6 +138,41 @@ async def transcribe(audio: UploadFile = File(...)):
     return {"text": text}
 
 
+class SecretRequest(BaseModel):
+    name: str
+    value: str
+
+
+@router.get("/vault")
+async def vault_list():
+    """List stored secret NAMES only — values are never returned."""
+    from victoria.vault.store import get_vault
+    return {"names": get_vault().names()}
+
+
+@router.post("/vault")
+async def vault_set(req: SecretRequest):
+    """Store (insert/replace) a secret. The value is written straight to the
+    encrypted vault and never echoed back or logged."""
+    from victoria.vault.store import get_vault
+    name = req.name.strip()
+    if not name or not req.value:
+        raise HTTPException(status_code=400, detail="name and value are required")
+    try:
+        get_vault().set(name, req.value)
+    except Exception as exc:
+        logger.exception("Vault store failed")
+        raise HTTPException(status_code=500, detail=f"Could not store secret: {exc}")
+    return {"ok": True, "name": name, "names": get_vault().names()}
+
+
+@router.delete("/vault/{name}")
+async def vault_delete(name: str):
+    from victoria.vault.store import get_vault
+    removed = get_vault().delete(name)
+    return {"ok": removed, "names": get_vault().names()}
+
+
 @router.post("/tts")
 async def tts(req: TTSRequest):
     """Synthesize speech for *text* and return the audio bytes."""
