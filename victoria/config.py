@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     db_path: str = "data/victoria.db"
     chromadb_path: str = "data/chromadb"
 
+    # Skills — reusable instruction sets Victoria can apply and create.
+    # Stored as Markdown files in this directory (persist across sessions).
+    skills_path: str = "skills"
+
     # Voice (Week 5)
     tts_engine: Literal["piper", "elevenlabs"] = "piper"
     elevenlabs_api_key: str = ""

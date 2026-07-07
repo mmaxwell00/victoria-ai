@@ -383,7 +383,10 @@ class LLMRouter:
             choice = data["choices"][0]
             last_message = choice["message"]
             tool_calls = last_message.get("tool_calls") or []
-            if not tool_calls or choice.get("finish_reason") == "stop":
+            # Execute tools whenever they're present — the Model Runner may tag
+            # the turn finish_reason "stop" even alongside tool_calls, so don't
+            # gate on finish_reason or the calls get silently dropped.
+            if not tool_calls:
                 return last_message.get("content") or ""
             working_messages.append(last_message)
             for tc in tool_calls:

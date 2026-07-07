@@ -47,6 +47,7 @@ class ToolRegistry:
 
     async def execute(self, name: str, **kwargs) -> str:
         """Execute a tool by name. Returns string result or error message."""
+        logger.info("Tool call: %s(%s)", name, ", ".join(kwargs))
         if name not in self._tools:
             return f"Unknown tool: {name}"
         try:

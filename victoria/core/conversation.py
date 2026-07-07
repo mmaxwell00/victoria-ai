@@ -44,6 +44,36 @@ def _escalation_alpha(text: str) -> str:
 # The bracketed token, tolerant of spacing/case: "[ESCALATE]", "[ escalate ]".
 _SENTINEL_RE = re.compile(r"\[\s*escalate\s*\]", re.IGNORECASE)
 
+# A fenced ```skill ... ``` block the model emits when drafting a new skill.
+_SKILL_BLOCK_RE = re.compile(r"```skill\s*\n(.*?)```", re.DOTALL | re.IGNORECASE)
+
+
+def _parse_skill_block(text: str) -> dict | None:
+    """Extract {name, description, instructions} from a ```skill block, if present."""
+    m = _SKILL_BLOCK_RE.search(text or "")
+    if not m:
+        return None
+    name = description = ""
+    instr: list[str] = []
+    mode = None
+    for line in m.group(1).splitlines():
+        low = line.strip().lower()
+        if low.startswith("name:"):
+            name, mode = line.split(":", 1)[1].strip(), None
+        elif low.startswith("description:"):
+            description, mode = line.split(":", 1)[1].strip(), None
+        elif low.startswith("instructions:"):
+            rest = line.split(":", 1)[1].strip()
+            mode = "instr"
+            if rest and rest != "|":
+                instr.append(rest)
+        elif mode == "instr":
+            instr.append(line)
+    instructions = "\n".join(instr).strip()
+    if name and instructions:
+        return {"name": name, "description": description, "instructions": instructions}
+    return None
+
 # When the user declines escalation, the local model answers best-effort and
 # must NOT emit the escalation token (we don't want to re-offer in a loop).
 _BEST_EFFORT_INSTRUCTION = (
@@ -95,6 +125,74 @@ class ConversationManager:
         return settings.default_llm if settings.default_llm in ("docker", "ollama") else "docker"
 
     @staticmethod
+    def _is_skill_request(message: str) -> bool:
+        """True for requests about skills — routed to a local, no-escalation turn."""
+        return "skill" in (message or "").lower()
+
+    @staticmethod
+    def _skill_intent(message: str) -> str:
+        """Classify a skill request: 'create' | 'list' | 'delete' | 'use'."""
+        m = (message or "").lower()
+        if any(p in m for p in ("what skill", "which skill", "list skill", "your skill",
+                                 "skills do you", "have any skill", "see your skill",
+                                 "show me your skill", "what can you do")):
+            return "list"
+        if any(w in m for w in ("delete", "remove", "forget")):
+            return "delete"
+        if any(w in m for w in ("create", "make", "save", "add ", "new skill", "build", "teach you")):
+            return "create"
+        return "use"
+
+    async def _handle_skill_request(self, session_id, user_id, user_message, history) -> tuple[str, str]:
+        """Handle a skill request locally (never escalates). Returns (response, backend)."""
+        from victoria.tools import skills_tools
+        from victoria.skills.store import skill_store, slugify
+
+        intent = self._skill_intent(user_message)
+        logger.info("Skill request intent=%s: %r", intent, user_message)
+
+        # List / delete are deterministic — don't rely on the model.
+        if intent == "list":
+            index = skill_store.index()
+            return (("Here are my skills:\n" + index) if index
+                    else "I've no saved skills yet — ask me to create one.", "victoria")
+        if intent == "delete":
+            for s in skill_store.list():
+                if slugify(s.name) in slugify(user_message) or s.name.lower() in user_message.lower():
+                    skill_store.delete(s.name)
+                    return (f"Done — I've deleted the '{s.name}' skill.", "victoria")
+            return ("Which skill should I delete? I have: "
+                    + (", ".join(skill_store.names()) or "none"), "victoria")
+
+        # Create / use → run the local model.
+        local_backend = self._local_backend()
+        system_prompt = self._build_system_prompt(user_message, session_id, user_id)
+        try:
+            response, backend = await self._local_answer(history, system_prompt, local_backend)
+        except Exception:
+            logger.exception("Skill request failed")
+            response, backend = "", local_backend
+        response = _SENTINEL_RE.sub("", response or "").strip()
+
+        if intent == "create":
+            draft = _parse_skill_block(response)
+            if draft and not skills_tools.has_staged_skill():
+                skills_tools.stage_skill(**draft)
+            if skills_tools.has_staged_skill():
+                d = skills_tools.peek_staged_skill()
+                response = (
+                    f"Here's the skill I'll save:\n\n"
+                    f"**{d['name']}** — {d['description']}\n\n{d['instructions']}\n\n"
+                    f"Shall I save it? (yes / no)"
+                )
+        else:  # use → strip any stray draft block the model may have emitted
+            response = _SKILL_BLOCK_RE.sub("", response).strip()
+
+        if not response:
+            response = "I had a spot of trouble with that skill request — do try rephrasing."
+        return response, backend
+
+    @staticmethod
     def _is_escalation_signal(text: str) -> bool:
         """True when *text* as a whole IS the escalation sentinel, matched loosely.
 
@@ -143,6 +241,35 @@ class ConversationManager:
             "I'm afraid that one's rather beyond my local wits just now. "
             "Shall I put it to Claude for a proper answer? (yes / no)"
         )
+
+    def _staged_skill_decision(self, user_message: str):
+        """Resolve a reply to a staged (draft) skill awaiting confirmation.
+
+        Returns None if nothing is staged, else a tuple (outcome, reply):
+        ('saved'|'discarded', text) when handled, or ('fall_through', None)
+        when the reply wasn't yes/no (the draft is dropped and the message is
+        treated as a normal new turn).
+        """
+        from victoria.tools import skills_tools
+        if not skills_tools.has_staged_skill():
+            return None
+        decision = self._classify_reply(user_message)
+        if decision == "yes":
+            from victoria.skills.store import skill_store
+            draft = skills_tools.pop_staged_skill() or {}
+            try:
+                skill = skill_store.save(**draft)
+                return ("saved", f"Brilliant — I've saved the '{skill.name}' skill. "
+                                 f"I'll reach for it whenever it fits.")
+            except Exception:
+                logger.exception("Saving staged skill failed")
+                return ("saved", "I tried to save that skill but something went sideways — "
+                                 "nothing was written, I'm afraid.")
+        if decision == "no":
+            skills_tools.pop_staged_skill()
+            return ("discarded", "Right, I've binned that draft — nothing saved.")
+        skills_tools.pop_staged_skill()   # ambiguous reply → drop draft, treat as new turn
+        return ("fall_through", None)
 
     async def _local_answer(self, history, system_prompt, force_backend):
         """Run the local model (with tools if available). Returns (text, backend)."""
@@ -230,7 +357,67 @@ class ConversationManager:
                 context = "\n".join(f"- {m['content'][:200]}" for m in memories)
                 base = base + f"\n\nRelevant context from past conversations:\n{context}"
 
+        # 3. Inject skills — the index (always) plus full instructions for any
+        #    skill relevant to this message (so she can apply it without needing
+        #    a tool call, which small local models do unreliably).
+        base = base + self._skills_prompt()
+        for skill in self._relevant_skills(user_message):
+            base += (f"\n\nA saved skill applies here — follow its instructions:\n"
+                     f"SKILL '{skill.name}':\n{skill.instructions}")
+
         return base
+
+    @staticmethod
+    def _skills_prompt() -> str:
+        """The skills section of the system prompt (index + how to create)."""
+        try:
+            from victoria.skills.store import skill_store
+            index = skill_store.index()
+        except Exception:
+            index = ""
+        note = (
+            "\n\nSKILLS — reusable instruction sets you can apply and create. "
+            "Skill requests are ALWAYS handled locally — never escalate them.\n"
+            "To CREATE a skill when the user asks, reply with the drafted skill in a "
+            "fenced block EXACTLY in this form (then ask the user to confirm):\n"
+            "```skill\n"
+            "name: kebab-case-name\n"
+            "description: one line on what it does and when to use it\n"
+            "instructions:\n"
+            "  1. first step\n"
+            "  2. second step\n"
+            "```\n"
+            "Do not save anything yourself — the app stages the draft from that block "
+            "and saves it once the user confirms."
+        )
+        if index:
+            note += "\nYour saved skills (their full instructions are injected when relevant):\n" + index
+        else:
+            note += "\nYou have no saved skills yet."
+        return note
+
+    @staticmethod
+    def _relevant_skills(message: str) -> list:
+        """Saved skills that appear relevant to *message* (name or keyword match)."""
+        try:
+            from victoria.skills.store import skill_store, slugify
+        except Exception:
+            return []
+        msg = (message or "").lower()
+        msg_slug = slugify(message or "")
+        stop = {"the", "a", "an", "and", "or", "for", "with", "into", "from", "your",
+                "user", "skill", "that", "this", "when", "them", "into", "list"}
+        relevant = []
+        for skill in skill_store.list():
+            name_tokens = [t for t in re.split(r"[^a-z0-9]+", skill.name.lower()) if len(t) > 3]
+            if slugify(skill.name) in msg_slug or any(t in msg for t in name_tokens):
+                relevant.append(skill)
+                continue
+            desc_tokens = {t for t in re.split(r"[^a-z0-9]+", skill.description.lower())
+                           if len(t) > 3 and t not in stop}
+            if sum(1 for t in desc_tokens if t in msg) >= 2:
+                relevant.append(skill)
+        return relevant[:2]
 
     async def chat(
         self,
@@ -245,6 +432,21 @@ class ConversationManager:
 
         history = self.memory.get_history(session_id)
         history.append({"role": "user", "content": user_message})
+
+        # --- Confirm/discard a staged (draft) skill -----------------------
+        staged = self._staged_skill_decision(user_message)
+        if staged and staged[0] in ("saved", "discarded"):
+            self.memory.add_message(session_id, "user", user_message)
+            self.memory.add_message(session_id, "assistant", staged[1], llm_used="victoria")
+            return {"session_id": session_id, "response": staged[1], "backend": "victoria"}
+
+        # --- Skill request → local tool-calling turn (never escalates) ----
+        if self._is_skill_request(user_message):
+            self.memory.add_message(session_id, "user", user_message)
+            response, backend = await self._handle_skill_request(
+                session_id, user_id, user_message, history
+            )
+            return self._finalize(session_id, user_id, user_message, response, backend)
 
         # --- Reply to a pending "shall I escalate?" prompt ----------------
         if settings.escalation_enabled and session_id in self._pending_escalation:
@@ -318,6 +520,29 @@ class ConversationManager:
         history.append({"role": "user", "content": user_message})
 
         self.memory.add_message(session_id, "user", user_message)
+
+        # --- Confirm/discard a staged (draft) skill -----------------------
+        staged = self._staged_skill_decision(user_message)
+        if staged and staged[0] in ("saved", "discarded"):
+            self.memory.add_message(session_id, "assistant", staged[1], llm_used="victoria")
+            yield {"session_id": session_id, "chunk": staged[1], "backend": "victoria", "done": False}
+            yield {"session_id": session_id, "chunk": "", "backend": "victoria", "done": True}
+            return
+
+        # --- Skill request → local tool-calling turn (never escalates) ----
+        # The streaming backend can't call tools, so run the non-streaming
+        # tool-calling turn and emit the result as one chunk.
+        if self._is_skill_request(user_message):
+            response, backend = await self._handle_skill_request(
+                session_id, user_id, user_message, history
+            )
+            self.memory.add_message(session_id, "assistant", response, llm_used=backend)
+            if self.semantic_memory:
+                self.semantic_memory.add(session_id, "user", user_message)
+                self.semantic_memory.add(session_id, "assistant", response)
+            yield {"session_id": session_id, "chunk": response, "backend": backend, "done": False}
+            yield {"session_id": session_id, "chunk": "", "backend": backend, "done": True}
+            return
 
         # --- Reply to a pending "shall I escalate?" prompt ----------------
         if settings.escalation_enabled and session_id in self._pending_escalation:
