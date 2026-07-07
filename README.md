@@ -33,7 +33,8 @@ victoria-ai/
 │   │   ├── calculator.py       # Safe AST-based math evaluator
 │   │   └── skills_tools.py     # Skill use/save/list/delete tools
 │   ├── skills/
-│   │   └── store.py            # SkillStore — Markdown skill files (CRUD)
+│   │   ├── store.py            # SkillStore — Markdown skill files (CRUD)
+│   │   └── importer.py         # Fetch + discover skills from a GitHub repo/URL
 │   └── voice/
 │       ├── conversation.py     # Voice session loop
 │       ├── wake_word.py        # "Hello Victoria" wake word detection
@@ -89,8 +90,11 @@ Skills are named, reusable instruction sets — Markdown files in `skills/` — 
 - **Use (auto + explicit):** she sees a short index of every skill each turn; when a skill is relevant (you name it, or it matches the request) its full instructions are injected and she follows them. Ships with `email-drafter` and `meeting-summariser`.
 - **Create (draft → confirm → save):** *"Create a skill called standup-update that formats my day into Yesterday / Today / Blockers."* She drafts the name, description, and steps, shows them, and asks — it's saved only after you say **yes**.
 - **List / delete:** *"What skills do you have?"* / *"Delete the standup-update skill."*
+- **Import from GitHub (review first):** *"Import skills from https://github.com/you/skills-repo"* → she shallow-clones the repo, finds skill files, and lists what she found **without saving anything**. You then reply `add all`, `add <name>`, `show <name>` (to read its full instructions first), or `no`. Imported skills are namespaced under `skills/imported/<repo>/` and never overwrite a skill you already have. Works with both flat `*.md` skills and the Claude/Anthropic `skill-name/SKILL.md` folder format; single-file URLs (`.../blob/.../thing.md`) work too.
 
 Skills stay on the local model (they never escalate to the cloud), and creation uses a structured draft the app parses — no reliance on flaky tool-calling. Edit any skill by hand in `skills/*.md`.
+
+> **Trust note:** an imported skill is text that gets injected into Victoria's prompt and followed, so only import from repositories you trust — the review step (and the fact that skills are instructions-only, never executed code) is your safeguard.
 
 ### Local-first escalation (ask before going to the cloud)
 
