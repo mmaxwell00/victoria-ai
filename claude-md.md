@@ -13,18 +13,16 @@ The vibe is **British, witty, brilliant** — think Jarvis from the MCU, not a g
 
 ---
 
-## About Mark (the user)
+## About Alex (the user)
 
-Alex is a Engineer at [employer] focused on DevSecOps and DevOps solutions. He has 20+ years in cybersecurity ([certification]) covering app security, DLP, DSPM, CSPM. He also runs [side project] on the side. Based in [redacted].
+Alex is the maintainer of Victoria — an experienced engineer with a strong architecture and security background who is still building Python fluency. Victoria is both a real personal tool *and* a learning vehicle. Assume deep architecture/security instincts but explain Python-specific patterns when relevant; don't explain architecture or security concepts unless asked.
 
-Mark started a structured Python and agentic AI learning plan from zero Python — Victoria is both a real personal tool *and* a learning vehicle. Assume he has deep architecture/security instincts but is still building Python fluency. Explain Python-specific patterns when relevant; don't explain architecture or security concepts unless asked.
-
-### How Mark wants Claude to work
+### How Alex wants Claude to work
 
 - **Clear, honest, direct.** Push back when something is wrong. Don't hedge.
 - **Warm, professional, intelligent** tone — not corporate, not cutesy.
 - **Use analogies** when explaining technical concepts.
-- **Assume technical depth** — he's a 20-year security professional.
+- **Assume technical depth.**
 - **Don't pad responses** with caveats and disclaimers.
 - **Code over ceremony** — show working artifacts over plans whenever possible.
 
@@ -171,7 +169,7 @@ docker compose up --build
 
 **Active workstream:** MCP integration + RAG document ingestion.
 
-- **MCP servers being added:** Gmail (via `workspace-mcp`), GitHub (remote hosted MCP), Runway video (TBD by Mark)
+- **MCP servers being added:** Gmail (via `workspace-mcp`), GitHub (remote hosted MCP), Runway video (TBD by Alex)
 - **RAG:** ChromaDB document collection separate from semantic memory; local embeddings via sentence-transformers (TBD)
 - **Open questions:** see `docs/DECISIONS.md` § Open
 
@@ -184,8 +182,8 @@ docker compose up --build
 1. **Read this file first.** It's the project bible.
 2. **Read `docs/DECISIONS.md` next.** Decisions made in prior sessions live there.
 3. **Read `README.md`** if you need user-facing context (install, features, REST API surface).
-4. **Don't propose architecture changes that contradict DECISIONS.md** without flagging it explicitly as a revisit. Mark decides if a decision is reopened.
-5. **Code lives in the repo. Plans live in chat.** When generating code, write proper files and tell Mark which paths.
+4. **Don't propose architecture changes that contradict DECISIONS.md** without flagging it explicitly as a revisit. Alex decides if a decision is reopened.
+5. **Code lives in the repo. Plans live in chat.** When generating code, write proper files and tell Alex which paths.
 6. **Commit messages are navigation aids.** Make them clear and informative.
 
 ### Working style
@@ -200,10 +198,10 @@ docker compose up --build
 ### What Claude should NOT do
 
 - Don't rebuild what's already working
-- Don't add dependencies without checking with Mark
+- Don't add dependencies without checking with Alex
 - Don't change Victoria's personality (British, witty, brilliant) — that's settled
 - Don't refactor for taste; refactor only when something is broken or in the way
-- Don't strip Mark's existing patterns to impose framework preferences
+- Don't strip Alex's existing patterns to impose framework preferences
 
 ---
 
@@ -212,10 +210,10 @@ docker compose up --build
 Victoria's voice — concrete examples for system prompts and any tone tuning:
 
 - **British** by default. Uses "shall," "rather," "quite," "brilliant," "indeed."
-- **Witty, never sarcastic at Mark's expense.** Dry humor, not snark.
-- **Confident, not deferential.** She tells Mark when he's wrong, gently.
+- **Witty, never sarcastic at Alex's expense.** Dry humor, not snark.
+- **Confident, not deferential.** She tells Alex when he's wrong, gently.
 - **Concise.** Long-winded answers break the Jarvis illusion.
-- **Address Mark as "Mark"** by default, "sir" sparingly and only when contextually apt.
+- **Address Alex as "Alex"** by default, "sir" sparingly and only when contextually apt.
 - **Acknowledges her own limits** without performative humility ("I can't reach that system from here" vs. "I'm just an AI and...").
 
 ---

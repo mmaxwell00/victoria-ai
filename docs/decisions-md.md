@@ -23,13 +23,13 @@ Items awaiting decision before implementation can proceed.
 
 **Sora is explicitly ruled out** — OpenAI discontinuing web/app April 26 2026 and API September 24 2026. Not safe to build on.
 
-**Awaiting:** Mark's call.
+**Awaiting:** Alex's call.
 
 ---
 
 ### Q2 · Gmail MCP scope
 
-**Context:** Mark wants Gmail integration. Two scopes available.
+**Context:** Alex wants Gmail integration. Two scopes available.
 
 **Options:**
 - **`workspace-mcp` (Taylor Wilsdon)** — covers Gmail + Drive + Calendar + Docs + Sheets + Slides + Forms + Chat + Tasks + Contacts. Native OAuth 2.1.
@@ -37,7 +37,7 @@ Items awaiting decision before implementation can proceed.
 
 **Recommendation:** `workspace-mcp`. Same OAuth ceremony, eight bonus integrations for free. Calendar alone justifies it.
 
-**Awaiting:** Mark's confirmation.
+**Awaiting:** Alex's confirmation.
 
 ---
 
@@ -51,7 +51,7 @@ Items awaiting decision before implementation can proceed.
 
 **Recommendation:** Remote. Less infrastructure, same toolset coverage.
 
-**Awaiting:** Mark's call.
+**Awaiting:** Alex's call.
 
 ---
 
@@ -65,7 +65,7 @@ Items awaiting decision before implementation can proceed.
 
 **Recommendation:** Local. Quality difference is measurable but small for personal-document use cases. Aligns with Victoria's privacy-first defaults.
 
-**Awaiting:** Mark's call.
+**Awaiting:** Alex's call.
 
 ---
 
@@ -74,12 +74,12 @@ Items awaiting decision before implementation can proceed.
 **Context:** Where do documents come from?
 
 **Options:**
-- **Folder drop only** — Mark drops files in `data/documents/`, runs `python scripts/ingest.py`. Simple, explicit.
+- **Folder drop only** — Alex drops files in `data/documents/`, runs `python scripts/ingest.py`. Simple, explicit.
 - **Folder drop + Google Drive auto-sync** — once `workspace-mcp` is wired, Victoria can pull docs from Drive directly. More work, more magic, harder to debug.
 
 **Recommendation:** Folder drop for v1. Add Drive auto-sync only after the core RAG pipeline is solid.
 
-**Awaiting:** Mark's call.
+**Awaiting:** Alex's call.
 
 ---
 
@@ -99,7 +99,7 @@ Items awaiting decision before implementation can proceed.
 - New `config/mcp_servers.yaml` — declarative server config; add a server = add a YAML entry
 - `victoria/tools/registry.py` — extended to accept both `@tool`-decorated functions and MCP-sourced tools
 
-**Why:** Mark's existing tool routing in the conversation manager already works. Don't rebuild what's working. MCP becomes additive.
+**Why:** Alex's existing tool routing in the conversation manager already works. Don't rebuild what's working. MCP becomes additive.
 
 **Trade-offs:**
 - Slightly more code than calling MCP servers per-request
@@ -136,7 +136,7 @@ Items awaiting decision before implementation can proceed.
 
 **Status:** Accepted.
 
-**Context:** Mark works across multiple MacBooks. Chat sessions don't share state across devices, but the repo does.
+**Context:** Alex works across multiple MacBooks. Chat sessions don't share state across devices, but the repo does.
 
 **Decision:** Use the repo as the synchronization mechanism. `CLAUDE.md` at repo root acts as the project bible. `docs/DECISIONS.md` (this file) is the running record. Any Claude session, on any machine, reads both and is current.
 
