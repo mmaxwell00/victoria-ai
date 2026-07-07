@@ -4,6 +4,8 @@ A personal Jarvis-style AI assistant — British, witty, and built to learn your
 
 Victoria runs on your own hardware, costs nothing by default (local LLM via Docker Model Runner or Ollama), and learns your preferences across every conversation. Talk to her through a web chat UI, Telegram, a terminal, or your voice.
 
+![Victoria — the JARVIS-style HUD](docs/screenshots/hud.png)
+
 ---
 
 ## What's in this repo
@@ -103,6 +105,9 @@ Skills stay on the local model (they never escalate to the cloud), and creation 
 ### Credentials vault (secrets she uses but can't read)
 
 Victoria can hold API tokens/keys and inject them into endpoints **without ever knowing their values**. The vault is one-way from her side: values go in, and are only ever resolved at the transport edge — never in her prompt, tool calls, results, logs, or the API.
+
+<img src="docs/screenshots/vault-panel.png" width="340" alt="Credentials Vault panel — lists names only, value field is masked">
+
 
 - **Encrypted at rest** (Fernet) under a master key kept in the **macOS Keychain** (falls back to `VICTORIA_VAULT_KEY` or a `0600` key file). The store is `data/vault.enc` (git-ignored).
 - **Add/manage** secrets from the **Credentials Vault** panel in the web HUD — the value is typed into a masked field and posted straight to the vault (never through chat). The panel only ever lists **names**, each with a delete button; values are never shown.
@@ -252,6 +257,11 @@ The interface is a full-screen dark HUD inspired by the Iron Man JARVIS OS — d
 - Credentials Vault (see below)
 - Active tools list
 - Last response status
+
+<img src="docs/screenshots/model-selector.png" width="340" alt="Local model selector with a RAM-based recommendation">
+
+
+
 
 **Talk to her (voice in the browser)**
 
