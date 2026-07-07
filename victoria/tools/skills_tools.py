@@ -34,6 +34,27 @@ def peek_staged_skill() -> dict | None:
     return dict(_staged_skill) if _staged_skill else None
 
 
+# Skills fetched from a GitHub URL, awaiting the user's review before adding.
+_pending_imports: dict = {}   # {"source": str, "skills": [ {name, description, instructions, source} ]}
+
+
+def stage_imports(source: str, skills: list) -> None:
+    _pending_imports.clear()
+    _pending_imports.update(source=source, skills=list(skills))
+
+
+def peek_imports() -> dict | None:
+    return dict(_pending_imports) if _pending_imports else None
+
+
+def clear_imports() -> None:
+    _pending_imports.clear()
+
+
+def has_pending_imports() -> bool:
+    return bool(_pending_imports)
+
+
 @registry.tool(
     name="use_skill",
     description=(

@@ -127,12 +127,20 @@ class ConversationManager:
     @staticmethod
     def _is_skill_request(message: str) -> bool:
         """True for requests about skills — routed to a local, no-escalation turn."""
-        return "skill" in (message or "").lower()
+        m = (message or "").lower()
+        if "skill" in m:
+            return True
+        # "import/ingest ... <github url>" without the word "skill"
+        if ("http://" in m or "https://" in m) and any(w in m for w in ("import", "ingest")):
+            return True
+        return False
 
     @staticmethod
     def _skill_intent(message: str) -> str:
-        """Classify a skill request: 'create' | 'list' | 'delete' | 'use'."""
+        """Classify a skill request: 'import' | 'create' | 'list' | 'delete' | 'use'."""
         m = (message or "").lower()
+        if "http://" in m or "https://" in m:   # a URL alongside a skill request → import
+            return "import"
         if any(p in m for p in ("what skill", "which skill", "list skill", "your skill",
                                  "skills do you", "have any skill", "see your skill",
                                  "show me your skill", "what can you do")):
@@ -143,6 +151,95 @@ class ConversationManager:
             return "create"
         return "use"
 
+    async def _import_skills_for_review(self, user_message) -> tuple[str, str]:
+        """Fetch skills from a GitHub URL and stage them for the user to review.
+
+        Nothing is written yet — the confirmation gate saves on approval.
+        """
+        from victoria.tools import skills_tools
+        from victoria.skills import importer
+
+        url = importer.extract_url(user_message)
+        if not url:
+            return ("I need a GitHub URL to import from — pop one in and I'll take a look.", "victoria")
+        try:
+            skills = await importer.fetch_skills(url)
+        except importer.SkillImportError as exc:
+            return (f"I couldn't import from there: {exc}", "victoria")
+        except Exception as exc:
+            logger.exception("Skill import failed")
+            return (f"That import went sideways, I'm afraid: {exc}", "victoria")
+
+        skills_tools.stage_imports(url, skills)
+        lines = [f"- **{s['name']}** — {s['description'] or '(no description)'}" for s in skills]
+        return (
+            f"I found {len(skills)} skill{'s' if len(skills) != 1 else ''} in that repository "
+            f"(nothing saved yet):\n\n" + "\n".join(lines) +
+            "\n\nThese are external instructions, so do review them. Reply **add all** to import "
+            "them, **add <name>** for specific ones, **show <name>** to read a skill's full "
+            "instructions first, or **no** to cancel.",
+            "victoria",
+        )
+
+    def _import_decision(self, user_message: str):
+        """Resolve a reply while GitHub imports are pending review.
+
+        Returns None if nothing is pending, else (outcome, reply):
+        'added' / 'cancelled' / 'shown' when handled, or 'fall_through' to drop
+        the pending imports and treat the message normally.
+        """
+        from victoria.tools import skills_tools
+        from victoria.skills.store import skill_store, slugify
+        from victoria.skills.importer import repo_slug
+
+        pending = skills_tools.peek_imports()
+        if not pending:
+            return None
+        msg = (user_message or "").strip().lower()
+        skills = pending["skills"]
+
+        # "show <name>" — display full instructions, keep the imports pending.
+        if msg.startswith("show") or "show me" in msg:
+            for s in skills:
+                if slugify(s["name"]) in slugify(user_message) or s["name"].lower() in msg:
+                    return ("shown", f"**{s['name']}** — {s['description']}\n\n{s['instructions']}\n\n"
+                                     f"(Still pending — reply *add all*, *add {s['name']}*, or *no*.)")
+            return ("shown", "Which one? Use the exact skill name, e.g. *show " + skills[0]["name"] + "*.")
+
+        decision = self._classify_reply(user_message)
+        if decision == "no":
+            skills_tools.clear_imports()
+            return ("cancelled", "Righto — I've discarded those, nothing was added.")
+
+        subdir = f"imported/{repo_slug(pending['source'])}"
+        add_all = decision == "yes" or "add all" in msg or "import all" in msg or msg in ("all", "add")
+        chosen = skills if add_all else [
+            s for s in skills
+            if slugify(s["name"]) in slugify(user_message) or s["name"].lower() in msg
+        ]
+        if not chosen:
+            wants_add = add_all or "add" in msg or "import" in msg
+            if not wants_add:
+                # Doesn't look like a review reply → drop pending, handle normally.
+                skills_tools.clear_imports()
+                return ("fall_through", None)
+            return ("shown", "I wasn't sure which to add. Reply *add all*, *add <name>*, or *no*.")
+
+        saved, skipped = [], []
+        for s in chosen:
+            if skill_store.exists(s["name"]):
+                skipped.append(s["name"])
+                continue
+            skill_store.save(s["name"], s["description"], s["instructions"], subdir=subdir)
+            saved.append(s["name"])
+        skills_tools.clear_imports()
+        parts = []
+        if saved:
+            parts.append("Added: " + ", ".join(saved) + ".")
+        if skipped:
+            parts.append("Skipped (name already exists): " + ", ".join(skipped) + ".")
+        return ("added", " ".join(parts) or "Nothing new to add.")
+
     async def _handle_skill_request(self, session_id, user_id, user_message, history) -> tuple[str, str]:
         """Handle a skill request locally (never escalates). Returns (response, backend)."""
         from victoria.tools import skills_tools
@@ -150,6 +247,10 @@ class ConversationManager:
 
         intent = self._skill_intent(user_message)
         logger.info("Skill request intent=%s: %r", intent, user_message)
+
+        # Import from a GitHub URL → fetch, then present for review (no save yet).
+        if intent == "import":
+            return await self._import_skills_for_review(user_message)
 
         # List / delete are deterministic — don't rely on the model.
         if intent == "list":
@@ -433,6 +534,13 @@ class ConversationManager:
         history = self.memory.get_history(session_id)
         history.append({"role": "user", "content": user_message})
 
+        # --- Review reply for pending GitHub skill imports ----------------
+        imp = self._import_decision(user_message)
+        if imp and imp[0] != "fall_through":
+            self.memory.add_message(session_id, "user", user_message)
+            self.memory.add_message(session_id, "assistant", imp[1], llm_used="victoria")
+            return {"session_id": session_id, "response": imp[1], "backend": "victoria"}
+
         # --- Confirm/discard a staged (draft) skill -----------------------
         staged = self._staged_skill_decision(user_message)
         if staged and staged[0] in ("saved", "discarded"):
@@ -520,6 +628,14 @@ class ConversationManager:
         history.append({"role": "user", "content": user_message})
 
         self.memory.add_message(session_id, "user", user_message)
+
+        # --- Review reply for pending GitHub skill imports ----------------
+        imp = self._import_decision(user_message)
+        if imp and imp[0] != "fall_through":
+            self.memory.add_message(session_id, "assistant", imp[1], llm_used="victoria")
+            yield {"session_id": session_id, "chunk": imp[1], "backend": "victoria", "done": False}
+            yield {"session_id": session_id, "chunk": "", "backend": "victoria", "done": True}
+            return
 
         # --- Confirm/discard a staged (draft) skill -----------------------
         staged = self._staged_skill_decision(user_message)
