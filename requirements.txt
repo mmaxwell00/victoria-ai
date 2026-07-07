@@ -24,3 +24,6 @@ duckduckgo-search>=6.0.0
 
 # MCP client (connect to Model Context Protocol servers)
 mcp>=1.0
+
+# Credentials vault (encryption at rest)
+cryptography>=42.0
