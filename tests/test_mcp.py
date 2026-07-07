@@ -23,12 +23,19 @@ def _result(text, is_error=False):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("name", ["create_issue", "send_message", "delete_file",
-                                   "update_row", "post_message", "write_note", "run_query"])
+                                   "update_row", "post_message", "write_note", "run_query",
+                                   # regression: these GitHub writes must be caught
+                                   "fork_repository", "push_files", "add_issue_comment",
+                                   "create_pull_request_review", "merge_pull_request"])
 def test_is_write_tool_true(name):
     assert is_write_tool(name) is True
 
 
-@pytest.mark.parametrize("name", ["read_file", "list_directory", "search", "get_weather", "fetch"])
+@pytest.mark.parametrize("name", ["read_file", "list_directory", "search", "get_weather", "fetch",
+                                   # regression: "request" in pull_request must NOT flag reads
+                                   "get_pull_request", "list_pull_requests",
+                                   "get_pull_request_comments", "get_pull_request_files",
+                                   "search_repositories", "list_commits", "search_code"])
 def test_is_write_tool_false(name):
     assert is_write_tool(name) is False
 
