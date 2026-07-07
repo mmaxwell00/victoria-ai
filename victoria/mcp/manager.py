@@ -27,10 +27,15 @@ from victoria.tools.registry import registry as global_registry
 logger = logging.getLogger(__name__)
 
 # Tool-name verbs that imply a mutation — filtered out when readOnly is set.
+# (A heuristic; for tight control prefer an explicit allowedTools whitelist.)
 _WRITE_VERBS = (
     "create", "update", "delete", "remove", "write", "send", "post", "put",
     "patch", "set", "append", "move", "rename", "upload", "insert", "add",
     "edit", "execute", "run", "publish", "merge", "close", "archive", "drop",
+    "push", "fork", "comment", "approve", "reject", "dispatch", "trigger",
+    "enable", "disable", "revoke", "grant", "transfer", "star", "subscribe",
+    "cancel", "restart", "deploy", "invite", "assign", "lock", "clear",
+    "reopen", "sync", "make", "modify", "save",
 )
 
 
