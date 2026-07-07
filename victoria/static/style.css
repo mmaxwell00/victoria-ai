@@ -276,7 +276,7 @@ body {
 }
 
 /* Backend select */
-select#backend-select {
+select#backend-select, select#model-select {
   width: 100%;
   background: var(--bg);
   border: 1px solid var(--border-bright);
@@ -289,7 +289,8 @@ select#backend-select {
   margin-bottom: 6px;
   appearance: none;
 }
-select#backend-select:focus { outline: none; border-color: var(--teal); }
+select#backend-select:focus, select#model-select:focus { outline: none; border-color: var(--teal); }
+.select-label { font-size: 8px; color: var(--text-dim); letter-spacing: 1px; margin: 2px 0 4px; }
 
 .hud-btn {
   width: 100%;
