@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     # (Claude-Desktop-compatible format). Absent file → MCP simply off.
     mcp_config_path: str = "mcp.json"
 
+    # Credentials vault — encrypted secrets Victoria injects into endpoints but
+    # can never read back. Master key comes from the macOS Keychain (or the
+    # VICTORIA_VAULT_KEY env var / a key file fallback).
+    vault_path: str = "data/vault.enc"
+    vault_keychain_service: str = "victoria-vault-key"
+
     # Voice (Week 5)
     tts_engine: Literal["piper", "elevenlabs"] = "piper"
     elevenlabs_api_key: str = ""

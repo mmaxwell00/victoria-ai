@@ -37,6 +37,8 @@ victoria-ai/
 │   │   └── importer.py         # Fetch + discover skills from a GitHub repo/URL
 │   ├── mcp/
 │   │   └── manager.py          # MCP client — connect servers, expose their tools
+│   ├── vault/
+│   │   └── store.py            # Encrypted credentials vault (inject, never reveal)
 │   └── voice/
 │       ├── conversation.py     # Voice session loop
 │       ├── wake_word.py        # "Hello Victoria" wake word detection
@@ -97,6 +99,17 @@ Skills are named, reusable instruction sets — Markdown files in `skills/` — 
 Skills stay on the local model (they never escalate to the cloud), and creation uses a structured draft the app parses — no reliance on flaky tool-calling. Edit any skill by hand in `skills/*.md`.
 
 > **Trust note:** an imported skill is text that gets injected into Victoria's prompt and followed, so only import from repositories you trust — the review step (and the fact that skills are instructions-only, never executed code) is your safeguard.
+
+### Credentials vault (secrets she uses but can't read)
+
+Victoria can hold API tokens/keys and inject them into endpoints **without ever knowing their values**. The vault is one-way from her side: values go in, and are only ever resolved at the transport edge — never in her prompt, tool calls, results, logs, or the API.
+
+- **Encrypted at rest** (Fernet) under a master key kept in the **macOS Keychain** (falls back to `VICTORIA_VAULT_KEY` or a `0600` key file). The store is `data/vault.enc` (git-ignored).
+- **Add/manage** secrets from the **Credentials Vault** panel in the web HUD — the value is typed into a masked field and posted straight to the vault (never through chat). The panel only ever lists **names**, each with a delete button; values are never shown.
+- **Use** a secret by referencing it in `mcp.json` (or any server config): `"env": { "GITHUB_TOKEN": "${vault:GITHUB_TOKEN}" }` or `"headers": { "Authorization": "Bearer ${vault:SLACK_TOKEN}" }`. It's resolved to the real value only as it's handed to the server.
+- **API:** `POST /v1/vault` (store), `GET /v1/vault` (names only), `DELETE /v1/vault/{name}`. None return a plaintext value.
+
+> Write-only by design: there is no operation — for Victoria or anyone reading her — that hands a stored value back. So she can authenticate to your services without being able to leak the credentials.
 
 ### MCP servers (connect external tools)
 
