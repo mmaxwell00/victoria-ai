@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # Stored as Markdown files in this directory (persist across sessions).
     skills_path: str = "skills"
 
+    # MCP — connect to Model Context Protocol servers listed in this JSON file
+    # (Claude-Desktop-compatible format). Absent file → MCP simply off.
+    mcp_config_path: str = "mcp.json"
+
     # Voice (Week 5)
     tts_engine: Literal["piper", "elevenlabs"] = "piper"
     elevenlabs_api_key: str = ""
