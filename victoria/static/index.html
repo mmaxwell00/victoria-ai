@@ -183,6 +183,11 @@
             <option value="ollama">OLLAMA</option>
             <option value="claude">CLAUDE API</option>
           </select>
+          <div class="select-label">LOCAL MODEL</div>
+          <select id="model-select" title="Pick the local Docker Model Runner model">
+            <option value="">— loading —</option>
+          </select>
+          <div class="vault-note" id="model-hint"></div>
           <button id="new-session-btn" class="hud-btn">INIT NEW SESSION</button>
         </div>
       </div>
