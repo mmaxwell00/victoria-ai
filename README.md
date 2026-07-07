@@ -378,7 +378,7 @@ Victoria builds a persistent profile per user that gets injected into her system
 **Explicit memories** — stored instantly via regex, zero latency:
 ```
 "remember that I prefer bullet points"
-"note that I'm based in [redacted]"
+"note that I prefer metric units"
 "don't forget I work primarily in Python"
 "fyi, I like concise answers"
 ```
@@ -389,14 +389,14 @@ After each 5th message, Victoria analyses the conversation with the LLM and extr
 **Profile in the system prompt** (example):
 ```
 About this user:
-The user's name is Mark.
+The user's name is Alex.
 Communication style: direct and technical.
 Response preferences:
 - prefers bullet points
 - wants code examples when relevant
 Topics they care about: Python, AI, software architecture.
 Things to remember:
-- using metric units
+- prefers metric units
 - prefers dark mode UIs
 ```
 
@@ -412,23 +412,23 @@ The API runs on port 8000 when you start the app with `uvicorn`.
 # Chat (blocking)
 curl -X POST http://localhost:8000/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "What is the weather in London?", "user_id": "mark"}'
+  -d '{"message": "What is the weather in London?", "user_id": "alex"}'
 
 # Chat (streaming — Server-Sent Events)
 curl -X POST http://localhost:8000/v1/chat/stream \
   -H "Content-Type: application/json" \
-  -d '{"message": "Tell me about Python generators", "user_id": "mark"}'
+  -d '{"message": "Tell me about Python generators", "user_id": "alex"}'
 
 # Force a specific backend for one request
 curl -X POST http://localhost:8000/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "Explain quantum entanglement", "user_id": "mark", "backend": "claude"}'
+  -d '{"message": "Explain quantum entanglement", "user_id": "alex", "backend": "claude"}'
 
 # Conversation history for a session
-curl http://localhost:8000/v1/sessions/mark
+curl http://localhost:8000/v1/sessions/alex
 
 # User profile (preferences, memories, style)
-curl http://localhost:8000/v1/profile/mark
+curl http://localhost:8000/v1/profile/alex
 
 # Speech-to-text — transcribe an audio clip
 curl -X POST http://localhost:8000/v1/transcribe -F "audio=@clip.webm"
@@ -436,7 +436,7 @@ curl -X POST http://localhost:8000/v1/transcribe -F "audio=@clip.webm"
 # Text-to-speech — synthesize speech (saves audio to a file)
 curl -X POST http://localhost:8000/v1/tts \
   -H "Content-Type: application/json" \
-  -d '{"text": "Good evening, Mark."}' --output victoria.wav
+  -d '{"text": "Good evening."}' --output victoria.wav
 
 # Health check (includes tool count + memory status)
 curl http://localhost:8000/health

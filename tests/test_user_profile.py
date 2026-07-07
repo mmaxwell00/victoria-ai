@@ -7,8 +7,8 @@ from victoria.core.user_profile import UserProfile, ProfileStore
 # ---------------------------------------------------------------------------
 
 def test_profile_default_values():
-    profile = UserProfile("mark")
-    assert profile.user_id == "mark"
+    profile = UserProfile("alex")
+    assert profile.user_id == "alex"
     assert profile.name == ""
     assert profile.communication_style == ""
     assert profile.preferences == []
@@ -17,40 +17,40 @@ def test_profile_default_values():
 
 
 def test_to_system_context_empty():
-    assert UserProfile("mark").to_system_context() == ""
+    assert UserProfile("alex").to_system_context() == ""
 
 
 def test_to_system_context_partial():
-    profile = UserProfile("mark", name="Mark")
+    profile = UserProfile("alex", name="Alex")
     result = profile.to_system_context()
-    assert "Mark" in result
+    assert "Alex" in result
 
 
 def test_to_system_context_full():
     profile = UserProfile(
-        user_id="mark",
-        name="Mark",
+        user_id="alex",
+        name="Alex",
         communication_style="direct and brief",
         preferences=["bullet points", "no filler"],
         topics_of_interest=["Python", "AI"],
-        explicit_memories=["based in [redacted]"],
+        explicit_memories=["using metric units"],
     )
     result = profile.to_system_context()
-    assert "Mark" in result
+    assert "Alex" in result
     assert "direct and brief" in result
     assert "bullet points" in result
     assert "no filler" in result
     assert "Python" in result
     assert "AI" in result
-    assert "based in [redacted]" in result
+    assert "using metric units" in result
 
 
 def test_is_empty_true():
-    assert UserProfile("mark").is_empty() is True
+    assert UserProfile("alex").is_empty() is True
 
 
 def test_is_empty_false():
-    profile = UserProfile("mark")
+    profile = UserProfile("alex")
     profile.explicit_memories.append("likes coffee")
     assert profile.is_empty() is False
 

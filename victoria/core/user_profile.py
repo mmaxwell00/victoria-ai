@@ -17,7 +17,7 @@ class UserProfile:
     communication_style: str = ""            # e.g. "direct, technical, prefers brevity"
     preferences: list[str] = field(default_factory=list)   # ["bullet points", "no filler"]
     topics_of_interest: list[str] = field(default_factory=list)  # ["Python", "AI"]
-    explicit_memories: list[str] = field(default_factory=list)   # ["based in [redacted]"]
+    explicit_memories: list[str] = field(default_factory=list)   # ["using metric units"]
     updated_at: str = ""
 
     def to_system_context(self) -> str:
