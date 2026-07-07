@@ -8,7 +8,13 @@ const state = {
   speakReplies: localStorage.getItem('victoria_speak') === '1',
   speakNext: false,      // set when input came from the mic → speak this reply
   isRecording: false,
+  handsFree: false,      // wake-word mode: listen for "Victoria" continuously
+  hfPhase: 'idle',       // idle | listening | capturing | processing
+  speakPromise: null,    // resolves when the current reply finishes playing
 };
+
+// The wake word (lowercase). Anything containing this triggers capture.
+const WAKE_WORD = 'victoria';
 
 // ── DOM refs ───────────────────────────────────────────────────
 const messagesEl    = document.getElementById('chat-messages');
@@ -254,9 +260,12 @@ async function sendMessage(text) {
           meta.appendChild(badge);
 
           // Speak the reply aloud when spoken-replies is on, or when the
-          // query came in by voice.
+          // query came in by voice. Track the promise so hands-free mode can
+          // wait for her to finish before listening again.
           if (state.speakReplies || state.speakNext) {
-            speakText(accumulated);
+            state.speakPromise = speakText(accumulated);
+          } else {
+            state.speakPromise = Promise.resolve();
           }
           state.speakNext = false;
 
@@ -313,8 +322,11 @@ function updateSpeakBtn() {
   speakBtn.title = state.speakReplies ? 'Spoken replies: ON' : 'Spoken replies: OFF';
 }
 
+// Returns a promise that resolves when playback finishes (so hands-free mode
+// can wait for Victoria to stop talking before it listens again).
 async function speakText(text) {
   if (!text || !text.trim()) return;
+  let blob;
   try {
     const resp = await fetch('/v1/tts', {
       method: 'POST',
@@ -322,15 +334,23 @@ async function speakText(text) {
       body: JSON.stringify({ text }),
     });
     if (!resp.ok) { console.error('TTS HTTP', resp.status); return; }
-    const blob = await resp.blob();
-    if (currentAudio) { currentAudio.pause(); }
-    currentAudio = new Audio(URL.createObjectURL(blob));
-    currentAudio.play().catch(err => console.error('audio play failed', err));
+    blob = await resp.blob();
   } catch (err) {
     console.error('TTS error', err);
+    return;
   }
+  if (currentAudio) { currentAudio.pause(); }
+  currentAudio = new Audio(URL.createObjectURL(blob));
+  await new Promise(resolve => {
+    currentAudio.addEventListener('ended', resolve, { once: true });
+    currentAudio.addEventListener('error', resolve, { once: true });
+    currentAudio.play().catch(err => { console.error('audio play failed', err); resolve(); });
+  });
 }
 
+// Transcribe an audio blob and send it. Returns true if a question was sent.
+// Awaits the full turn (send → reply streamed → spoken) so callers know when
+// the whole exchange is done.
 async function transcribeAndSend(blob) {
   setStatus('TRANSCRIBING', 'var(--teal-bright)');
   const ext = blob.type.includes('ogg') ? 'ogg'
@@ -343,17 +363,21 @@ async function transcribeAndSend(blob) {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     const text = (data.text || '').trim();
-    if (!text) { setStatus('NO SPEECH HEARD', 'var(--red)'); return; }
+    if (!text) { setStatus('NO SPEECH HEARD', 'var(--red)'); return false; }
     // Echo what was heard so it's visible even before the bubble renders.
     inputEl.value = text;
     resizeInput();
     state.speakNext = true;        // heard by voice → reply by voice
-    sendMessage(text);
+    state.speakPromise = Promise.resolve();
+    await sendMessage(text);
     inputEl.value = '';            // the user bubble now shows the text
     resizeInput();
+    await (state.speakPromise || Promise.resolve());  // wait for her to finish speaking
+    return true;
   } catch (err) {
     console.error('transcribe error', err);
     setStatus('STT ERROR', 'var(--red)');
+    return false;
   }
 }
 
@@ -385,7 +409,154 @@ async function toggleRecording() {
   }
 }
 
-micBtn.addEventListener('click', toggleRecording);
+// ── Hands-free wake-word mode ("Victoria") ─────────────────────
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const HANDS_FREE_SUPPORTED = !!SR && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+let recognition = null;
+let hfStream = null;
+
+function setMicVisual() {
+  micBtn.classList.toggle('armed', state.handsFree && state.hfPhase === 'listening');
+  micBtn.classList.toggle('recording', state.hfPhase === 'capturing' || state.isRecording);
+  if (state.handsFree) {
+    micBtn.title = 'Hands-free ON — say "Victoria" (click to stop)';
+  } else {
+    micBtn.title = HANDS_FREE_SUPPORTED
+      ? 'Click for hands-free (say "Victoria")'
+      : 'Hold to speak (click to start/stop)';
+  }
+}
+
+function startRecognition() {
+  if (!state.handsFree || !recognition) return;
+  try { recognition.start(); } catch (e) { /* already running */ }
+}
+
+function beginListening() {
+  if (!state.handsFree) return;
+  state.hfPhase = 'listening';
+  setMicVisual();
+  setStatus('SAY “VICTORIA”', 'var(--teal)');
+  startRecognition();
+}
+
+async function toggleHandsFree() {
+  if (state.handsFree) { stopHandsFree(); return; }
+  try {
+    hfStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    console.error('mic error', err);
+    setStatus('MIC BLOCKED', 'var(--red)');
+    return;
+  }
+  recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-GB';
+  recognition.onresult = (ev) => {
+    if (state.hfPhase !== 'listening') return;
+    let text = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++) text += ev.results[i][0].transcript;
+    if (text.toLowerCase().includes(WAKE_WORD)) captureQuestion();
+  };
+  recognition.onerror = (ev) => {
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+      setStatus('MIC BLOCKED', 'var(--red)');
+      stopHandsFree();
+    }
+  };
+  recognition.onend = () => {
+    // Chrome ends recognition periodically — restart while still listening.
+    if (state.handsFree && state.hfPhase === 'listening') startRecognition();
+  };
+  state.handsFree = true;
+  beginListening();
+}
+
+function stopHandsFree() {
+  state.handsFree = false;
+  state.hfPhase = 'idle';
+  if (recognition) { recognition.onend = null; try { recognition.stop(); } catch (e) {} recognition = null; }
+  if (hfStream) { hfStream.getTracks().forEach(t => t.stop()); hfStream = null; }
+  micBtn.classList.remove('armed', 'recording');
+  setMicVisual();
+  setStatus('SYSTEM NOMINAL', '');
+}
+
+function resumeListening() {
+  if (!state.handsFree) return;
+  // brief cooldown so the tail of her spoken reply isn't picked up as input
+  setTimeout(beginListening, 400);
+}
+
+async function captureQuestion() {
+  state.hfPhase = 'capturing';
+  setMicVisual();
+  try { recognition && recognition.stop(); } catch (e) {}   // pause wake listening
+  setStatus('LISTENING…', 'var(--teal-bright)');
+
+  let recorder;
+  try { recorder = new MediaRecorder(hfStream); }
+  catch (err) { console.error('recorder error', err); return resumeListening(); }
+
+  const chunks = [];
+  recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  const stopMonitor = monitorSilence(hfStream, () => {
+    if (recorder.state === 'recording') recorder.stop();
+  });
+  recorder.onstop = async () => {
+    stopMonitor();
+    state.hfPhase = 'processing';
+    setMicVisual();
+    setStatus('THINKING…', 'var(--teal-bright)');
+    const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+    if (blob.size) await transcribeAndSend(blob);
+    resumeListening();
+  };
+  recorder.start();
+}
+
+// Calls onSilence after ~1.2s of quiet following detected speech, or a hard
+// cap; also bails if no speech at all within 6s. Returns a stop() fn.
+function monitorSilence(stream, onSilence) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC();
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 512;
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  const buf = new Uint8Array(analyser.fftSize);
+  const started = performance.now();
+  let hasSpoken = false, lastLoud = performance.now(), raf = 0, done = false;
+
+  function finish() {
+    if (done) return;
+    done = true;
+    cancelAnimationFrame(raf);
+    ctx.close().catch(() => {});
+    onSilence();
+  }
+  function tick() {
+    if (done) return;
+    analyser.getByteTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+    const rms = Math.sqrt(sum / buf.length);
+    const now = performance.now();
+    if (rms > 0.04) { hasSpoken = true; lastLoud = now; }
+    if ((hasSpoken && now - lastLoud > 1200) || now - started > 12000 ||
+        (!hasSpoken && now - started > 6000)) { finish(); return; }
+    raf = requestAnimationFrame(tick);
+  }
+  raf = requestAnimationFrame(tick);
+  return finish;
+}
+
+micBtn.addEventListener('click', () => {
+  if (HANDS_FREE_SUPPORTED) toggleHandsFree();
+  else toggleRecording();          // fallback: manual push-to-talk
+});
+setMicVisual();
+
 speakBtn.addEventListener('click', () => {
   state.speakReplies = !state.speakReplies;
   localStorage.setItem('victoria_speak', state.speakReplies ? '1' : '');
