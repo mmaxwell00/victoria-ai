@@ -584,6 +584,28 @@ select#backend-select:focus { outline: none; border-color: var(--teal); }
   letter-spacing: 1px;
 }
 
+/* ── Credentials vault panel ─────────────────────────────────── */
+.vault-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.vault-item {
+  display: flex; align-items: center; justify-content: space-between;
+  font-family: var(--font-hud); font-size: 10px; color: var(--teal-bright);
+  border-left: 2px solid var(--teal); padding: 3px 6px;
+  background: rgba(0,184,212,0.06);
+}
+.vault-item .vault-del {
+  cursor: pointer; color: var(--text-dim); border: none; background: none;
+  font-size: 12px; line-height: 1;
+}
+.vault-item .vault-del:hover { color: var(--red); }
+.vault-input {
+  width: 100%; box-sizing: border-box; margin-bottom: 6px;
+  background: rgba(10,22,40,0.7); border: 1px solid var(--teal-dim);
+  color: var(--text); font-family: var(--font-hud); font-size: 11px;
+  padding: 6px 8px; letter-spacing: 1px;
+}
+.vault-input:focus { outline: none; border-color: var(--teal); }
+.vault-note { font-size: 8px; color: var(--text-dim); margin-top: 6px; line-height: 1.5; }
+
 /* ── Footer ────────────────────────────────────────────────── */
 .hud-footer {
   display: flex;

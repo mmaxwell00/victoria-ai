@@ -187,6 +187,21 @@
         </div>
       </div>
 
+      <div class="panel">
+        <div class="panel-header">CREDENTIALS VAULT
+          <span class="panel-header-count" id="vault-count">0</span>
+        </div>
+        <div class="panel-body">
+          <div id="vault-list" class="vault-list">
+            <div class="empty-state">No secrets stored.</div>
+          </div>
+          <input id="vault-name" class="vault-input" placeholder="NAME · e.g. SLACK_TOKEN" autocomplete="off" spellcheck="false">
+          <input id="vault-value" class="vault-input" type="password" placeholder="VALUE · hidden" autocomplete="new-password">
+          <button id="vault-store-btn" class="hud-btn">STORE SECRET</button>
+          <div class="vault-note">Encrypted at rest. Victoria injects these into endpoints but can never read them back.</div>
+        </div>
+      </div>
+
       <div class="panel panel-grow">
         <div class="panel-header">ACTIVE TOOLS</div>
         <div class="panel-body">

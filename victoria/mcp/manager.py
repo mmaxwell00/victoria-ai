@@ -80,17 +80,22 @@ class MCPManager:
     async def _connect_one(self, name: str, conf: dict) -> None:
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
+        from victoria.vault.store import get_vault
+        vault = get_vault()
 
         if conf.get("url"):
             from mcp.client.sse import sse_client
+            # Resolve ${vault:NAME} refs at the edge — values never get logged.
+            headers = vault.resolve(conf.get("headers")) if conf.get("headers") else None
             read, write = await self._stack.enter_async_context(
-                sse_client(conf["url"], headers=conf.get("headers"))
+                sse_client(conf["url"], headers=headers)
             )
         else:
+            env = vault.resolve(conf.get("env")) if conf.get("env") else None
             params = StdioServerParameters(
                 command=conf["command"],
                 args=conf.get("args", []),
-                env=conf.get("env") or None,
+                env=env or None,
             )
             read, write = await self._stack.enter_async_context(stdio_client(params))
 

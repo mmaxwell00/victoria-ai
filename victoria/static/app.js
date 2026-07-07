@@ -25,6 +25,11 @@ const micBtn        = document.getElementById('mic-btn');
 const speakBtn      = document.getElementById('speak-btn');
 const backendSel    = document.getElementById('backend-select');
 const newSessionBtn = document.getElementById('new-session-btn');
+const vaultList     = document.getElementById('vault-list');
+const vaultName     = document.getElementById('vault-name');
+const vaultValue    = document.getElementById('vault-value');
+const vaultStoreBtn = document.getElementById('vault-store-btn');
+const vaultCount    = document.getElementById('vault-count');
 const statusPill    = document.getElementById('status-pill');
 const footerStatus  = document.getElementById('footer-status');
 const sessionDisplay= document.getElementById('session-id-display');
@@ -310,6 +315,67 @@ function newSession() {
 function resizeInput() {
   inputEl.style.height = 'auto';
   inputEl.style.height = Math.min(inputEl.scrollHeight, 100) + 'px';
+}
+
+// ── Credentials vault (names only; values never leave the vault) ─
+async function loadVault() {
+  if (!vaultList) return;
+  try {
+    const resp = await fetch('/v1/vault');
+    if (!resp.ok) return;
+    const names = (await resp.json()).names || [];
+    vaultCount.textContent = names.length;
+    if (!names.length) {
+      vaultList.innerHTML = '<div class="empty-state">No secrets stored.</div>';
+      return;
+    }
+    vaultList.innerHTML = '';
+    for (const name of names) {
+      const row = document.createElement('div');
+      row.className = 'vault-item';
+      const label = document.createElement('span');
+      label.textContent = name;                    // name only — never a value
+      const del = document.createElement('button');
+      del.className = 'vault-del';
+      del.textContent = '✕';
+      del.title = `Delete ${name}`;
+      del.addEventListener('click', () => deleteSecret(name));
+      row.appendChild(label);
+      row.appendChild(del);
+      vaultList.appendChild(row);
+    }
+  } catch (err) { console.error('vault load', err); }
+}
+
+async function storeSecret() {
+  const name = (vaultName.value || '').trim();
+  const value = vaultValue.value || '';
+  if (!name || !value) { setStatus('VAULT: NAME + VALUE REQUIRED', 'var(--red)'); return; }
+  try {
+    const resp = await fetch('/v1/vault', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, value }),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    vaultName.value = '';
+    vaultValue.value = '';        // never retained in the UI
+    setStatus('VAULT: STORED ' + name, 'var(--teal-bright)');
+    loadVault();
+  } catch (err) { console.error('vault store', err); setStatus('VAULT: STORE FAILED', 'var(--red)'); }
+}
+
+async function deleteSecret(name) {
+  try {
+    await fetch('/v1/vault/' + encodeURIComponent(name), { method: 'DELETE' });
+    loadVault();
+  } catch (err) { console.error('vault delete', err); }
+}
+
+if (vaultStoreBtn) {
+  vaultStoreBtn.addEventListener('click', storeSecret);
+  vaultValue.addEventListener('keydown', e => { if (e.key === 'Enter') storeSecret(); });
+  loadVault();
 }
 
 // ── Voice: speech-to-text (mic) + text-to-speech (playback) ─────
