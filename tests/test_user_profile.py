@@ -26,6 +26,12 @@ def test_to_system_context_partial():
     assert "Alex" in result
 
 
+def test_to_system_context_includes_preferred_address():
+    profile = UserProfile("alex", name="Alex", preferred_address="Sir")
+    result = profile.to_system_context()
+    assert "Sir" in result
+
+
 def test_to_system_context_full():
     profile = UserProfile(
         user_id="alex",
@@ -118,6 +124,41 @@ def test_store_forget_memory_found(store):
 def test_store_forget_memory_not_found(store):
     result = store.forget_memory("u1", "nonexistent memory")
     assert result is False
+
+
+def test_onboard_persists_and_marks_done(store):
+    assert store.get("u1").onboarded is False
+    store.onboard("u1", name="Mark", preferred_address="Sir")
+    p = store.get("u1")
+    assert p.name == "Mark" and p.preferred_address == "Sir" and p.onboarded is True
+
+
+def test_onboard_roundtrip_survives_reload(tmp_path):
+    db = str(tmp_path / "reload.db")
+    ProfileStore(db_path=db).onboard("u1", "Mark", "Boss")
+    p = ProfileStore(db_path=db).get("u1")
+    assert p.name == "Mark" and p.preferred_address == "Boss" and p.onboarded is True
+
+
+def test_profile_migration_adds_columns(tmp_path):
+    """A DB created before preferred_address/onboarded still loads and migrates."""
+    import sqlite3
+    db = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE user_profiles (user_id TEXT PRIMARY KEY, name TEXT DEFAULT '', "
+        "communication_style TEXT DEFAULT '', preferences TEXT DEFAULT '[]', "
+        "topics_of_interest TEXT DEFAULT '[]', explicit_memories TEXT DEFAULT '[]', updated_at TEXT)"
+    )
+    conn.execute("INSERT INTO user_profiles (user_id, name) VALUES ('u1', 'Old')")
+    conn.commit()
+    conn.close()
+
+    store = ProfileStore(db_path=db)          # runs the migration
+    p = store.get("u1")
+    assert p.name == "Old" and p.preferred_address == "" and p.onboarded is False
+    store.onboard("u1", "Old", "Boss")
+    assert store.get("u1").preferred_address == "Boss"
 
 
 def test_store_update_style(store):

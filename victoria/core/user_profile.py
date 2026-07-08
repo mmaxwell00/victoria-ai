@@ -14,10 +14,12 @@ class UserProfile:
     """Persistent per-user profile. Victoria learns and remembers across sessions."""
     user_id: str
     name: str = ""
+    preferred_address: str = ""               # how to address them, e.g. "Sir", "Mark", "Boss"
     communication_style: str = ""            # e.g. "direct, technical, prefers brevity"
     preferences: list[str] = field(default_factory=list)   # ["bullet points", "no filler"]
     topics_of_interest: list[str] = field(default_factory=list)  # ["Python", "AI"]
     explicit_memories: list[str] = field(default_factory=list)   # ["using metric units"]
+    onboarded: bool = False                   # completed the first-run identify step
     updated_at: str = ""
 
     def to_system_context(self) -> str:
@@ -25,6 +27,8 @@ class UserProfile:
         parts = []
         if self.name:
             parts.append(f"The user's name is {self.name}.")
+        if self.preferred_address:
+            parts.append(f'Address them as "{self.preferred_address}".')
         if self.communication_style:
             parts.append(f"Communication style: {self.communication_style}.")
         if self.preferences:
@@ -41,7 +45,7 @@ class UserProfile:
 
     def is_empty(self) -> bool:
         return not any([
-            self.name, self.communication_style,
+            self.name, self.preferred_address, self.communication_style,
             self.preferences, self.topics_of_interest, self.explicit_memories
         ])
 
@@ -70,6 +74,12 @@ class ProfileStore:
                 updated_at          TEXT
             )
         """)
+        # Migrate older DBs that predate these columns.
+        existing = {r[1] for r in self.conn.execute("PRAGMA table_info(user_profiles)")}
+        if "preferred_address" not in existing:
+            self.conn.execute("ALTER TABLE user_profiles ADD COLUMN preferred_address TEXT DEFAULT ''")
+        if "onboarded" not in existing:
+            self.conn.execute("ALTER TABLE user_profiles ADD COLUMN onboarded INTEGER DEFAULT 0")
         self.conn.commit()
 
     def _now(self) -> str:
@@ -79,7 +89,8 @@ class ProfileStore:
         """Return the profile for user_id, creating a blank one if it doesn't exist."""
         row = self.conn.execute(
             "SELECT name, communication_style, preferences, topics_of_interest, "
-            "explicit_memories, updated_at FROM user_profiles WHERE user_id = ?",
+            "explicit_memories, updated_at, preferred_address, onboarded "
+            "FROM user_profiles WHERE user_id = ?",
             (user_id,)
         ).fetchone()
         if not row:
@@ -92,6 +103,8 @@ class ProfileStore:
             topics_of_interest=json.loads(row[3] or "[]"),
             explicit_memories=json.loads(row[4] or "[]"),
             updated_at=row[5] or "",
+            preferred_address=row[6] or "",
+            onboarded=bool(row[7]),
         )
 
     def save(self, profile: UserProfile) -> None:
@@ -99,21 +112,33 @@ class ProfileStore:
         self.conn.execute("""
             INSERT INTO user_profiles
                 (user_id, name, communication_style, preferences, topics_of_interest,
-                 explicit_memories, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                 explicit_memories, updated_at, preferred_address, onboarded)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 name=excluded.name,
                 communication_style=excluded.communication_style,
                 preferences=excluded.preferences,
                 topics_of_interest=excluded.topics_of_interest,
                 explicit_memories=excluded.explicit_memories,
-                updated_at=excluded.updated_at
+                updated_at=excluded.updated_at,
+                preferred_address=excluded.preferred_address,
+                onboarded=excluded.onboarded
         """, (
             profile.user_id, profile.name, profile.communication_style,
             json.dumps(profile.preferences), json.dumps(profile.topics_of_interest),
             json.dumps(profile.explicit_memories), profile.updated_at,
+            profile.preferred_address, int(profile.onboarded),
         ))
         self.conn.commit()
+
+    def onboard(self, user_id: str, name: str, preferred_address: str = "") -> UserProfile:
+        """Record the first-run identity (name + how to address them) and mark done."""
+        profile = self.get(user_id)
+        profile.name = name.strip()
+        profile.preferred_address = preferred_address.strip()
+        profile.onboarded = True
+        self.save(profile)
+        return profile
 
     def add_memory(self, user_id: str, memory: str) -> None:
         """Append an explicit memory string. Deduplicates on exact match."""

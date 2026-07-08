@@ -103,8 +103,8 @@ async function loadSidebarData() {
       const p = await resp.json();
       if (p.available) {
         document.getElementById('p-name').textContent    = p.name || 'UNIDENTIFIED';
+        document.getElementById('p-address').textContent = p.preferred_address || '—';
         document.getElementById('p-style').textContent   = p.communication_style || '—';
-        document.getElementById('p-topics').textContent  = p.topics_of_interest?.join(', ') || '—';
         document.getElementById('p-pref-count').textContent = p.preferences?.length || '0';
 
         const memList = document.getElementById('memories-list');
@@ -117,11 +117,14 @@ async function loadSidebarData() {
             return item;
           }));
         }
+
+        // First run: ask who she's assisting (name + how to address them).
+        if (!p.onboarded) showOnboarding(p.name);
       }
     }
   } catch (_) {}
 
-  // Sessions
+  // Sessions → session-log counts + the Topics (chat-history) list
   try {
     const resp = await fetch(`/v1/sessions/${state.userId}`);
     if (resp.ok) {
@@ -136,6 +139,8 @@ async function loadSidebarData() {
       document.getElementById('sess-total').textContent = total;
       const pct = Math.min(100, (total / 20) * 100);
       document.getElementById('sess-bar').style.width = pct + '%';
+
+      renderTopics(sessions);
     }
   } catch (_) {}
 
@@ -153,6 +158,95 @@ async function loadSidebarData() {
   }
 }
 loadSidebarData();
+
+// ── Topics (chat history) ──────────────────────────────────────
+function fmtChatTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2, '0');
+  if (d.toDateString() === new Date().toDateString()) {
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  return `${months[d.getMonth()]} ${d.getDate()}`;
+}
+
+function renderTopics(sessions) {
+  const list  = document.getElementById('topics-list');
+  const count = document.getElementById('topics-count');
+  if (!list) return;
+  count.textContent = sessions.length;
+  if (!sessions.length) {
+    list.innerHTML = '<div class="empty-state">No chats yet.<br>Your conversations appear here.</div>';
+    return;
+  }
+  list.replaceChildren(...sessions.map(s => {
+    const row = document.createElement('div');
+    row.className = 'chat-row' + (s.id === state.sessionId ? ' active' : '');
+    row.title = s.title || 'Untitled chat';
+
+    const title = document.createElement('span');
+    title.className = 'chat-title';
+    title.textContent = s.title || 'Untitled chat';
+
+    const time = document.createElement('span');
+    time.className = 'chat-time';
+    time.textContent = s.id === state.sessionId ? 'now' : fmtChatTime(s.updated_at);
+
+    row.appendChild(title);
+    row.appendChild(time);
+    row.addEventListener('click', () => reopenChat(s.id));
+    return row;
+  }));
+}
+
+async function reopenChat(sessionId) {
+  if (state.isStreaming || sessionId === state.sessionId) return;
+  try {
+    const resp = await fetch(`/v1/sessions/${state.userId}/${sessionId}/history`);
+    if (!resp.ok) return;
+    const history = await resp.json();
+    state.sessionId = sessionId;
+    localStorage.setItem('victoria_session', sessionId);
+    messagesEl.innerHTML = '';
+    hideWelcome();
+    history.forEach(m => appendMessage(m.role === 'user' ? 'user' : 'assistant', m.content));
+    sessionDisplay.textContent = `SESSION: ${sessionId.slice(0, 8).toUpperCase()}`;
+    loadSidebarData();   // re-mark the active topic
+  } catch (_) {}
+}
+
+// ── First-run onboarding ───────────────────────────────────────
+function showOnboarding(prefillName) {
+  const overlay = document.getElementById('onboard-overlay');
+  if (!overlay || !overlay.classList.contains('hidden')) return;   // already shown
+  const nameEl = document.getElementById('onboard-name');
+  if (prefillName) nameEl.value = prefillName;
+  overlay.classList.remove('hidden');
+  setTimeout(() => nameEl.focus(), 50);
+}
+
+async function submitOnboarding() {
+  const btn = document.getElementById('onboard-submit');
+  const name    = document.getElementById('onboard-name').value.trim();
+  const address = document.getElementById('onboard-address').value.trim();
+  btn.disabled = true;
+  try {
+    await fetch(`/v1/profile/${state.userId}/onboard`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, preferred_address: address }),
+    });
+  } catch (_) {}
+  document.getElementById('onboard-overlay').classList.add('hidden');
+  btn.disabled = false;
+  loadSidebarData();
+}
+
+document.getElementById('onboard-submit').addEventListener('click', submitOnboarding);
+document.getElementById('onboard-overlay').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); submitOnboarding(); }
+});
 
 // ── Helpers ────────────────────────────────────────────────────
 function scrollToBottom() {
@@ -311,6 +405,7 @@ function newSession() {
   document.getElementById('last-backend').textContent = '—';
   document.getElementById('last-status').textContent  = '—';
   setStatus('SYSTEM NOMINAL', '');
+  loadSidebarData();   // the chat that just ended now appears under Topics
 }
 
 // ── Auto-resize input ──────────────────────────────────────────

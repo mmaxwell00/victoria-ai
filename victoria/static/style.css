@@ -619,6 +619,101 @@ select#backend-select:focus, select#model-select:focus { outline: none; border-c
 .footer-label { font-size: 8px; color: var(--text-dim); letter-spacing: 2px; }
 .footer-sep { color: var(--border-bright); margin: 0 6px; }
 
+/* ── Topics / chat history (compact list) ──────────────────── */
+.chat-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 10px;
+  color: var(--text);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.chat-row::before { content: '▸'; color: var(--teal); flex-shrink: 0; }
+.chat-row:hover { color: var(--text-header); }
+.chat-row:hover::before { color: var(--teal-bright); }
+.chat-row .chat-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-row .chat-time { color: var(--text-dim); font-size: 8px; flex-shrink: 0; }
+.chat-row.active { color: var(--teal-bright); }
+.chat-row.active::before { content: '●'; color: var(--teal-bright); }
+
+/* ── First-run onboarding modal ────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2,8,18,0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal-overlay.hidden { display: none; }
+.onboard-modal {
+  width: 380px;
+  max-width: 90vw;
+  border: 1px solid var(--teal-dim);
+  background: var(--bg-panel);
+  box-shadow: 0 0 40px rgba(0,184,212,0.15);
+}
+.onboard-head {
+  height: 30px;
+  background: var(--bg-panel-alt);
+  border-bottom: 1px solid var(--teal-dim);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-family: var(--font-hud);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--teal);
+  letter-spacing: 2px;
+}
+.onboard-body { padding: 18px 18px 20px; }
+.onboard-title {
+  font-family: var(--font-hud);
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--teal-bright);
+  letter-spacing: 2px;
+  text-align: center;
+  text-shadow: 0 0 18px rgba(0,229,255,0.5);
+}
+.onboard-sub {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: center;
+  margin: 6px 0 18px;
+  line-height: 1.5;
+}
+.onboard-label {
+  display: block;
+  font-family: var(--font-hud);
+  font-size: 9px;
+  color: var(--teal);
+  letter-spacing: 1px;
+  margin: 12px 0 4px;
+}
+.onboard-field {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border-bright);
+  color: var(--text-header);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 8px 10px;
+}
+.onboard-field:focus { outline: none; border-color: var(--teal); }
+.onboard-field::placeholder { color: var(--text-dim); }
+.onboard-note {
+  font-size: 8px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-top: 12px;
+  line-height: 1.5;
+}
+
 /* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 860px) {
   .hud-body { grid-template-columns: 1fr; }
