@@ -24,6 +24,9 @@ services:
     volumes:
       - ./data:/app/data
       - ./models:/app/models
+      # Skills live in the repo dir: created/edited skills persist on the host
+      # (survive rebuilds) and can be committed. Shadows the image's baked copy.
+      - ./skills:/app/skills
     restart: unless-stopped
 
   victoria-telegram:
@@ -38,4 +41,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./models:/app/models
+      # Skills live in the repo dir: created/edited skills persist on the host
+      # (survive rebuilds) and can be committed. Shadows the image's baked copy.
+      - ./skills:/app/skills
     restart: unless-stopped

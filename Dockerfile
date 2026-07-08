@@ -20,6 +20,9 @@ RUN apt-get update \
 COPY victoria/ victoria/
 # scripts/ is needed by the victoria-telegram compose service
 COPY scripts/ scripts/
+# Bundle the curated skills so a mount-less image still ships with them.
+# When compose mounts ./skills, that host dir shadows this baked copy.
+COPY skills/ skills/
 
 RUN mkdir -p data models
 
