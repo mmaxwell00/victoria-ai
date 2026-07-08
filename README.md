@@ -156,12 +156,19 @@ How the local model signals it's stuck: local backends are given an *escalation 
 
 ## Prerequisites
 
-| Tool | Purpose | Install |
-|------|---------|---------|
-| Python 3.11+ | Runtime | `brew install python@3.11` |
-| Docker Desktop | Model Runner + containers | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop) |
-| ffmpeg | Whisper audio transcription | `brew install ffmpeg` |
-| PortAudio | Microphone input (voice only) | `brew install portaudio` |
+**Platform:** macOS (native). The core install (Python + Docker) gets you chat, skills, and the credentials vault; the rest unlock specific features.
+
+| Tool | Needed for | Install |
+|------|-----------|---------|
+| **Python 3.11+** | Core — required | `brew install python@3.11` |
+| **Docker Desktop** (+ Model Runner) | Local LLM — required | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop) |
+| **Git** (Xcode Command Line Tools) | Cloning + GitHub skill import | `xcode-select --install` |
+| **Node.js** | MCP servers launched via `npx` (e.g. filesystem, GitHub) | `brew install node` |
+| **Claude Code CLI** | Escalating to Claude (uses your subscription — no API key) | [claude.com/claude-code](https://claude.com/claude-code), then run `claude` once to log in |
+| **ffmpeg** | Voice: speech-to-text (Whisper) | `brew install ffmpeg` |
+| **PortAudio** | Voice: terminal mic / wake word (browser voice doesn't need it) | `brew install portaudio` |
+
+> The credentials vault's master key uses the **macOS Keychain** automatically — no setup. Voice also needs the Piper model downloaded (see [Voice interface](#voice-interface)).
 
 ---
 
@@ -225,6 +232,18 @@ Verify it's running:
 ```bash
 curl http://localhost:12434/engines/llama.cpp/v1/models
 ```
+
+### 6. Optional — enable the extra features
+
+```bash
+# Escalation to Claude (uses your Claude subscription, no API key):
+claude            # run once to log in; Victoria calls the CLI on your "yes"
+
+# MCP servers (filesystem, GitHub, …) — needs Node.js on PATH:
+cp mcp.example.json mcp.json    # then edit to list the servers you want
+```
+
+The credentials vault needs no setup — add secrets from the **Credentials Vault** panel in the HUD once it's running.
 
 ---
 
