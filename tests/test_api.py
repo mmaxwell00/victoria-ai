@@ -91,6 +91,67 @@ async def test_sessions_endpoint(client):
     assert isinstance(resp.json(), list)
 
 
+def test_onboard_and_profile_roundtrip():
+    """POST /v1/profile/{user}/onboard records name + address and marks the
+    profile onboarded; GET /v1/profile reflects it."""
+    import tempfile, os
+    from unittest.mock import MagicMock
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from victoria.core.memory import MemoryStore
+    from victoria.core.user_profile import ProfileStore
+    from victoria.core.conversation import ConversationManager
+    from victoria.interfaces.api import router, get_manager
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db = os.path.join(tmp, "t.db")
+        mgr = ConversationManager(
+            memory=MemoryStore(db_path=db), router=MagicMock(),
+            profile_store=ProfileStore(db_path=db),
+        )
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_manager] = lambda: mgr
+        client = TestClient(app)
+
+        # Fresh profile is not onboarded
+        assert client.get("/v1/profile/mark").json()["onboarded"] is False
+
+        resp = client.post("/v1/profile/mark/onboard",
+                           json={"name": "Mark", "preferred_address": "Sir"})
+        assert resp.status_code == 200 and resp.json()["onboarded"] is True
+
+        prof = client.get("/v1/profile/mark").json()
+        assert prof["name"] == "Mark"
+        assert prof["preferred_address"] == "Sir"
+        assert prof["onboarded"] is True
+
+
+def test_sessions_endpoint_returns_titles():
+    import tempfile, os
+    from unittest.mock import MagicMock
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from victoria.core.memory import MemoryStore
+    from victoria.core.conversation import ConversationManager
+    from victoria.interfaces.api import router, get_manager
+
+    with tempfile.TemporaryDirectory() as tmp:
+        memory = MemoryStore(db_path=os.path.join(tmp, "t.db"))
+        memory.get_or_create_session("s1", "mark")
+        memory.add_message("s1", "user", "Refresh the README please")
+        mgr = ConversationManager(memory=memory, router=MagicMock())
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_manager] = lambda: mgr
+        client = TestClient(app)
+
+        data = client.get("/v1/sessions/mark").json()
+        assert len(data) == 1
+        assert data[0]["title"] == "Refresh the README please"
+        assert data[0]["message_count"] == 1
+
+
 def test_history_endpoint_checks_session_ownership(client_and_manager=None):
     """Regression: /v1/sessions/{user}/{session}/history must 404 when the
     session does not belong to that user (previously user_id was ignored)."""

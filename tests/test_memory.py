@@ -21,8 +21,42 @@ def test_create_session(store):
 def test_idempotent_session(store):
     store.get_or_create_session("sess-1", user_id="alex")
     store.get_or_create_session("sess-1", user_id="alex")
+    # A session only appears in the list once it has at least one message.
+    store.add_message("sess-1", "user", "hi")
     sessions = store.list_sessions("alex")
     assert len(sessions) == 1
+
+
+def test_list_sessions_omits_empty_and_carries_title(store):
+    """list_sessions skips message-less sessions and titles each from its
+    first user message, with a message count."""
+    store.get_or_create_session("empty", user_id="alex")          # no messages
+    store.get_or_create_session("chat", user_id="alex")
+    store.add_message("chat", "user", "Fix the Model Runner port please")
+    store.add_message("chat", "assistant", "Right away.", llm_used="docker")
+
+    sessions = store.list_sessions("alex")
+    ids = {s["id"] for s in sessions}
+    assert "empty" not in ids and "chat" in ids
+    chat = next(s for s in sessions if s["id"] == "chat")
+    assert chat["title"] == "Fix the Model Runner port please"
+    assert chat["message_count"] == 2
+
+
+def test_session_title_set_once_from_first_user_message(store):
+    store.get_or_create_session("s", user_id="alex")
+    store.add_message("s", "user", "First question")
+    store.add_message("s", "assistant", "answer")
+    store.add_message("s", "user", "Second question")
+    title = store.list_sessions("alex")[0]["title"]
+    assert title == "First question"  # not overwritten by the later message
+
+
+def test_long_title_is_truncated(store):
+    store.get_or_create_session("s", user_id="alex")
+    store.add_message("s", "user", "x" * 100)
+    title = store.list_sessions("alex")[0]["title"]
+    assert title.endswith("…") and len(title) <= 49
 
 
 def test_add_and_retrieve_messages(store):

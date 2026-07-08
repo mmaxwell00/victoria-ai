@@ -49,19 +49,28 @@
       <div class="panel">
         <div class="panel-header">OPERATOR PROFILE</div>
         <div class="panel-body">
-          <div class="profile-row"><span class="pkey">IDENT</span><span class="pval" id="p-name">UNKNOWN</span></div>
+          <div class="profile-row"><span class="pkey">IDENT</span><span class="pval" id="p-name">UNIDENTIFIED</span></div>
+          <div class="profile-row"><span class="pkey">ADDRESS</span><span class="pval" id="p-address">—</span></div>
           <div class="profile-row"><span class="pkey">STYLE</span><span class="pval" id="p-style">—</span></div>
-          <div class="profile-row"><span class="pkey">TOPICS</span><span class="pval" id="p-topics">—</span></div>
           <div class="profile-row"><span class="pkey">PREFS</span><span class="pval" id="p-pref-count">0</span></div>
         </div>
       </div>
 
-      <div class="panel panel-grow">
+      <div class="panel">
         <div class="panel-header">MEMORY BANKS
           <span class="panel-header-count" id="mem-count">0</span>
         </div>
-        <div class="panel-body panel-scroll" id="memories-list">
+        <div class="panel-body panel-scroll" id="memories-list" style="max-height:150px">
           <div class="empty-state">No memories stored.<br>Say "remember that…" to begin.</div>
+        </div>
+      </div>
+
+      <div class="panel panel-grow">
+        <div class="panel-header">TOPICS
+          <span class="panel-header-count" id="topics-count">0</span>
+        </div>
+        <div class="panel-body panel-scroll" id="topics-list">
+          <div class="empty-state">No chats yet.<br>Your conversations appear here.</div>
         </div>
       </div>
 
@@ -242,6 +251,23 @@
   </div>
 
 </div><!-- /hud -->
+
+<!-- ── FIRST-RUN ONBOARDING ────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="onboard-overlay">
+  <div class="onboard-modal">
+    <div class="onboard-head">◆ IDENTIFY OPERATOR</div>
+    <div class="onboard-body">
+      <div class="onboard-title">WELCOME</div>
+      <div class="onboard-sub">Before we begin, may I know who I'm assisting?</div>
+      <label class="onboard-label" for="onboard-name">YOUR NAME</label>
+      <input id="onboard-name" class="onboard-field" placeholder="e.g. Mark" autocomplete="off" spellcheck="false">
+      <label class="onboard-label" for="onboard-address">HOW SHOULD I ADDRESS YOU?</label>
+      <input id="onboard-address" class="onboard-field" placeholder="e.g. Mark · Sir · Boss · Chief" autocomplete="off" spellcheck="false">
+      <button id="onboard-submit" class="hud-btn">INITIALISE ▸</button>
+      <div class="onboard-note">First-run only. Change it any time by telling Victoria.</div>
+    </div>
+  </div>
+</div>
 
 <script src="/static/app.js"></script>
 </body>

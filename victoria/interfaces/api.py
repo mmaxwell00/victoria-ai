@@ -92,12 +92,35 @@ async def get_profile(user_id: str, mgr: ConversationManager = Depends(get_manag
     return {
         "user_id": profile.user_id,
         "name": profile.name,
+        "preferred_address": profile.preferred_address,
         "communication_style": profile.communication_style,
         "preferences": profile.preferences,
         "topics_of_interest": profile.topics_of_interest,
         "explicit_memories": profile.explicit_memories,
+        "onboarded": profile.onboarded,
         "updated_at": profile.updated_at,
         "available": True,
+    }
+
+
+class OnboardRequest(BaseModel):
+    name: str = ""
+    preferred_address: str = ""
+
+
+@router.post("/profile/{user_id}/onboard")
+async def onboard(
+    user_id: str, req: OnboardRequest, mgr: ConversationManager = Depends(get_manager)
+):
+    """Record the first-run identity (name + how Victoria should address them)."""
+    if not mgr.profile_store:
+        raise HTTPException(status_code=503, detail="Profile store unavailable")
+    profile = mgr.profile_store.onboard(user_id, req.name, req.preferred_address)
+    return {
+        "user_id": profile.user_id,
+        "name": profile.name,
+        "preferred_address": profile.preferred_address,
+        "onboarded": profile.onboarded,
     }
 
 

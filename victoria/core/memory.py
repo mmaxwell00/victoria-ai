@@ -38,7 +38,20 @@ class MemoryStore:
             CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
         """)
+        # Migrate older DBs that predate the per-session title (shown in the
+        # HUD's Topics / chat-history list).
+        existing = {r[1] for r in self.conn.execute("PRAGMA table_info(sessions)")}
+        if "title" not in existing:
+            self.conn.execute("ALTER TABLE sessions ADD COLUMN title TEXT DEFAULT ''")
         self.conn.commit()
+
+    @staticmethod
+    def _derive_title(text: str, limit: int = 48) -> str:
+        """A short chat title from the first user message."""
+        title = " ".join((text or "").split())
+        if len(title) > limit:
+            title = title[:limit].rstrip() + "…"
+        return title
 
     def get_or_create_session(
         self, session_id: str, user_id: str = "default", channel: str = "api"
@@ -81,6 +94,13 @@ class MemoryStore:
         self.conn.execute(
             "UPDATE sessions SET updated_at = ? WHERE id = ?", (now, session_id)
         )
+        # Title the session from its first user message (only once — the guard
+        # on empty title means later messages don't overwrite it).
+        if role == "user":
+            self.conn.execute(
+                "UPDATE sessions SET title = ? WHERE id = ? AND (title IS NULL OR title = '')",
+                (self._derive_title(content), session_id),
+            )
         self.conn.commit()
 
     def get_history(self, session_id: str, limit: int = 20) -> list[dict]:
@@ -98,8 +118,37 @@ class MemoryStore:
         return history
 
     def list_sessions(self, user_id: str) -> list[dict]:
+        """Sessions for a user, newest first, each with its title and message
+        count. Sessions with no messages yet are omitted (nothing to show)."""
         rows = self.conn.execute(
-            "SELECT id, channel, created_at, updated_at FROM sessions WHERE user_id = ? ORDER BY updated_at DESC",
+            """SELECT s.id, s.channel, s.created_at, s.updated_at, s.title,
+                      COUNT(m.id) AS msg_count
+               FROM sessions s
+               JOIN messages m ON m.session_id = s.id
+               WHERE s.user_id = ?
+               GROUP BY s.id
+               ORDER BY s.updated_at DESC""",
             (user_id,),
         ).fetchall()
-        return [{"id": r[0], "channel": r[1], "created_at": r[2], "updated_at": r[3]} for r in rows]
+        return [
+            {
+                "id": r[0],
+                "channel": r[1],
+                "created_at": r[2],
+                "updated_at": r[3],
+                "title": r[4] or self._derive_title_fallback(r[0]),
+                "message_count": r[5],
+            }
+            for r in rows
+        ]
+
+    def _derive_title_fallback(self, session_id: str) -> str:
+        """Title for legacy sessions saved before titles existed: derive from
+        the first user message, or fall back to the short id."""
+        row = self.conn.execute(
+            "SELECT content FROM messages WHERE session_id = ? AND role = 'user' ORDER BY id ASC LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        if row and row[0]:
+            return self._derive_title(row[0])
+        return session_id[:8].upper()
