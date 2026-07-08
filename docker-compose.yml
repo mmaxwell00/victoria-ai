@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Docker Model Runner is built into Docker Desktop — no extra container needed.
 # Enable it in Docker Desktop → Settings → Features in development → Docker Model Runner
 # Then pull a model: docker model pull ai/llama3.2
