@@ -51,8 +51,13 @@ victoria-ai/
 ├── scripts/
 │   ├── chat.py                 # Terminal chat client
 │   ├── run_telegram.py         # Telegram bot runner
-│   └── run_voice.py            # Voice interface runner
-├── tests/                      # 83 pytest tests
+│   ├── run_voice.py            # Voice interface runner
+│   ├── start.sh                # Native launcher — self-heals the Model Runner, then starts the server
+│   ├── update.sh               # One-command native updater
+│   └── ensure-model-runner.sh  # Re-bind the Docker Model Runner host-TCP port if it drops
+├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
+├── tests/                      # 267 pytest tests
+├── setup-victoria-mac.sh       # One-command macOS installer
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
@@ -93,7 +98,7 @@ victoria-ai/
 
 Skills are named, reusable instruction sets — Markdown files in `skills/` — that Victoria applies when relevant and that you can ask her to create. They contain **instructions only** (no code), and persist across sessions so they accumulate over time.
 
-- **Use (auto + explicit):** she sees a short index of every skill each turn; when a skill is relevant (you name it, or it matches the request) its full instructions are injected and she follows them. Ships with `email-drafter` and `meeting-summariser`.
+- **Use (auto + explicit):** she sees a short index of every skill each turn; when a skill is relevant (you name it, or it matches the request) its full instructions are injected and she follows them. Ships with `email-drafter`, `meeting-summariser`, and `code_reviewskill` (a multi-axis code-review rubric).
 - **Create (draft → confirm → save):** *"Create a skill called standup-update that formats my day into Yesterday / Today / Blockers."* She drafts the name, description, and steps, shows them, and asks — it's saved only after you say **yes**.
 - **List / delete:** *"What skills do you have?"* / *"Delete the standup-update skill."*
 - **Import from GitHub (review first):** *"Import skills from https://github.com/you/skills-repo"* → she shallow-clones the repo, finds skill files, and lists what she found **without saving anything**. You then reply `add all`, `add <name>`, `show <name>` (to read its full instructions first), or `no`. Imported skills are namespaced under `skills/imported/<repo>/` and never overwrite a skill you already have. Works with both flat `*.md` skills and the Claude/Anthropic `skill-name/SKILL.md` folder format; single-file URLs (`.../blob/.../thing.md`) work too.
@@ -284,6 +289,8 @@ uvicorn victoria.main:app --reload
 ```
 
 Open **http://localhost:8000** in your browser.
+
+> After a reboot, prefer `scripts/start.sh` — it re-binds the Docker Model Runner (whose host-TCP port can drop when Docker/the Mac restarts, emptying the model dropdown) before launching. See [Starting & restarting](#starting--restarting).
 
 The interface is a full-screen dark HUD inspired by the Iron Man JARVIS OS — dark navy background, teal panel headers, red digit clock, and a rotating arc reactor ring as the chat backdrop.
 
@@ -581,4 +588,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-83 tests across memory, conversation, tools, voice, Telegram, user profiles, API, and profile integration layers.
+267 tests across memory & semantic recall, conversation, tools & tool-calling, local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), Telegram, user profiles, and API layers.
