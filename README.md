@@ -154,6 +154,30 @@ How the local model signals it's stuck: local backends are given an *escalation 
 
 ---
 
+## One-command install (macOS)
+
+The fastest path from a fresh Mac to a running Victoria:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mmaxwell00/victoria-ai/main/setup-victoria-mac.sh | bash
+```
+
+The script installs everything it can (Homebrew, Docker Desktop, Model Runner, a local model, Victoria herself in Docker) and is safe to re-run. It also installs a `victoria` command (`start` / `stop` / `status` / `logs` / `update`).
+
+macOS only makes you do three things it won't let any script do:
+
+1. **Type your password** when Homebrew / Docker Desktop install
+2. **Click OK** on the Xcode Command Line Tools and Docker first-run dialogs
+3. **Approve the microphone prompt** in your browser (voice features only)
+
+Options: `--model <name>` to choose the local model, `--claude-token <token>` to enable cloud escalation (get one with `claude setup-token`), `--with-voice` for the native voice runner, `--dir <path>` for a custom location.
+
+Escalation note: the Docker image bundles the Claude Code CLI, so escalation works in the container once a token is set — either via the installer or by adding `CLAUDE_CODE_OAUTH_TOKEN=...` to `.env` later (then `victoria update`).
+
+Prefer to set things up by hand? Read on.
+
+---
+
 ## Prerequisites
 
 **Platform:** macOS (native). The core install (Python + Docker) gets you chat, skills, and the credentials vault; the rest unlock specific features.
