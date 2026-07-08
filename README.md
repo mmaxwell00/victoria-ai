@@ -388,9 +388,23 @@ Both containers connect to Docker Model Runner on the host via `model-runner.doc
 
 ---
 
+## Starting & restarting
+
+**Native setup** — one command starts (or restarts) Victoria:
+
+```bash
+~/victoria-ai/scripts/start.sh
+```
+
+This first **self-heals the Docker Model Runner** — its host-TCP port (`:12434`)
+can silently drop when Docker Desktop or the Mac restarts, which empties the
+model dropdown; `start.sh` detects that and re-binds it before launching. Then
+it starts the server and health-checks it. Use this after every reboot.
+
 ## Updating
 
-**Native setup** — one command pulls the latest, refreshes deps, restarts, and health-checks:
+**Native setup** — one command pulls the latest, refreshes deps, re-binds the
+Model Runner, restarts, and health-checks:
 
 ```bash
 ~/victoria-ai/scripts/update.sh
@@ -535,6 +549,20 @@ any tag. Pulling `ai/llama3.2` can resolve to a tagged id such as
 docker model ls                                            # see the exact id
 curl http://localhost:12434/engines/llama.cpp/v1/models    # or query the runner
 ```
+
+**Model dropdown is empty / "no models pulled" (but `docker model ls` shows models)**
+The Model Runner's host-TCP port dropped — usually after a Docker Desktop or Mac
+restart. The runner still runs internally, but `:12434` isn't bound, so the app
+can't reach it. Re-bind it (or just run `scripts/start.sh`, which does this
+automatically):
+
+```bash
+~/victoria-ai/scripts/ensure-model-runner.sh
+# or, by hand:
+docker desktop disable model-runner && docker desktop enable model-runner --tcp=12434
+```
+
+Then hard-refresh the tab (`Cmd + Shift + R`).
 
 **`pip install` fails with `In --require-hashes mode, all requirements must have their versions pinned`**
 Your environment (a `pip.conf` or `PIP_REQUIRE_HASHES` env var) enforces hashed,

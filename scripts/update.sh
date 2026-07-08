@@ -35,6 +35,10 @@ else
   exit 1
 fi
 
+# Re-bind the Docker Model Runner host-TCP port if it dropped (a Docker/Mac
+# restart can leave it closed, which empties the model dropdown). Non-fatal.
+"$DIR/scripts/ensure-model-runner.sh" || say "Model Runner not reachable — continuing anyway."
+
 say "Restarting the server"
 pkill -f "uvicorn victoria.main:app" 2>/dev/null || true
 sleep 2
