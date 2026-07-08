@@ -388,6 +388,20 @@ Both containers connect to Docker Model Runner on the host via `model-runner.doc
 
 ---
 
+## Updating
+
+**Native setup** — one command pulls the latest, refreshes deps, restarts, and health-checks:
+
+```bash
+~/victoria-ai/scripts/update.sh
+```
+
+Your `.env`, `data/` (memory + vault), and `skills/` are left untouched. Then hard-refresh the browser tab (`Cmd + Shift + R`) to pick up any HUD changes.
+
+**Docker setup** — `victoria update` (rebuilds the image and restarts).
+
+---
+
 ## Configuration reference
 
 All settings are in `.env` (copy from `.env.example`).
