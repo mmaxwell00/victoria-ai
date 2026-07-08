@@ -164,6 +164,8 @@ curl -fsSL https://raw.githubusercontent.com/mmaxwell00/victoria-ai/main/setup-v
 
 The script installs everything it can (Homebrew, Docker Desktop, Model Runner, a local model, Victoria herself in Docker) and is safe to re-run. It also installs a `victoria` command (`start` / `stop` / `status` / `logs` / `update`).
 
+**Secrets stay out of plaintext.** The vault master key and (if set) the Claude token are stored in the **macOS Keychain**, and the `victoria` command injects them into the container at launch — they're never written to `.env`. So launch/manage Victoria with `victoria start` (not a bare `docker compose up`, which wouldn't have the secrets).
+
 macOS only makes you do three things it won't let any script do:
 
 1. **Type your password** when Homebrew / Docker Desktop install
@@ -172,7 +174,7 @@ macOS only makes you do three things it won't let any script do:
 
 Options: `--model <name>` to choose the local model, `--claude-token <token>` to enable cloud escalation (get one with `claude setup-token`), `--with-voice` for the native voice runner, `--dir <path>` for a custom location.
 
-Escalation note: the Docker image bundles the Claude Code CLI, so escalation works in the container once a token is set — either via the installer or by adding `CLAUDE_CODE_OAUTH_TOKEN=...` to `.env` later (then `victoria update`).
+Escalation note: the Docker image bundles the Claude Code CLI (plus `git` + `ffmpeg`, so skill import and browser-voice transcription also work in the container). Escalation turns on once a token is stored — via the installer, or later with `./setup-victoria-mac.sh --claude-token "$(claude setup-token)"` then `victoria start`. The token lands in the Keychain, not `.env`.
 
 Prefer to set things up by hand? Read on.
 

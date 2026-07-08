@@ -16,6 +16,11 @@ services:
     environment:
       # Override URL to reach Model Runner from inside the container
       - MODEL_RUNNER_URL=http://model-runner.docker.internal/engines/llama.cpp/v1
+      # Secrets are injected from the macOS Keychain at launch by the `victoria`
+      # command / installer — NOT persisted in .env. These pass through from the
+      # host shell env (empty if you run compose without exporting them).
+      - VICTORIA_VAULT_KEY
+      - CLAUDE_CODE_OAUTH_TOKEN
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -28,6 +33,8 @@ services:
       - .env
     environment:
       - MODEL_RUNNER_URL=http://model-runner.docker.internal/engines/llama.cpp/v1
+      - VICTORIA_VAULT_KEY
+      - CLAUDE_CODE_OAUTH_TOKEN
     volumes:
       - ./data:/app/data
       - ./models:/app/models

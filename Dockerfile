@@ -5,11 +5,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Claude Code CLI — lets the local-first escalation feature work inside the
-# container. Auth via CLAUDE_CODE_OAUTH_TOKEN in .env (see setup-victoria-mac.sh);
-# without a token, escalation is simply disabled and nothing else is affected.
+# System tools the app shells out to:
+#   - nodejs/npm  → the Claude Code CLI (escalation) + npx-based MCP servers
+#   - git         → GitHub skill import
+#   - ffmpeg      → Whisper speech-to-text for browser voice (/v1/transcribe)
+# Escalation auth is via CLAUDE_CODE_OAUTH_TOKEN (injected at runtime, see
+# setup-victoria-mac.sh); without it, escalation is simply disabled.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nodejs npm ca-certificates \
+    && apt-get install -y --no-install-recommends nodejs npm ca-certificates git ffmpeg \
     && npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force \
     && apt-get clean && rm -rf /var/lib/apt/lists/*

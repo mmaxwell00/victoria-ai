@@ -48,6 +48,11 @@ info() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mNOTE:\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# macOS Keychain helpers — secrets live here, never in .env plaintext.
+KC_ACCT="${USER:-victoria}"
+kc_get() { security find-generic-password -a "$KC_ACCT" -s "$1" -w 2>/dev/null || true; }
+kc_set() { security add-generic-password -U -a "$KC_ACCT" -s "$1" -w "$2" >/dev/null 2>&1; }
+
 [ "$(uname)" = "Darwin" ] || fail "This installer is for macOS."
 
 # ── 1. Xcode Command Line Tools (provides git) ──────────────────────
@@ -130,32 +135,51 @@ else
 fi
 cd "$DIR"
 
-# ── 7. Configuration (.env) — only ever fills in missing keys ───────
-touch .env
-env_default() {  # env_default KEY VALUE — append only if KEY not present
+# ── 7. Configuration ────────────────────────────────────────────────
+# Non-secret settings go in .env; SECRETS go in the macOS Keychain and are
+# injected into the container at launch (never written to disk in plaintext).
+touch .env; chmod 600 .env
+env_default() {  # append KEY=VALUE only if KEY not already present
   grep -q "^${1}=" .env || printf '%s=%s\n' "$1" "$2" >> .env
+}
+env_unset() {    # drop a KEY=... line from .env (used to migrate legacy secrets out)
+  grep -q "^${1}=" .env 2>/dev/null && { grep -v "^${1}=" .env > .env.tmp && mv .env.tmp .env; } || true
 }
 env_default DEFAULT_LLM "docker"
 env_default MODEL_RUNNER_MODEL "$MODEL_ID"
-# Stable vault key: without it, secrets die with the container (no macOS
-# Keychain inside Docker).
-env_default VICTORIA_VAULT_KEY "$(openssl rand -base64 32 | tr '+/' '-_')"
 
-# Escalation: works out of the box if a Claude Code token is provided.
-if [ -z "$CLAUDE_TOKEN" ] && [ -t 0 ] || { [ -z "$CLAUDE_TOKEN" ] && [ -e /dev/tty ]; }; then
-  if ! grep -q "^CLAUDE_CODE_OAUTH_TOKEN=" .env && ! grep -q "^ESCALATION_ENABLED=" .env; then
-    printf '\n\033[1mOptional:\033[0m Victoria can escalate hard questions to Claude (uses your\n'
-    printf 'Claude subscription). To enable, run \033[1mclaude setup-token\033[0m in another\n'
-    printf 'terminal and paste the token here.\n'
-    printf 'Token (or press Enter to skip): '
-    read -r -t 120 CLAUDE_TOKEN < /dev/tty || CLAUDE_TOKEN=""
-    echo
+# Vault master key — kept in the Keychain (service: victoria-vault-key). Reuse an
+# existing one, migrate a legacy key out of .env, or generate fresh. It encrypts
+# data/vault.enc, so it must stay stable across rebuilds.
+VAULT_KEY="$(kc_get victoria-vault-key)"
+if [ -z "$VAULT_KEY" ]; then
+  LEGACY="$(grep '^VICTORIA_VAULT_KEY=' .env 2>/dev/null | head -1 | cut -d= -f2-)"
+  if [ -n "$LEGACY" ]; then
+    VAULT_KEY="$LEGACY"; info "Migrating vault key from .env into the Keychain."
+  else
+    VAULT_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"; info "Generated a new vault key in the Keychain."
   fi
+  kc_set victoria-vault-key "$VAULT_KEY"
 fi
+env_unset VICTORIA_VAULT_KEY
+export VICTORIA_VAULT_KEY="$VAULT_KEY"
+
+# Claude escalation token — Keychain (service: victoria-claude-token). Prompt on
+# a fresh interactive run if none was supplied or stored.
+[ -n "$CLAUDE_TOKEN" ] || CLAUDE_TOKEN="$(kc_get victoria-claude-token)"
+if [ -z "$CLAUDE_TOKEN" ] && [ -e /dev/tty ] && ! grep -q "^ESCALATION_ENABLED=" .env; then
+  printf '\n\033[1mOptional:\033[0m escalate hard questions to Claude (uses your Claude\n'
+  printf 'subscription). Run \033[1mclaude setup-token\033[0m in another terminal and paste it here.\n'
+  printf 'Token (or Enter to skip): '
+  read -r -t 120 CLAUDE_TOKEN < /dev/tty || CLAUDE_TOKEN=""
+  echo
+fi
+env_unset CLAUDE_CODE_OAUTH_TOKEN
 if [ -n "$CLAUDE_TOKEN" ]; then
-  env_default CLAUDE_CODE_OAUTH_TOKEN "$CLAUDE_TOKEN"
+  kc_set victoria-claude-token "$CLAUDE_TOKEN"
+  export CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_TOKEN"
   env_default ESCALATION_ENABLED "true"
-  info "Cloud escalation enabled."
+  info "Cloud escalation enabled (token stored in Keychain)."
 else
   env_default ESCALATION_ENABLED "false"
   info "Cloud escalation off (re-run with --claude-token to enable later)."
@@ -188,6 +212,10 @@ set -euo pipefail
 DIR="$DIR"
 URL="http://localhost:8000"
 cd "\$DIR"
+# Inject secrets from the Keychain (they're never stored in .env) so compose
+# can pass them into the container.
+export VICTORIA_VAULT_KEY="\$(security find-generic-password -a "$KC_ACCT" -s victoria-vault-key -w 2>/dev/null || true)"
+export CLAUDE_CODE_OAUTH_TOKEN="\$(security find-generic-password -a "$KC_ACCT" -s victoria-claude-token -w 2>/dev/null || true)"
 case "\${1:-start}" in
   start)
     if ! docker info >/dev/null 2>&1; then
