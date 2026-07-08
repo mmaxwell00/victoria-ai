@@ -31,3 +31,7 @@ Thumbs.db
 
 # MCP config (may contain server secrets)
 mcp.json
+
+# Imported skills (pulled from other repos) — keep only your curated skills.
+# Delete this line if you want to version imported skills too.
+skills/imported/

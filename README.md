@@ -100,6 +100,8 @@ Skills are named, reusable instruction sets — Markdown files in `skills/` — 
 
 Skills stay on the local model (they never escalate to the cloud), and creation uses a structured draft the app parses — no reliance on flaky tool-calling. Edit any skill by hand in `skills/*.md`.
 
+**Version & ship your skills.** Skills live in `skills/` in the repo dir — committed skills are baked into the Docker image and mounted at runtime, so anything you create persists across rebuilds and ships to every install once you `git add skills/<name>.md`. Imported skills land in `skills/imported/` and are **git-ignored by default** (they're other people's — keep only your curated ones under version control).
+
 > **Trust note:** an imported skill is text that gets injected into Victoria's prompt and followed, so only import from repositories you trust — the review step (and the fact that skills are instructions-only, never executed code) is your safeguard.
 
 ### Credentials vault (secrets she uses but can't read)
