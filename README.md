@@ -94,6 +94,86 @@ victoria-ai/
 2. **Semantic memory** — ChromaDB vector search across all past sessions; relevant context surfaces automatically
 3. **User profile** — persistent preferences, style, and explicit memories injected into every system prompt
 
+### Deployment topology — inside vs outside the container
+
+The diagram below is the **containerised** (docker-compose) layout. Running natively
+(uvicorn in a venv) is identical externally — "the container" is just the Python
+process instead; the connection points are the same.
+
+```mermaid
+flowchart TB
+    subgraph CLOUD["Cloud / external — leaves your Mac (mostly opt-in)"]
+        direction LR
+        ANTH["Anthropic API<br/>escalation + API"]
+        EL["ElevenLabs<br/>cloud TTS · opt"]
+        DDG["DuckDuckGo<br/>web search"]
+        WX["wttr.in<br/>weather"]
+        GH["GitHub<br/>skill import"]
+        TG["Telegram<br/>bot · opt"]
+        RMCP["Remote MCP<br/>SSE · opt"]
+    end
+
+    subgraph BOX["Container — victoria image · services: api (:8000) + telegram"]
+        direction LR
+        CM["Conversation Manager"]
+        ROUTER["LLM Router<br/>local ↔ Claude"]
+        VOICE["Voice<br/>Piper TTS + Whisper STT"]
+        CLI["Claude Code CLI<br/>bundled"]
+        MEM["Memory<br/>SQLite + ChromaDB"]
+        SKILLS["Skills"]
+        VAULT["Vault<br/>Fernet · masked"]
+        MCP["MCP client<br/>stdio + SSE"]
+        TOOLS["Tools<br/>search · weather · calc"]
+        API["FastAPI<br/>uvicorn :8000"]
+    end
+
+    subgraph HOST["Host — macOS (outside the container)"]
+        direction LR
+        BROWSER["Browser<br/>the HUD tab"]
+        DMR["Docker Model Runner<br/>:12434 · local LLM"]
+        OLLAMA["Ollama<br/>:11434 · opt"]
+        KC["macOS Keychain<br/>vault master key"]
+        VOL["Bind mounts<br/>./data · ./models · ./skills"]
+    end
+
+    BROWSER -->|HTTP/SSE 127.0.0.1:8000| API
+    ROUTER -->|model-runner.docker.internal · local| DMR
+    ROUTER -.->|host.docker.internal:11434 · opt| OLLAMA
+    KC -->|VICTORIA_VAULT_KEY env at launch| VAULT
+    MEM <-->|bind mount · persists on host| VOL
+    CLI -->|HTTPS · OAuth escalation| ANTH
+    TOOLS -->|HTTPS| DDG
+    TOOLS -->|HTTPS| WX
+    SKILLS -->|git · HTTPS| GH
+    VOICE -.->|HTTPS · opt key| EL
+    MCP -.->|SSE · opt| RMCP
+    CM -.->|opt · telegram service| TG
+```
+
+**Inside the container** — the whole app ships in one image (two services off it:
+`victoria-api` on `:8000` and the optional `victoria-telegram`). Everything needed to
+*think, speak, and hear locally* is inside: FastAPI, the LLM router, memory
+(SQLite + ChromaDB), skills, the vault, the MCP client, local tools, **Piper** (TTS)
+and **Whisper** (STT), any **stdio MCP servers** (spawned in-container via `npx`), and
+the **bundled Claude Code CLI**. No GPU, nothing photoreal.
+
+**Crosses the boundary but stays on your Mac (local, no cloud):**
+- **Browser → `127.0.0.1:8000`** — HTTP/SSE. Bound to loopback only; the API has no auth, so it's never exposed to the LAN.
+- **Container → Docker Model Runner** at `model-runner.docker.internal` (host Docker Desktop, `:12434`) — your local LLM. The primary dependency; never leaves the machine.
+- **Container → Ollama** `host.docker.internal:11434` — optional alternate local LLM.
+- **macOS Keychain → container** — the vault master key is injected as `VICTORIA_VAULT_KEY` at launch (never written to `.env`); the vault's plaintext secrets never cross back out.
+- **Bind mounts** — `./data` (`victoria.db` + ChromaDB + `vault.enc`), `./models` (Piper), `./skills`. Persist on the host, survive rebuilds.
+
+**Cloud connection points (these leave your Mac — mostly opt-in):**
+- **Anthropic API** — only on **escalation** (your "yes"), via the bundled Claude CLI (`CLAUDE_CODE_OAUTH_TOKEN`) or the `claude` backend (`ANTHROPIC_API_KEY`).
+- **DuckDuckGo** + **wttr.in** — hit only when the web-search / weather tools fire (HTTPS, no key).
+- **GitHub** — only during on-demand skill import.
+- **ElevenLabs** — only if `TTS_ENGINE=elevenlabs`; otherwise Piper runs fully local.
+- **Remote MCP (SSE)** — only if you list remote servers in `mcp.json`.
+- **Telegram** — only if the telegram service is running.
+
+**Default privacy posture:** with a local model, Piper TTS, and no remote MCP/Telegram, **nothing leaves your Mac** unless you explicitly escalate to Claude or invoke a cloud-backed tool. Every cloud edge is opt-in or action-triggered.
+
 ### Skills (reusable instructions she can apply and create)
 
 Skills are named, reusable instruction sets — Markdown files in `skills/` — that Victoria applies when relevant and that you can ask her to create. They contain **instructions only** (no code), and persist across sessions so they accumulate over time.
