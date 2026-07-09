@@ -94,6 +94,41 @@ victoria-ai/
 2. **Semantic memory** — ChromaDB vector search across all past sessions; relevant context surfaces automatically
 3. **User profile** — persistent preferences, style, and explicit memories injected into every system prompt
 
+### Deployment topology — inside vs outside the container
+
+The diagram below is the **containerised** (docker-compose) layout. Running natively
+(uvicorn in a venv) is identical externally — "the container" is just the Python
+process instead; the connection points are the same.
+
+<p align="center">
+  <img src="docs/screenshots/architecture.png" width="760"
+       alt="Victoria deployment topology — three zones (host macOS, the container, cloud/external) with every boundary-crossing connection labeled by protocol and port">
+</p>
+
+**Inside the container** — the whole app ships in one image (two services off it:
+`victoria-api` on `:8000` and the optional `victoria-telegram`). Everything needed to
+*think, speak, and hear locally* is inside: FastAPI, the LLM router, memory
+(SQLite + ChromaDB), skills, the vault, the MCP client, local tools, **Piper** (TTS)
+and **Whisper** (STT), any **stdio MCP servers** (spawned in-container via `npx`), and
+the **bundled Claude Code CLI**. No GPU, nothing photoreal.
+
+**Crosses the boundary but stays on your Mac (local, no cloud):**
+- **Browser → `127.0.0.1:8000`** — HTTP/SSE. Bound to loopback only; the API has no auth, so it's never exposed to the LAN.
+- **Container → Docker Model Runner** at `model-runner.docker.internal` (host Docker Desktop, `:12434`) — your local LLM. The primary dependency; never leaves the machine.
+- **Container → Ollama** `host.docker.internal:11434` — optional alternate local LLM.
+- **macOS Keychain → container** — the vault master key is injected as `VICTORIA_VAULT_KEY` at launch (never written to `.env`); the vault's plaintext secrets never cross back out.
+- **Bind mounts** — `./data` (`victoria.db` + ChromaDB + `vault.enc`), `./models` (Piper), `./skills`. Persist on the host, survive rebuilds.
+
+**Cloud connection points (these leave your Mac — mostly opt-in):**
+- **Anthropic API** — only on **escalation** (your "yes"), via the bundled Claude CLI (`CLAUDE_CODE_OAUTH_TOKEN`) or the `claude` backend (`ANTHROPIC_API_KEY`).
+- **DuckDuckGo** + **wttr.in** — hit only when the web-search / weather tools fire (HTTPS, no key).
+- **GitHub** — only during on-demand skill import.
+- **ElevenLabs** — only if `TTS_ENGINE=elevenlabs`; otherwise Piper runs fully local.
+- **Remote MCP (SSE)** — only if you list remote servers in `mcp.json`.
+- **Telegram** — only if the telegram service is running.
+
+**Default privacy posture:** with a local model, Piper TTS, and no remote MCP/Telegram, **nothing leaves your Mac** unless you explicitly escalate to Claude or invoke a cloud-backed tool. Every cloud edge is opt-in or action-triggered.
+
 ### Skills (reusable instructions she can apply and create)
 
 Skills are named, reusable instruction sets — Markdown files in `skills/` — that Victoria applies when relevant and that you can ask her to create. They contain **instructions only** (no code), and persist across sessions so they accumulate over time.
