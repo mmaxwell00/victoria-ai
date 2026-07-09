@@ -100,55 +100,10 @@ The diagram below is the **containerised** (docker-compose) layout. Running nati
 (uvicorn in a venv) is identical externally — "the container" is just the Python
 process instead; the connection points are the same.
 
-```mermaid
-flowchart TB
-    subgraph CLOUD["Cloud / external — leaves your Mac (mostly opt-in)"]
-        direction LR
-        ANTH["Anthropic API<br/>escalation + API"]
-        EL["ElevenLabs<br/>cloud TTS · opt"]
-        DDG["DuckDuckGo<br/>web search"]
-        WX["wttr.in<br/>weather"]
-        GH["GitHub<br/>skill import"]
-        TG["Telegram<br/>bot · opt"]
-        RMCP["Remote MCP<br/>SSE · opt"]
-    end
-
-    subgraph BOX["Container — victoria image · services: api (:8000) + telegram"]
-        direction LR
-        CM["Conversation Manager"]
-        ROUTER["LLM Router<br/>local ↔ Claude"]
-        VOICE["Voice<br/>Piper TTS + Whisper STT"]
-        CLI["Claude Code CLI<br/>bundled"]
-        MEM["Memory<br/>SQLite + ChromaDB"]
-        SKILLS["Skills"]
-        VAULT["Vault<br/>Fernet · masked"]
-        MCP["MCP client<br/>stdio + SSE"]
-        TOOLS["Tools<br/>search · weather · calc"]
-        API["FastAPI<br/>uvicorn :8000"]
-    end
-
-    subgraph HOST["Host — macOS (outside the container)"]
-        direction LR
-        BROWSER["Browser<br/>the HUD tab"]
-        DMR["Docker Model Runner<br/>:12434 · local LLM"]
-        OLLAMA["Ollama<br/>:11434 · opt"]
-        KC["macOS Keychain<br/>vault master key"]
-        VOL["Bind mounts<br/>./data · ./models · ./skills"]
-    end
-
-    BROWSER -->|HTTP/SSE 127.0.0.1:8000| API
-    ROUTER -->|model-runner.docker.internal · local| DMR
-    ROUTER -.->|host.docker.internal:11434 · opt| OLLAMA
-    KC -->|VICTORIA_VAULT_KEY env at launch| VAULT
-    MEM <-->|bind mount · persists on host| VOL
-    CLI -->|HTTPS · OAuth escalation| ANTH
-    TOOLS -->|HTTPS| DDG
-    TOOLS -->|HTTPS| WX
-    SKILLS -->|git · HTTPS| GH
-    VOICE -.->|HTTPS · opt key| EL
-    MCP -.->|SSE · opt| RMCP
-    CM -.->|opt · telegram service| TG
-```
+<p align="center">
+  <img src="docs/screenshots/architecture.png" width="760"
+       alt="Victoria deployment topology — three zones (host macOS, the container, cloud/external) with every boundary-crossing connection labeled by protocol and port">
+</p>
 
 **Inside the container** — the whole app ships in one image (two services off it:
 `victoria-api` on `:8000` and the optional `victoria-telegram`). Everything needed to
