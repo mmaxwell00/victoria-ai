@@ -173,6 +173,14 @@ Pick per the user's platform; these are the ones that worked.
   as an optional, higher-quality opt-in.
 - **STT:** faster-whisper (needs `ffmpeg`). Do speech capture in the browser and
   post audio to a transcribe endpoint — avoids native audio deps on the server.
+- **Web access (for real-time info):** a built-in search tool (e.g. DuckDuckGo,
+  no key) plus a lightweight page-reader MCP (`mcp-server-fetch`) gives you
+  *search → read*, which answers most "what's happening now" questions without
+  escalating to the cloud. Prefer this over a full headless browser for a local
+  model — one `fetch` tool won't drown it, whereas a Playwright/Chrome MCP adds
+  ~20 tools and is better reserved for the cloud backend. (If `uvx` isn't
+  available, `pip install mcp-server-fetch` into the app venv and run it as
+  `python -m mcp_server_fetch`.)
 - **Vector store:** ChromaDB (embedded, no server) for semantic memory.
 - **Secrets:** Fernet symmetric encryption; master key in the OS keychain
   (macOS Keychain via the `security` CLI), with an env/`0600`-file fallback.
@@ -206,6 +214,13 @@ Hold these true regardless of stack:
 - **Match the exact model id.** Local runtimes resolve tags — pulling `foo/bar`
   may become `foo/bar:3B-Q4_K_M`. Use the id the runtime actually lists, or you'll
   get silent 404s.
+- **A polluted launch env hijacks the cloud CLI's auth.** If escalation shells out
+  to a subscription-auth CLI, variables inherited from the shell that started the
+  server — a gateway `*_BASE_URL`, or session markers like `CLAUDECODE` — can
+  override the machine's real login and the CLI 401s. Invoke the CLI with a
+  *scrubbed* environment (drop the base-URL / auth-token / session vars, keep the
+  intended token), and launch the server from a clean shell where the CLI is
+  logged in. Symptom: escalation returns `401 Invalid authentication credentials`.
 - **Real WAV headers.** Some TTS calls return raw PCM or headerless audio; use the
   library's proper WAV writer or the browser can't play it.
 - **Hermetic/hardened Python envs** may enforce hashed, fully-pinned installs.
