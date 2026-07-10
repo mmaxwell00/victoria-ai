@@ -56,7 +56,7 @@ victoria-ai/
 │   ├── update.sh               # One-command native updater
 │   └── ensure-model-runner.sh  # Re-bind the Docker Model Runner host-TCP port if it drops
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
-├── tests/                      # 267 pytest tests
+├── tests/                      # 277 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
 ├── docker-compose.yml
 ├── Dockerfile
@@ -640,4 +640,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-267 tests across memory & semantic recall, conversation, tools & tool-calling, local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), Telegram, user profiles, and API layers.
+277 tests across memory & semantic recall, conversation, tools & tool-calling, local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), Telegram, user profiles, and API layers.
