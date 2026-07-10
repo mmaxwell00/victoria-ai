@@ -6,10 +6,11 @@
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/absolute/path/to/an/allowed/dir"],
       "readOnly": true
     },
+    "_fetch_note": "Recommended: lets Victoria read web pages. Pair with her built-in DuckDuckGo search for real-time info. Needs uv/uvx; if uvx isn't available, `pip install mcp-server-fetch` and use command '<your .venv>/bin/python' with args ['-m','mcp_server_fetch'].",
     "fetch": {
       "command": "uvx",
       "args": ["mcp-server-fetch"],
-      "disabled": true
+      "readOnly": true
     },
     "github": {
       "command": "npx",
