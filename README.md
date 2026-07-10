@@ -180,6 +180,8 @@ Victoria is an **MCP client** — she can use tools from any [Model Context Prot
 - **Trust:** MCP tools run under *your* credentials, so only add servers you trust. `mcp.json` is git-ignored since it may hold secrets; keep them in the servers' `env`.
 - A failing server is logged and skipped — it never blocks startup.
 
+**Web reads (real-time info):** enable the bundled `fetch` server (`mcp-server-fetch`) so Victoria can read web pages — paired with her built-in DuckDuckGo search, that's search → read, which covers most "what's happening now" questions without escalating to the cloud. It needs `uv`/`uvx`; if `uvx` isn't on your machine, `pip install mcp-server-fetch` into the app's venv and set the server's `command` to `<your .venv>/bin/python` with `args: ["-m", "mcp_server_fetch"]`.
+
 > Tip: keep the exposed tool set small. A small local model can get lost among dozens of tools; complex multi-tool work is more reliable on the Claude backend.
 
 ### Local-first escalation (ask before going to the cloud)
