@@ -606,6 +606,21 @@ docker desktop disable model-runner && docker desktop enable model-runner --tcp=
 
 Then hard-refresh the tab (`Cmd + Shift + R`).
 
+**Escalation to Claude fails with `401` / "Invalid authentication credentials"**
+The Claude Code CLI is being routed away from your subscription login by
+environment variables inherited from the shell Victoria was launched in — most
+commonly a gateway `ANTHROPIC_BASE_URL` and `CLAUDECODE`/`CLAUDE_CODE_*` markers
+injected when you start the server from *inside* another Claude Code / Agent SDK
+session. Victoria now scrubs these for the `claude -p` subprocess, but for a
+clean setup:
+
+- Start Victoria from a **normal terminal** (Terminal.app), not from within a
+  Claude Code session: `~/victoria-ai/scripts/start.sh`.
+- Make sure the CLI is logged in — run `claude` once interactively to refresh the
+  login, then restart.
+- Escalation uses your Claude **subscription** (never `ANTHROPIC_API_KEY`); in
+  Docker it uses `CLAUDE_CODE_OAUTH_TOKEN`.
+
 **`pip install` fails with `In --require-hashes mode, all requirements must have their versions pinned`**
 Your environment (a `pip.conf` or `PIP_REQUIRE_HASHES` env var) enforces hashed,
 fully-pinned installs, which `requirements.txt` does not provide. For a one-off

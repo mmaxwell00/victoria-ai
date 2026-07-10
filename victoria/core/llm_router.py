@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import tempfile
 
 import httpx
@@ -12,6 +13,38 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from victoria.tools.registry import ToolRegistry
+
+
+# Environment variables that hijack the Claude Code CLI's authentication if they
+# leak in from the launch environment — most commonly when Victoria is started
+# from inside another Claude Code / Agent SDK session, which injects a
+# session-scoped credential context and a gateway base URL. Left in place, they
+# override the machine's own subscription login and the CLI 401s. We scrub them
+# for the `claude -p` subprocess so escalation always uses the real login.
+# CLAUDE_CODE_OAUTH_TOKEN is deliberately kept — that's the supported headless
+# token-auth path (e.g. the Docker deployment injects it).
+_CLAUDE_CLI_BLOCKED_ENV = frozenset({
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_API_KEY",          # subscription auth only; a stray key would 401
+    "CLAUDECODE",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_SSE_PORT",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_AGENT_SDK_VERSION",
+    "CLAUDE_CODE_OAUTH_SCOPES",
+    "CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH",
+    "CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH",
+})
+
+
+def _claude_cli_env(base: Optional[dict] = None) -> dict:
+    """Return a copy of the environment with the credential-hijacking variables
+    removed, so the Claude Code CLI authenticates with the machine's own
+    subscription login instead of an inherited session/gateway context."""
+    source = os.environ if base is None else base
+    return {k: v for k, v in source.items() if k not in _CLAUDE_CLI_BLOCKED_ENV}
 
 
 class LLMRouter:
@@ -289,7 +322,9 @@ class LLMRouter:
 
         Uses the machine's Claude subscription auth (never the API key), so it
         works without ANTHROPIC_API_KEY. Runs from a neutral temp directory so
-        it doesn't pick up the current project's CLAUDE.md context.
+        it doesn't pick up the current project's CLAUDE.md context, and with a
+        scrubbed environment (see _claude_cli_env) so a session/gateway context
+        inherited from the launch shell can't hijack authentication.
         """
         args = [
             settings.claude_cli_command,
@@ -310,6 +345,7 @@ class LLMRouter:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=tempfile.gettempdir(),
+                env=_claude_cli_env(),
             )
         except FileNotFoundError as exc:
             raise RuntimeError(
