@@ -17,7 +17,12 @@ logger = logging.getLogger(__name__)
     },
 )
 async def web_search(query: str, max_results: int = 3) -> str:
-    from duckduckgo_search import DDGS
+    # `duckduckgo_search` was renamed to `ddgs`; the old package stopped
+    # returning results. Prefer `ddgs`, fall back for older installs.
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        from duckduckgo_search import DDGS
     results = []
     with DDGS() as ddgs:
         for r in ddgs.text(query, max_results=max_results):
