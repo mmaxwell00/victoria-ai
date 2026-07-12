@@ -616,10 +616,15 @@ injected when you start the server from *inside* another Claude Code / Agent SDK
 session. Victoria now scrubs these for the `claude -p` subprocess, but for a
 clean setup:
 
-- Start Victoria from a **normal terminal** (Terminal.app), not from within a
-  Claude Code session: `~/victoria-ai/scripts/start.sh`.
-- Make sure the CLI is logged in — run `claude` once interactively to refresh the
-  login, then restart.
+- **Most reliable fix — use an explicit token.** Run `claude setup-token`, then
+  put it in `.env` as `CLAUDE_CLI_OAUTH_TOKEN=...` and restart. Victoria injects
+  it for the `claude -p` subprocess, so escalation authenticates regardless of
+  how or where the server was launched. (First run `claude -p "hi"` in your
+  terminal to confirm the login itself works.)
+- Or start Victoria from a **normal terminal** (Terminal.app) where `claude` is
+  logged in, not from within another Claude Code session:
+  `~/victoria-ai/scripts/start.sh`. Run `claude` once interactively to refresh
+  the login if needed.
 - Escalation uses your Claude **subscription** (never `ANTHROPIC_API_KEY`); in
   Docker it uses `CLAUDE_CODE_OAUTH_TOKEN`.
 
