@@ -1,7 +1,39 @@
 """Tests for LLMRouter backend selection."""
 from unittest.mock import patch
 
-from victoria.core.llm_router import LLMRouter, _claude_cli_env
+from victoria.core.llm_router import LLMRouter, _claude_cli_env, _is_coding_task
+
+
+def test_is_coding_task_classifier():
+    for q in ["Write a Python function to reverse a list",
+              "there's a bug in my JavaScript",
+              "refactor this class",
+              "```\nprint('hi')\n```",
+              "help me with a SQL query",
+              "fix the Dockerfile"]:
+        assert _is_coding_task(q), q
+    for q in ["What's the weather in Atlanta tomorrow?",
+              "tell me a joke about cats",
+              "what's the capital of France?",
+              "remind me to call mum"]:
+        assert not _is_coding_task(q), q
+
+
+def test_pick_local_model_routes_coding_to_code_model():
+    router = LLMRouter()
+    with patch("victoria.core.llm_router.settings") as s:
+        s.model_runner_model = "chat-model"
+        s.model_runner_code_model = "code-model"
+        assert router._pick_local_model([{"role": "user", "content": "debug my python function"}]) == "code-model"
+        assert router._pick_local_model([{"role": "user", "content": "what's the weather tomorrow?"}]) == "chat-model"
+
+
+def test_pick_local_model_defaults_when_no_code_model():
+    router = LLMRouter()
+    with patch("victoria.core.llm_router.settings") as s:
+        s.model_runner_model = "chat-model"
+        s.model_runner_code_model = ""   # routing disabled
+        assert router._pick_local_model([{"role": "user", "content": "write a rust program"}]) == "chat-model"
 
 
 LONG_MESSAGE = " ".join(["word"] * 300)

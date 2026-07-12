@@ -23,6 +23,8 @@ def mock_manager():
     mgr.stream_chat = _stream
     mgr.memory.list_sessions = MagicMock(return_value=[])
     mgr.memory.get_history = MagicMock(return_value=[])
+    # The API reports which local model answered on docker/ollama turns.
+    mgr.router._last_local_model = "docker.io/ai/qwen2.5:latest"
     return mgr
 
 

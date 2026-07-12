@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 import tempfile
 
 import httpx
@@ -54,12 +55,54 @@ def _claude_cli_env(base: Optional[dict] = None, oauth_token: str = "") -> dict:
     return env
 
 
+# Signals that a query is a coding / technical task, so it can route to the
+# dedicated code model (settings.model_runner_code_model) when one is set. Kept
+# deliberately strong-signal to avoid pulling casual chat onto the code model;
+# tune to taste — over-routing costs a little chat quality, under-routing costs
+# code quality.
+_CODING_RE = re.compile(
+    r"```|\b("
+    r"code|coding|program(?:ming)?|function|method|class|variable|snippet|script|"
+    r"bug|debug|error|exception|traceback|stack ?trace|compile|syntax|refactor|"
+    r"implement|algorithm|regex|unit ?test|dependency|library|framework|"
+    r"python|javascript|typescript|java|kotlin|swift|rust|golang|ruby|php|scala|"
+    r"sql|html|css|react|node\.?js|fastapi|django|flask|"
+    r"dockerfile|kubernetes|terraform|github|git|yaml|json"
+    r")\b|\.(py|js|ts|sh|go|rs|java|rb|sql|cpp|tsx|jsx)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_coding_task(text: str) -> bool:
+    return bool(_CODING_RE.search(text or ""))
+
+
 class LLMRouter:
     """Routes queries to Ollama (local) or Claude (cloud) based on config or complexity."""
 
     def __init__(self):
         self._anthropic: Optional[AsyncAnthropic] = None
         self._http: Optional[httpx.AsyncClient] = None
+        # The local model used for the most recent docker turn (for logging /
+        # surfacing which model answered).
+        self._last_local_model: str = ""
+
+    def _pick_local_model(self, messages: list[dict]) -> str:
+        """Choose which local (Docker Model Runner) model handles this turn:
+        the code model for coding/technical queries when one is configured,
+        otherwise the everyday model. Records the choice on _last_local_model."""
+        default = settings.model_runner_model
+        code = (getattr(settings, "model_runner_code_model", "") or "").strip()
+        if code and code != default:
+            last_user = next(
+                (m["content"] for m in reversed(messages) if m.get("role") == "user"), ""
+            )
+            if _is_coding_task(last_user):
+                logger.info("Local model → code model (%s)", code)
+                self._last_local_model = code
+                return code
+        self._last_local_model = default
+        return default
 
     @property
     def anthropic(self) -> AsyncAnthropic:
@@ -409,7 +452,7 @@ class LLMRouter:
 
     async def _docker(self, messages: list[dict], system_prompt: Optional[str] = None) -> str:
         payload = {
-            "model": settings.model_runner_model,
+            "model": self._pick_local_model(messages),
             "messages": [{"role": "system", "content": system_prompt or VICTORIA_SYSTEM_PROMPT}] + messages,
             "stream": False,
         }
@@ -423,7 +466,7 @@ class LLMRouter:
         import json as _json
 
         payload = {
-            "model": settings.model_runner_model,
+            "model": self._pick_local_model(messages),
             "messages": [{"role": "system", "content": system_prompt or VICTORIA_SYSTEM_PROMPT}] + messages,
             "stream": True,
         }
@@ -447,10 +490,11 @@ class LLMRouter:
         import json as _json
 
         working_messages = [{"role": "system", "content": system_prompt}] + list(messages)
+        model = self._pick_local_model(messages)
         last_message: dict = {}
         for _ in range(5):
             payload = {
-                "model": settings.model_runner_model,
+                "model": model,
                 "messages": working_messages,
                 "tools": tool_registry.get_ollama_tools(),  # OpenAI format
                 "stream": False,

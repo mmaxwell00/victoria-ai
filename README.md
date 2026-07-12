@@ -197,6 +197,16 @@ How the local model signals it's stuck: local backends are given an *escalation 
 
 > Requires the [Claude Code CLI](https://claude.com/claude-code) installed and logged in (`claude` on your PATH). Adding ChatGPT as an alternative is a planned follow-up.
 
+### Model tiers (right-size the model to the task)
+
+Victoria can route across three tiers so each request lands on the cheapest model that can do it well:
+
+1. **Everyday / tools → `MODEL_RUNNER_MODEL`** (e.g. `ai/qwen2.5:32k`). An instruct model handles chat, weather, search, and tool use reliably.
+2. **Coding / technical → `MODEL_RUNNER_CODE_MODEL`** (e.g. `ai/qwen3-coder:32k`). Set this and coding-flavoured queries auto-route to it; everything else stays on the everyday model. Leave it blank to use one model for everything.
+3. **Beyond both → Claude** via the escalation flow above.
+
+Both local tiers run on Docker Model Runner (no cloud). Each reply's badge shows which model answered (e.g. `[DOCKER · qwen3-coder:32k]`), so the routing is visible.
+
 ---
 
 ## One-command install (macOS)

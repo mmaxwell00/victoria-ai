@@ -169,6 +169,12 @@ Pick per the user's platform; these are the ones that worked.
   Ollama. Both expose an OpenAI-compatible endpoint. *Alt:* llama.cpp/LM Studio.
 - **Cloud fallback:** a subscription-auth CLI (e.g. the Claude Code CLI, so no API
   key is needed) or a plain API key. Route through the same router interface.
+- **Tier the models to the task.** Right-size each request: a fast **instruct**
+  model for chat + tools, a stronger model for **coding/technical**, and the
+  cloud only **beyond both**. Pick the local tier with a cheap heuristic (does the
+  query look like code?), fall back to one model if a second isn't configured,
+  and surface which model answered so the routing is visible. Keeps everyday use
+  fast and local; reserves the expensive tiers for when they earn their cost.
 - **TTS:** Piper (fast, local, free) as default; a cloud voice (e.g. ElevenLabs)
   as an optional, higher-quality opt-in.
 - **STT:** faster-whisper (needs `ffmpeg`). Do speech capture in the browser and

@@ -348,16 +348,19 @@ async function sendMessage(text) {
 
         if (data.done) {
           bubble.classList.remove('streaming');
-          // Update sidebar backend display
+          // Update sidebar backend display — include the local model when known,
+          // so routing (qwen2.5 for chat/tools vs qwen3-coder for code) is visible.
           const backendLabel = (data.backend || '—').toUpperCase();
-          document.getElementById('sys-backend').textContent  = backendLabel;
-          document.getElementById('last-backend').textContent = backendLabel;
+          const shortModel = data.model ? data.model.split('/').pop() : '';
+          const label = shortModel ? `${backendLabel} · ${shortModel}` : backendLabel;
+          document.getElementById('sys-backend').textContent  = label;
+          document.getElementById('last-backend').textContent = label;
           document.getElementById('last-status').textContent  = 'OK';
 
           // Add backend badge to meta
           const badge = document.createElement('span');
           badge.className = 'msg-backend';
-          badge.textContent = `[${backendLabel}]`;
+          badge.textContent = `[${label}]`;
           meta.appendChild(badge);
 
           // Speak the reply aloud when spoken-replies is on, or when the

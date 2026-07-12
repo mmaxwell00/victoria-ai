@@ -22,7 +22,13 @@ class Settings(BaseSettings):
 
     # Docker Model Runner (OpenAI-compatible, built into Docker Desktop)
     model_runner_url: str = "http://localhost:12434/engines/llama.cpp/v1"
+    # Everyday / simple-and-tool model. Instruct-tuned models (e.g. qwen2.5) are
+    # the most reliable at tool-use and casual chat.
     model_runner_model: str = "ai/qwen2.5:latest"
+    # Optional second local model for coding / technical tasks. When set (and
+    # different), coding-flavoured queries auto-route here while everything else
+    # stays on model_runner_model. Leave blank to use one model for everything.
+    model_runner_code_model: str = ""
 
     # Complexity threshold — queries longer than this many words route to
     # Claude (only when anthropic_api_key is configured)
