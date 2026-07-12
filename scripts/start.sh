@@ -20,6 +20,29 @@ say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 # still serve, and the app degrades gracefully).
 "$DIR/scripts/ensure-model-runner.sh" || say "Model Runner not reachable — continuing anyway."
 
+# Claude escalation auth preflight (non-blocking). The local model works without
+# this; escalation to Claude just needs the CLI logged in. We only check that a
+# credential is *present* (cheap, no token spend) — a stale one is caught at
+# runtime with a clear error.
+_claude_authed() {
+  [ -n "${CLAUDE_CLI_OAUTH_TOKEN:-}" ] && return 0
+  grep -qE '^CLAUDE_CLI_OAUTH_TOKEN=.+' "$DIR/.env" 2>/dev/null && return 0
+  security find-generic-password -s "Claude Code-credentials" >/dev/null 2>&1 && return 0
+  return 1
+}
+CLAUDE_BIN="${CLAUDE_CLI_COMMAND:-claude}"
+if ! command -v "$CLAUDE_BIN" >/dev/null 2>&1; then
+  say "Claude escalation: '$CLAUDE_BIN' not on PATH — Victoria runs locally; install the Claude Code CLI to enable it."
+elif _claude_authed; then
+  say "Claude escalation: credentials found ✓ (if it still 401s, refresh with scripts/claude-login.sh)"
+else
+  printf '\033[1;33m==>\033[0m Claude escalation not logged in (Victoria still runs locally).\n'
+  printf '    To enable "ask Claude when the local model is stuck", do one of:\n'
+  printf '      • claude                # log in with your Claude subscription (one-time)\n'
+  printf '      • claude setup-token    # then add CLAUDE_CLI_OAUTH_TOKEN=... to .env (best for an always-on server)\n'
+  printf '    Or just run: scripts/claude-login.sh\n'
+fi
+
 if [ ! -x .venv/bin/uvicorn ]; then
   echo "No .venv found — create one: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
   exit 1

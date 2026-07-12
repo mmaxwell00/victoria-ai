@@ -254,6 +254,11 @@ Hold these true regardless of stack:
 - **Make it operable:** one-command install, a one-command updater, a launcher
   that self-heals dependencies and health-checks the server. A great assistant
   that's fiddly to start won't get used.
+- **Preflight optional auth, don't block on it.** At startup, check whether
+  optional external auth (e.g. the cloud-escalation login) is present and *tell
+  the user how to set it up if it's missing* — but still start, because
+  local-first must work without it. Report the status ("escalation: ready ✓")
+  rather than failing silently the first time they need it.
 - **Persona is a feature.** A consistent voice/name/tone in the system prompt is
   what turns "an LLM endpoint" into "an assistant."
 
