@@ -40,6 +40,12 @@ class ChatResponse(BaseModel):
     session_id: str
     response: str
     backend: str
+    model: Optional[str] = None  # which local model answered (docker/ollama turns)
+
+
+# Backends that run a local Docker Model Runner / Ollama model — the only ones
+# for which reporting the specific model id is meaningful.
+_LOCAL_BACKENDS = {"docker", "ollama"}
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -51,6 +57,8 @@ async def chat(req: ChatRequest, mgr: ConversationManager = Depends(get_manager)
         channel="api",
         force_backend=req.backend,
     )
+    if result.get("backend") in _LOCAL_BACKENDS:
+        result["model"] = getattr(mgr.router, "_last_local_model", "") or None
     return result
 
 
@@ -64,6 +72,8 @@ async def chat_stream(req: ChatRequest, mgr: ConversationManager = Depends(get_m
             channel="api",
             force_backend=req.backend,
         ):
+            if event.get("done") and event.get("backend") in _LOCAL_BACKENDS:
+                event["model"] = getattr(mgr.router, "_last_local_model", "") or None
             yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
