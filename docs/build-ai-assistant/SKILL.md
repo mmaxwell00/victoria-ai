@@ -220,6 +220,12 @@ Hold these true regardless of stack:
   it can. Order it explicitly: **try the relevant tool first → answer from what
   you know → escalate only as a last resort**, and never list tool-handled
   queries as escalation examples.
+- **Web-search scraping libraries churn — and fail *silently*.** DuckDuckGo-style
+  search packages rename and break often (e.g. `duckduckgo_search` → `ddgs`); the
+  stale one returns *zero results* rather than raising, so search looks "working"
+  while every query comes back empty and the model says "I couldn't find
+  anything." Pin the maintained package, and add a smoke check ("does a known
+  query return ≥1 result?") so a dead search fails loudly.
 - **Match the exact model id.** Local runtimes resolve tags — pulling `foo/bar`
   may become `foo/bar:3B-Q4_K_M`. Use the id the runtime actually lists, or you'll
   get silent 404s.

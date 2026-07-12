@@ -20,7 +20,7 @@ numpy>=1.24.0
 openwakeword>=0.6.0
 piper-tts>=1.2.0
 chromadb>=0.5.0
-duckduckgo-search>=6.0.0
+ddgs>=9.0.0
 
 # MCP client (connect to Model Context Protocol servers)
 mcp>=1.0
