@@ -211,6 +211,15 @@ Hold these true regardless of stack:
 - **Don't lean on tool-calling with small models.** They drop or malform tool
   calls. Use injected instructions + a parseable fenced block for structured
   actions (like creating a skill), and keep the tool list short.
+- **Tool-aware escalation, or it cannibalizes your tools.** If the model has both
+  tools *and* a "signal when you can't answer" escalation protocol, a naive
+  escalation prompt makes it escalate for exactly the live questions its own
+  tools handle — e.g. listing "weather / news / prices" as *escalate-now*
+  examples means it emits the escalation token instead of calling `get_weather`
+  or `web_search`, and the user hears "I can't access real-time data" even though
+  it can. Order it explicitly: **try the relevant tool first → answer from what
+  you know → escalate only as a last resort**, and never list tool-handled
+  queries as escalation examples.
 - **Match the exact model id.** Local runtimes resolve tags — pulling `foo/bar`
   may become `foo/bar:3B-Q4_K_M`. Use the id the runtime actually lists, or you'll
   get silent 404s.
