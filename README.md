@@ -186,7 +186,7 @@ Victoria is an **MCP client** — she can use tools from any [Model Context Prot
 
 ### Local-first escalation (ask before going to the cloud)
 
-Victoria always tries the **local model first**. If it genuinely can't answer — a real-time question, something outside its knowledge, or a backend error — it doesn't guess. It **pauses and asks you**:
+Victoria always tries the **local model first**, and **her tools before that** — `get_weather` for weather, `web_search` + `fetch` for current facts/news/prices, `get_datetime` for the date/time. So most "real-time" questions are answered locally, no cloud needed. Escalation is a **last resort**: only when she genuinely can't answer even with her tools (or a backend error) does she **pause and ask you**:
 
 > *"I'm afraid that one's rather beyond my local wits just now. Shall I put it to Claude for a proper answer? (yes / no)"*
 
