@@ -52,11 +52,12 @@ victoria-ai/
 │   ├── chat.py                 # Terminal chat client
 │   ├── run_telegram.py         # Telegram bot runner
 │   ├── run_voice.py            # Voice interface runner
-│   ├── start.sh                # Native launcher — self-heals the Model Runner, then starts the server
+│   ├── start.sh                # Native launcher — self-heals the Model Runner, Claude-auth preflight, then starts the server
 │   ├── update.sh               # One-command native updater
-│   └── ensure-model-runner.sh  # Re-bind the Docker Model Runner host-TCP port if it drops
+│   ├── ensure-model-runner.sh  # Re-bind the Docker Model Runner host-TCP port if it drops
+│   └── claude-login.sh         # Authenticate Claude escalation (subscription login or token)
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
-├── tests/                      # 277 pytest tests
+├── tests/                      # 278 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
 ├── docker-compose.yml
 ├── Dockerfile
@@ -332,8 +333,9 @@ Open **http://localhost:8000** in your browser.
 The interface is a full-screen dark HUD inspired by the Iron Man JARVIS OS — dark navy background, teal panel headers, red digit clock, and a rotating arc reactor ring as the chat backdrop.
 
 **Left sidebar**
-- Operator profile — name, communication style, topic count, preference count
+- Operator profile — your name, how she should address you, learned communication style, preference count. On first run a one-time **"Identify Operator"** modal asks your name and how you'd like to be addressed
 - Memory banks — live list of all stored explicit memories
+- Topics — your chat history: each past conversation, newest first; click one to reopen it. Starting a new chat archives the current one here
 - Session log — today's and total session counts with a fill bar
 
 **Center**
@@ -659,4 +661,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-277 tests across memory & semantic recall, conversation, tools & tool-calling, local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), Telegram, user profiles, and API layers.
+278 tests across memory & semantic recall, conversation, tools & tool-calling, local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), Telegram, user profiles, and API layers.
