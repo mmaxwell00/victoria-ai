@@ -144,6 +144,9 @@ async def test_weather_url_encodes_location():
             captured["url"] = url
             resp = MagicMock()
             resp.text = "New York: ☀️ +25°C"
+            # No JSON here → get_weather falls back to the ?format=3 one-liner,
+            # which is the URL these assertions check.
+            resp.json = MagicMock(side_effect=ValueError("not json"))
             resp.raise_for_status = MagicMock()
             return resp
 
@@ -154,3 +157,42 @@ async def test_weather_url_encodes_location():
         await weather_mod.get_weather("x/../etc?foo=bar")
         assert "?foo" not in captured["url"].replace("?format=3", "")
         assert "/.." not in captured["url"]
+
+
+@pytest.mark.asyncio
+async def test_weather_includes_current_and_forecast():
+    """get_weather returns current conditions plus a today/tomorrow forecast."""
+    from unittest.mock import MagicMock, patch
+    import victoria.tools.weather as weather_mod
+
+    def day(date, hi, lo, desc):
+        hourly = [{} for _ in range(6)]
+        hourly[4] = {"weatherDesc": [{"value": desc}]}
+        return {"date": date, "maxtempF": hi, "mintempF": lo, "hourly": hourly}
+
+    j1 = {
+        "current_condition": [
+            {"temp_F": "86", "FeelsLikeF": "92", "weatherDesc": [{"value": "Partly cloudy"}]}
+        ],
+        "weather": [
+            day("2026-07-12", "91", "72", "Sunny"),
+            day("2026-07-13", "79", "71", "Light rain shower"),
+        ],
+    }
+
+    class FakeClient:
+        def __init__(self, *a, **kw): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url):
+            resp = MagicMock()
+            resp.json = MagicMock(return_value=j1)
+            resp.raise_for_status = MagicMock()
+            return resp
+
+    with patch.object(weather_mod.httpx, "AsyncClient", FakeClient):
+        out = await weather_mod.get_weather("Atlanta")
+
+    assert "now: 86°F" in out
+    assert "Tomorrow (2026-07-13)" in out
+    assert "79°F" in out and "Light rain shower" in out

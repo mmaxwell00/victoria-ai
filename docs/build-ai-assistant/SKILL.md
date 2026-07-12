@@ -210,7 +210,13 @@ Hold these true regardless of stack:
   the stream and filter/route control signals before display.
 - **Don't lean on tool-calling with small models.** They drop or malform tool
   calls. Use injected instructions + a parseable fenced block for structured
-  actions (like creating a skill), and keep the tool list short.
+  actions (like creating a skill), and keep the tool list short. Two things
+  raise reliability: (1) prefer an **instruct-tuned** model over a coder/base
+  model — coder models are noticeably worse at conversational tool-use and will
+  sometimes *decline* a question their own tool could answer; (2) make each tool
+  **cover the natural phrasings** of its job (e.g. a weather tool that returns a
+  *forecast*, not just current conditions) so the model isn't tempted to give up.
+  Expect residual flakiness — it's stochastic, not all-or-nothing.
 - **Tool-aware escalation, or it cannibalizes your tools.** If the model has both
   tools *and* a "signal when you can't answer" escalation protocol, a naive
   escalation prompt makes it escalate for exactly the live questions its own
