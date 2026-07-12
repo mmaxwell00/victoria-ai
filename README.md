@@ -445,6 +445,20 @@ can silently drop when Docker Desktop or the Mac restarts, which empties the
 model dropdown; `start.sh` detects that and re-binds it before launching. Then
 it starts the server and health-checks it. Use this after every reboot.
 
+**Claude login (for escalation).** On startup, `start.sh` also reports whether
+Claude escalation is authenticated. The local model works regardless — this only
+enables "ask Claude when the local model is stuck," using your Claude
+**subscription** (no API key). If it isn't logged in, run:
+
+```bash
+~/victoria-ai/scripts/claude-login.sh
+```
+
+and pick **subscription login** (one-time) or a **long-lived token** (written to
+`.env` as `CLAUDE_CLI_OAUTH_TOKEN` — best for an always-on server, since it
+doesn't expire and works no matter how Victoria was launched). Then re-run
+`start.sh`.
+
 ## Updating
 
 **Native setup** — one command pulls the latest, refreshes deps, re-binds the
