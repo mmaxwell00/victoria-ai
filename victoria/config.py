@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     claude_cli_command: str = "claude"          # binary on PATH
     claude_cli_model: str = "sonnet"            # alias or full model id
     claude_cli_timeout: int = 120               # seconds
+    # Optional long-lived OAuth token from `claude setup-token`. If set, it's
+    # injected as CLAUDE_CODE_OAUTH_TOKEN for the `claude -p` subprocess, so
+    # escalation authenticates regardless of how/where Victoria was launched
+    # (no dependence on an interactive keychain login in the launch shell).
+    claude_cli_oauth_token: str = ""
     # Read-only tools Claude may use non-interactively when answering (space or
     # comma separated). WebSearch/WebFetch let it answer real-time questions;
     # nothing else is pre-approved, so it can't run shell or edit files.

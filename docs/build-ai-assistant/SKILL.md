@@ -218,9 +218,13 @@ Hold these true regardless of stack:
   to a subscription-auth CLI, variables inherited from the shell that started the
   server — a gateway `*_BASE_URL`, or session markers like `CLAUDECODE` — can
   override the machine's real login and the CLI 401s. Invoke the CLI with a
-  *scrubbed* environment (drop the base-URL / auth-token / session vars, keep the
-  intended token), and launch the server from a clean shell where the CLI is
-  logged in. Symptom: escalation returns `401 Invalid authentication credentials`.
+  *scrubbed* environment (drop the base-URL / auth-token / session vars). The most
+  robust fix is to authenticate with an **explicit long-lived token** (e.g.
+  `claude setup-token`) injected into the subprocess env, so auth doesn't depend
+  on the launch context at all. And **read the CLI's stdout for errors** — many
+  CLIs (Claude Code included) print auth failures to stdout, not stderr, so a
+  stderr-only error handler reports a useless "exit 1, no output" instead of the
+  real `401`. Symptom: escalation returns `401 Invalid authentication credentials`.
 - **Real WAV headers.** Some TTS calls return raw PCM or headerless audio; use the
   library's proper WAV writer or the browser can't play it.
 - **Hermetic/hardened Python envs** may enforce hashed, fully-pinned installs.

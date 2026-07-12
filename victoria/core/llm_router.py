@@ -39,12 +39,19 @@ _CLAUDE_CLI_BLOCKED_ENV = frozenset({
 })
 
 
-def _claude_cli_env(base: Optional[dict] = None) -> dict:
+def _claude_cli_env(base: Optional[dict] = None, oauth_token: str = "") -> dict:
     """Return a copy of the environment with the credential-hijacking variables
     removed, so the Claude Code CLI authenticates with the machine's own
-    subscription login instead of an inherited session/gateway context."""
+    subscription login instead of an inherited session/gateway context.
+
+    If oauth_token is set (from `claude setup-token`), it's injected as
+    CLAUDE_CODE_OAUTH_TOKEN so the CLI uses explicit token auth — making
+    escalation work regardless of how or where Victoria was launched."""
     source = os.environ if base is None else base
-    return {k: v for k, v in source.items() if k not in _CLAUDE_CLI_BLOCKED_ENV}
+    env = {k: v for k, v in source.items() if k not in _CLAUDE_CLI_BLOCKED_ENV}
+    if oauth_token:
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
+    return env
 
 
 class LLMRouter:
@@ -345,7 +352,7 @@ class LLMRouter:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=tempfile.gettempdir(),
-                env=_claude_cli_env(),
+                env=_claude_cli_env(oauth_token=settings.claude_cli_oauth_token),
             )
         except FileNotFoundError as exc:
             raise RuntimeError(
@@ -365,8 +372,17 @@ class LLMRouter:
             )
 
         if proc.returncode != 0:
-            detail = (stderr.decode(errors="replace").strip() or "no error output")[:300]
-            raise RuntimeError(f"Claude Code CLI failed (exit {proc.returncode}): {detail}")
+            # The CLI prints auth/other errors to stdout, not stderr — check both
+            # so the failure is actually diagnosable.
+            err = stderr.decode(errors="replace").strip()
+            out = stdout.decode(errors="replace").strip()
+            detail = (err or out or "no error output")[:400]
+            hint = ""
+            if "401" in detail or "authenticat" in detail.lower():
+                hint = (" — Claude isn't authenticated for this process. Run "
+                        "`claude setup-token` and set CLAUDE_CLI_OAUTH_TOKEN in .env, "
+                        "or launch Victoria from a terminal where `claude` is logged in.")
+            raise RuntimeError(f"Claude Code CLI failed (exit {proc.returncode}): {detail}{hint}")
 
         return stdout.decode(errors="replace").strip()
 

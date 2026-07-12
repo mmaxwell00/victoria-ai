@@ -32,6 +32,15 @@ def test_claude_cli_env_scrubs_session_and_gateway_vars():
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "keep-me"
 
 
+def test_claude_cli_env_injects_configured_oauth_token():
+    """A configured token (from `claude setup-token`) is injected so escalation
+    authenticates regardless of the launch environment."""
+    env = _claude_cli_env({"PATH": "/usr/bin"}, oauth_token="tok-123")
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "tok-123"
+    # …and nothing is injected when no token is configured
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in _claude_cli_env({"PATH": "/usr/bin"})
+
+
 def test_force_backend_wins():
     router = LLMRouter()
     assert router._pick_backend(LONG_MESSAGE, force="ollama") == "ollama"
