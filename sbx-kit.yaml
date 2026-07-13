@@ -1,0 +1,167 @@
+kind: sandbox
+name: victoria
+version: 1.0.0
+description: >
+  Victoria — a Jarvis-style AI assistant with local LLM, voice, skills, and MCP support.
+  Runs fully isolated in a Docker Sandbox with Docker Model Runner backend.
+  Requires: sbx policy allow network localhost:12434
+
+sandbox:
+  image: dhi.io/debian:trixie-slim
+  entrypoint: /bin/bash
+  command:
+    - -c
+    - |
+      cd /workspace/victoria-ai && \
+      python -m uvicorn victoria.main:app --host 0.0.0.0 --port 8000
+
+install:
+  commands:
+    # Core system packages: Python, ffmpeg for Whisper, git for skill import, Node for MCP/Claude CLI
+    - apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 python3-pip build-essential \
+        ffmpeg git curl wget \
+        nodejs npm ca-certificates \
+        portaudio-dev libportaudio2 \
+        && npm install -g @anthropic-ai/claude-code \
+        && npm cache clean --force \
+        && apt-get clean && rm -rf /var/lib/apt/lists/*
+    
+    # Install Python dependencies
+    - cd /workspace/victoria-ai && pip install --no-cache-dir -r requirements.txt
+    
+    # Download Piper voice model (British voice)
+    - mkdir -p /workspace/victoria-ai/models && \
+      curl -fsSL -o /workspace/victoria-ai/models/en_GB-jenny_dioco-medium.onnx \
+      https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/jenny_dioco/medium/en_GB-jenny_dioco-medium.onnx && \
+      curl -fsSL -o /workspace/victoria-ai/models/en_GB-jenny_dioco-medium.onnx.json \
+      https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/jenny_dioco/medium/en_GB-jenny_dioco-medium.onnx.json
+    
+    # Create persistent data directories
+    - mkdir -p /workspace/victoria-ai/data /workspace/victoria-ai/models
+
+env:
+  # LLM routing
+  DEFAULT_LLM: docker
+  
+  # Docker Model Runner — accessed via localhost:12434 from sandbox (proxy rewrites host.docker.internal)
+  MODEL_RUNNER_URL: http://localhost:12434/engines/llama.cpp/v1
+  MODEL_RUNNER_MODEL: docker.io/ai/qwen2.5:32k
+  MODEL_RUNNER_CODE_MODEL: docker.io/ai/qwen3-coder:32k   # coding queries auto-route here
+  
+  # Database and memory
+  DB_PATH: /workspace/victoria-ai/data/victoria.db
+  CHROMADB_PATH: /workspace/victoria-ai/data/chromadb
+  SKILLS_PATH: /workspace/victoria-ai/skills
+  
+  # Voice
+  TTS_ENGINE: piper
+  PIPER_MODEL_PATH: /workspace/victoria-ai/models/en_GB-jenny_dioco-medium.onnx
+  WHISPER_MODEL: base
+  WAKE_WORD: hello victoria
+  VOICE_SESSION_TIMEOUT: 30
+  
+  # Escalation to Claude
+  ESCALATION_ENABLED: "true"
+  CLAUDE_CLI_COMMAND: claude
+  CLAUDE_CLI_MODEL: sonnet
+  CLAUDE_CLI_TIMEOUT: 120
+  CLAUDE_CLI_ALLOWED_TOOLS: WebSearch WebFetch
+  
+  # Optional: set these via credentials or environment
+  CLAUDE_MODEL: claude-sonnet-4-6
+  COMPLEX_QUERY_THRESHOLD: "200"
+
+credentials:
+  - name: ANTHROPIC_API_KEY
+    description: "Anthropic API key for Claude escalation (optional)"
+  - name: CLAUDE_CODE_OAUTH_TOKEN
+    description: "Long-lived Claude Code CLI token (optional; uses subscription login if not set)"
+  - name: VICTORIA_VAULT_KEY
+    description: "Vault master key for encrypted credentials (optional)"
+  - name: TELEGRAM_BOT_TOKEN
+    description: "Telegram bot token if running Telegram interface (optional)"
+  - name: GitHub_Victoria
+    description: "GitHub personal access token for MCP GitHub server (optional)"
+
+network:
+  allowedDomains:
+    # Host services — Model Runner accessed via localhost:12434
+    # REQUIRES: sbx policy allow network localhost:12434 on the host
+    - localhost:12434
+    
+    # Claude escalation
+    - api.anthropic.com
+    - models-api.anthropic.com
+    
+    # Victoria built-in tools
+    - duckduckgo.com            # Web search — the ddgs library queries
+    - "*.duckduckgo.com"        # html./lite./links.duckduckgo.com (NOT api.duckduckgo.com)
+    - wttr.in                   # Weather tool
+    
+    # Model/dependency downloads (setup phase)
+    - huggingface.co
+    - cdn-lfs.huggingface.co
+    - "*.huggingface.co"        # CDN subdomains
+    
+    # Version control & skill import
+    - github.com
+    - api.github.com
+    - raw.githubusercontent.com
+    
+    # Package managers
+    - registry.npmjs.org
+    - npm.pkg.github.com
+    - pypi.org
+    - files.pythonhosted.org
+    - warehouse.pypi.org        # Python package CDN
+    
+  deniedDomains:
+    # Block telemetry/analytics to prevent accidental data leaks
+    - "telemetry.*.com"
+    - "metrics.*.com"
+    - "analytics.*.com"
+
+  # ⚠️  SECURITY NOTES:
+  # 
+  # 1. Model Runner access requires a host-level policy rule:
+  #    $ sbx policy allow network localhost:12434
+  #
+  # 2. Optional domains (add via sbx policy if you use these features):
+  #    - api.elevenlabs.io (if TTS_ENGINE=elevenlabs)
+  #    - api.telegram.org (if running victoria-telegram service)
+  #
+  # 3. MCP fetch server (if enabled in mcp.json):
+  #    - Powerful but creates attack surface for arbitrary URL reads
+  #    - Recommended: disable in mcp.json for higher security
+  #    - Or whitelist specific domains it may fetch from
+  #
+  # 4. GitHub MCP server may need additional domains for GitHub Enterprise:
+  #    - ghe.your-company.com (for GitHub Enterprise)
+  #
+  # 5. All credentials are injected from the host — they never enter the VM
+  #    Environment variables are set from the credentials block above
+
+memory:
+  - role: user
+    content: |
+      You are running Victoria inside a Docker Sandbox with full isolation from the host system.
+      
+      Available capabilities:
+      - Chat with local LLM (ai/qwen2.5:32k via Docker Model Runner on host)
+      - Escalate to Claude (on "yes" confirmation, uses your subscription)
+      - Use built-in tools: web search (DuckDuckGo), weather (wttr.in), skills, MCP servers
+      - Store persistent memories in ChromaDB + SQLite
+      - Voice I/O via Whisper (transcription) + Piper (text-to-speech)
+      - MCP server access: filesystem, GitHub, fetch (read-only)
+      
+      Security:
+      - Network access limited to whitelisted domains
+      - Credentials proxied from host (never exposed in sandbox)
+      - Persistent data at /workspace/victoria-ai/data survives sandbox lifecycle
+      - All API traffic encrypted in transit (HTTPS for external services)
+      
+      Debugging:
+      - Check /workspace/victoria-ai/data/victoria.db for conversation history
+      - View logs via: sbx logs <sandbox-id>
+      - Network connectivity: curl http://localhost:12434/engines/llama.cpp/v1/models
