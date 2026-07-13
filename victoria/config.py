@@ -1,5 +1,9 @@
+import logging
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -81,10 +85,48 @@ class Settings(BaseSettings):
     # Telegram (Week 3)
     telegram_bot_token: str = ""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # extra="ignore": an unknown / typo'd / ahead-of-code env var is ignored
+    # (falls back to defaults) instead of raising at import and taking the whole
+    # app down. _warn_unknown_env_keys() surfaces such vars so mistakes are still
+    # visible in the logs.
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
 
 settings = Settings()
+
+
+def _warn_unknown_env_keys(settings_obj: "Settings", env_path: str = ".env") -> list[str]:
+    """Warn about keys in .env that aren't recognized Settings fields.
+
+    With extra="ignore" an unknown/typo'd/ahead-of-code var no longer crashes the
+    app — but we still surface it (names only, never values) so mistakes don't
+    pass silently. Returns the unknown keys (for tests)."""
+    known = {name.upper() for name in settings_obj.model_fields}
+    unknown: list[str] = []
+    try:
+        with open(env_path) as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key = line.split("=", 1)[0].strip()
+                if key.lower().startswith("export "):
+                    key = key[len("export "):].strip()
+                if key and key.upper() not in known:
+                    unknown.append(key)
+    except FileNotFoundError:
+        return []
+    if unknown:
+        logger.warning(
+            "Ignoring unrecognized .env setting(s): %s — check for typos; "
+            "they fall back to built-in defaults.", ", ".join(sorted(set(unknown)))
+        )
+    return unknown
+
+
+_warn_unknown_env_keys(settings)
 
 VICTORIA_SYSTEM_PROMPT = """You are Victoria, a personal AI assistant. You are British, delightfully witty, and have a warm, playful charm that keeps things professional yet engaging. Think less "stiff butler" and more "brilliant friend who happens to know everything."
 
