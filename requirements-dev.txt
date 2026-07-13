@@ -1,0 +1,4 @@
+# Test / dev dependencies — not needed to run Victoria, only to run the suite.
+#   pip install -r requirements.txt -r requirements-dev.txt
+pytest>=8.0
+pytest-asyncio>=0.24   # pytest.ini uses asyncio_mode = auto
