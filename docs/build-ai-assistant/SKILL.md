@@ -272,12 +272,25 @@ Hold these true regardless of stack:
   survives an upgrade.
 - **The history window must start on a user message** for most chat APIs — trim
   leading assistant turns when you slice recent history.
+- **Config should degrade, not detonate.** An unknown / typo'd / ahead-of-code
+  env var shouldn't take the whole app down. Make settings **ignore** unknown
+  keys (fall back to defaults) rather than raising at import, **warn** about
+  unrecognized keys so mistakes stay visible (names only, never values), and give
+  security-relevant settings **fail-closed defaults** so a silently-ignored typo
+  degrades safely. Strict "forbid unknown" turns one stray var into a hard outage.
 
 ## Working discipline
 
 - **One feature per branch → test → verify end-to-end → PR for review.** Drive the
   real flow to verify (send a chat, click the button, screenshot the UI), not just
   unit tests. Let the human merge.
+- **Match test depth to blast radius.** Every change runs the unit suite **plus a
+  boot/smoke check** (import the app, load settings, hit `/health`) — cheap, and
+  it catches the import/config failures mocked unit tests miss. Reserve full
+  end-to-end for runtime-affecting changes (config, routing, tools, escalation,
+  startup/deploy). Add a regression test per bug, and **verify on merged `main` in
+  the real environment** — a branch can pass while the intermediate merged state
+  is broken. A tiny CI (tests + boot check, blocking on red) makes this automatic.
 - **Make it operable:** one-command install, a one-command updater, a launcher
   that self-heals dependencies and health-checks the server. A great assistant
   that's fiddly to start won't get used.
