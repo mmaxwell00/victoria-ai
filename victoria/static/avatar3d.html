@@ -120,6 +120,11 @@ function log(msg, cls) {
   (cls === 'err' ? console.error : console.log)('[avatar3d]', msg);
 }
 
+log('page: ' + location.href);
+if (!/^https?:/.test(location.protocol)) {
+  log('NOT served over http — open http://localhost:8000/static/avatar3d.html in a real browser tab (Chrome/Safari), not a file or IDE preview. TTS needs the server.', 'err');
+}
+
 let THREE, GLTFLoader, DRACOLoader, KTX2Loader, MeshoptDecoder;
 try {
   THREE = await import('three');
@@ -176,16 +181,15 @@ function resize() {
 // Frame the camera to whatever loaded: head region for a full body, whole
 // thing for a face-only model.
 function frameModel() {
-  const box = new THREE.Box3().setFromObject(model);
+  const target = jaws.length ? jaws[0][0] : model;   // the face/head mesh itself
+  const box = new THREE.Box3().setFromObject(target);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
-  const tall = size.y > 1.0;
-  const focusY = tall ? box.max.y - Math.min(0.18, size.y * 0.12) : center.y;
-  const viewH = tall ? 0.5 : size.y * 1.3;
+  const viewH = Math.max(size.y, size.x) * 1.35;
   const dist = (viewH / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-  camera.position.set(center.x, focusY, box.max.z + dist * 1.08);
-  camera.lookAt(center.x, focusY, center.z);
-  log('framed model (h=' + size.y.toFixed(2) + ')');
+  camera.position.set(center.x, center.y, box.max.z + dist * 1.1);
+  camera.lookAt(center.x, center.y, center.z);
+  log('framed ' + (jaws.length ? 'face mesh' : 'model') + ' (h=' + size.y.toFixed(2) + ')');
 }
 
 function withVisemes(url) {
@@ -315,8 +319,9 @@ function wireAudio(audio) {
 async function speak(text) {
   log('requesting TTS…');
   let blob;
+  const base = /^https?:/.test(location.protocol) ? location.origin : 'http://localhost:8000';
   try {
-    const r = await fetch('/v1/tts', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ text }) });
+    const r = await fetch(base + '/v1/tts', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ text }) });
     if (!r.ok) { log('TTS HTTP ' + r.status, 'err'); return; }
     blob = await r.blob();
     log('TTS ok (' + Math.round(blob.size/1024) + ' KB)', 'ok');
