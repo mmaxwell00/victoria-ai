@@ -265,7 +265,7 @@ def test_needs_escalation_detects_embedded_token(text):
 
 async def test_stream_bracketless_sentinel_is_swallowed():
     router = MagicMock()
-    router.stream_chat = _stream_of("ESCA", "LATE")   # arrives in pieces, no brackets
+    router.chat = _local_reply("ESCA", "LATE")   # bare sentinel, no brackets
     mgr = make_manager(router)
 
     events = [e async for e in mgr.stream_chat("gold price?", session_id="s1")]
@@ -278,7 +278,7 @@ async def test_stream_bracketless_sentinel_is_swallowed():
 async def test_stream_prose_plus_sentinel_is_swallowed():
     """Streaming chatter that ends in [ESCALATE] must offer, never leak either part."""
     router = MagicMock()
-    router.stream_chat = _stream_of("Well now, ", "let me think… ", "[ESCALATE]")
+    router.chat = _local_reply("Well now, ", "let me think… ", "[ESCALATE]")
     mgr = make_manager(router)
 
     events = [e async for e in mgr.stream_chat("gold vs silver?", session_id="s1")]
@@ -293,16 +293,21 @@ async def test_stream_prose_plus_sentinel_is_swallowed():
 # Streaming escalation flow
 # ---------------------------------------------------------------------------
 
-def _stream_of(*chunks, backend="docker"):
-    async def gen(history, force_backend=None, system_prompt=None):
-        for c in chunks:
-            yield c, backend
-    return gen
+def _local_reply(*chunks, backend="docker"):
+    """Mock router.chat — the buffered local reply the streaming path now uses.
+
+    The streaming local path routes through _local_answer (tool-aware, buffered)
+    rather than router.stream_chat, so the model keeps its tools. Chunks are
+    joined: the path buffers the whole reply before deciding answer-vs-escalate,
+    so there are no partial emissions to simulate."""
+    async def _chat(history, force_backend=None, system_prompt=None):
+        return "".join(chunks), backend
+    return _chat
 
 
 async def test_stream_normal_answer_flushes_and_completes():
     router = MagicMock()
-    router.stream_chat = _stream_of("Hello ", "there.")
+    router.chat = _local_reply("Hello ", "there.")
     mgr = make_manager(router)
 
     events = [e async for e in mgr.stream_chat("hi", session_id="s1")]
@@ -314,7 +319,7 @@ async def test_stream_normal_answer_flushes_and_completes():
 
 async def test_stream_sentinel_offers_escalation():
     router = MagicMock()
-    router.stream_chat = _stream_of(ESCALATION_SENTINEL)
+    router.chat = _local_reply(ESCALATION_SENTINEL)
     mgr = make_manager(router)
 
     events = [e async for e in mgr.stream_chat("hard one", session_id="s1")]
@@ -328,7 +333,7 @@ async def test_stream_sentinel_offers_escalation():
 
 async def test_stream_yes_after_offer_escalates_to_claude():
     router = MagicMock()
-    router.stream_chat = _stream_of(ESCALATION_SENTINEL)
+    router.chat = _local_reply(ESCALATION_SENTINEL)
     router.claude_cli = AsyncMock(return_value="Streamed Claude answer.")
     mgr = make_manager(router)
 

@@ -709,21 +709,26 @@ class ConversationManager:
             # Buffer the whole local reply before emitting. Small models are
             # inconsistent — they may prepend chatter to the [ESCALATE] token —
             # so we can only reliably decide "answer vs escalate" once complete.
+            #
+            # NB: we go through _local_answer (NOT router.stream_chat) so the
+            # local model is handed its TOOLS. Plain streaming strips them, and
+            # the model then (wrongly) insists it "can't access real-time data"
+            # for weather/search/etc. instead of calling get_weather/web_search.
+            # This path already buffers to detect [ESCALATE], so routing through
+            # the (non-streaming) tool loop costs no streaming UX.
             buffer = ""
             backend_used = local_backend
             failed = False
 
             try:
-                async for chunk, backend in self.router.stream_chat(
-                    history, force_backend=local_backend, system_prompt=local_system
-                ):
-                    backend_used = backend
-                    buffer += chunk
+                buffer, backend_used = await self._local_answer(
+                    history, local_system, local_backend
+                )
             except Exception:
-                logger.exception("Local streaming failed; offering escalation")
+                logger.exception("Local answer failed; offering escalation")
                 failed = True
 
-            complete = buffer.strip()
+            complete = (buffer or "").strip()
 
             # Empty, errored, or the model signalled it can't answer → offer Claude.
             if failed or self._needs_escalation(complete):

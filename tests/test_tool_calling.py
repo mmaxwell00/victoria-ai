@@ -270,17 +270,20 @@ async def test_llm_router_chat_with_tools_ollama_loop():
 # ---------------------------------------------------------------------------
 
 async def test_stream_chat_uses_system_prompt():
-    """stream_chat() passes the enriched system_prompt (with semantic context) to router.stream_chat()."""
+    """stream_chat() passes the enriched system_prompt (with semantic context)
+    to the local model. The streaming local path routes through _local_answer
+    (so the model keeps its TOOLS); with no tool_registry that lands on
+    router.chat()."""
     memory = make_memory()
     router = make_router()
 
     captured_kwargs = {}
 
-    async def fake_stream_chat(messages, force_backend=None, system_prompt=None):
+    async def fake_chat(messages, force_backend=None, system_prompt=None):
         captured_kwargs["system_prompt"] = system_prompt
-        yield "It's Monday.", "ollama"
+        return "It's Monday.", "ollama"
 
-    router.stream_chat = fake_stream_chat
+    router.chat = fake_chat
 
     mock_sem = make_semantic_memory(
         available=True,
