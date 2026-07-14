@@ -266,6 +266,174 @@ async def test_llm_router_chat_with_tools_ollama_loop():
 
 
 # ---------------------------------------------------------------------------
+# Refusal detection + forced-tool retry (docker backend)
+# ---------------------------------------------------------------------------
+
+def test_looks_like_tool_refusal_matches_real_refusals():
+    from victoria.core.llm_router import _looks_like_tool_refusal
+    assert _looks_like_tool_refusal(
+        "I'm currently unable to fetch real-time weather data or access external weather APIs directly."
+    )
+    assert _looks_like_tool_refusal(
+        "I can't provide real-time weather data or access external APIs to fetch the current temperature."
+    )
+    assert _looks_like_tool_refusal("I don't have access to real-time information.")
+
+
+def test_looks_like_tool_refusal_ignores_normal_answers():
+    from victoria.core.llm_router import _looks_like_tool_refusal
+    # A real tool-backed answer must NOT look like a refusal.
+    assert not _looks_like_tool_refusal(
+        "The current temperature in Dallas is 57°F with partly cloudy skies."
+    )
+    assert not _looks_like_tool_refusal("The capital of France is Paris.")
+    assert not _looks_like_tool_refusal("I can fetch that for you right now.")
+    assert not _looks_like_tool_refusal("")
+
+
+async def test_docker_with_tools_forces_tool_on_refusal():
+    """A refusal with no tool call → retry once with tool_choice=required, then
+    the forced tool runs and the final answer returns."""
+    router = make_router()
+
+    refusal = {"choices": [{"message": {
+        "content": "I'm currently unable to fetch real-time weather data or access external APIs.",
+        "tool_calls": [],
+    }}]}
+    forced_call = {"choices": [{"message": {
+        "content": "",
+        "tool_calls": [{"id": "tc1", "function": {"name": "get_weather", "arguments": {"location": "Dallas"}}}],
+    }}]}
+    final = {"choices": [{"message": {"content": "It's 57°F in Dallas.", "tool_calls": []}}]}
+
+    mock_registry = make_tool_registry()
+    mock_registry.get_ollama_tools.return_value = [
+        {"type": "function", "function": {"name": "get_weather", "description": "weather", "parameters": {}}}
+    ]
+    mock_registry.execute = AsyncMock(return_value="Dallas: 57°F")
+
+    payloads = []
+
+    class MockResponse:
+        def __init__(self, data):
+            self._data = data
+            self.status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._data
+
+    class MockAsyncClient:
+        is_closed = False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, url, json=None, **kwargs):
+            payloads.append(json)
+            n = len(payloads)
+            return MockResponse(refusal if n == 1 else forced_call if n == 2 else final)
+
+    with patch("victoria.core.llm_router.httpx.AsyncClient", return_value=MockAsyncClient()):
+        text, backend = await router.chat_with_tools(
+            messages=[{"role": "user", "content": "temperature in Dallas today?"}],
+            tool_registry=mock_registry,
+            system_prompt=VICTORIA_SYSTEM_PROMPT,
+            force_backend="docker",
+        )
+
+    assert text == "It's 57°F in Dallas."
+    assert backend == "docker"
+    mock_registry.execute.assert_awaited_once_with("get_weather", location="Dallas")
+    # Only the retry (2nd call) forces a tool; first and final passes don't.
+    assert len(payloads) == 3
+    assert "tool_choice" not in payloads[0]
+    assert payloads[1].get("tool_choice") == "required"
+    assert "tool_choice" not in payloads[2]
+
+
+async def test_docker_with_tools_no_retry_when_answer_is_fine():
+    """A normal (non-refusal) direct answer with no tool call returns as-is —
+    no forced retry, single request."""
+    router = make_router()
+
+    ok = {"choices": [{"message": {"content": "The capital of France is Paris.", "tool_calls": []}}]}
+
+    mock_registry = make_tool_registry()
+    mock_registry.get_ollama_tools.return_value = [
+        {"type": "function", "function": {"name": "get_weather", "description": "weather", "parameters": {}}}
+    ]
+
+    payloads = []
+
+    class MockResponse:
+        def __init__(self, data):
+            self._data = data
+            self.status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._data
+
+    class MockAsyncClient:
+        is_closed = False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, url, json=None, **kwargs):
+            payloads.append(json)
+            return MockResponse(ok)
+
+    with patch("victoria.core.llm_router.httpx.AsyncClient", return_value=MockAsyncClient()):
+        text, backend = await router.chat_with_tools(
+            messages=[{"role": "user", "content": "capital of France?"}],
+            tool_registry=mock_registry,
+            system_prompt=VICTORIA_SYSTEM_PROMPT,
+            force_backend="docker",
+        )
+
+    assert text == "The capital of France is Paris."
+    assert len(payloads) == 1  # no forced retry
+    assert "tool_choice" not in payloads[0]
+
+
+def test_history_for_model_strips_stale_refusals():
+    """Past 'I can't access real-time data' turns (and the questions that
+    prompted them) are removed from the replayed context so they don't prime
+    the local model to refuse again. Good turns survive."""
+    memory = make_memory()
+    memory.get_history.return_value = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "Hello there!"},
+        {"role": "user", "content": "temp in Houston?"},
+        {"role": "assistant", "content": "I can't access real-time weather data or external APIs."},
+        {"role": "user", "content": "what is 2+2?"},
+        {"role": "assistant", "content": "That's 4."},
+    ]
+    manager = ConversationManager(memory=memory, router=make_router())
+    hist = manager._history_for_model("s1")
+    contents = [m["content"] for m in hist]
+    # refusal turn AND its prompting user question are gone
+    assert "I can't access real-time weather data or external APIs." not in contents
+    assert "temp in Houston?" not in contents
+    # unrelated good turns survive
+    assert {"role": "user", "content": "hi"} in hist
+    assert {"role": "assistant", "content": "Hello there!"} in hist
+    assert {"role": "assistant", "content": "That's 4."} in hist
+
+
+# ---------------------------------------------------------------------------
 # stream_chat passes system_prompt with semantic context
 # ---------------------------------------------------------------------------
 
