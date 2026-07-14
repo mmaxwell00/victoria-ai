@@ -408,6 +408,31 @@ async def test_docker_with_tools_no_retry_when_answer_is_fine():
     assert "tool_choice" not in payloads[0]
 
 
+def test_history_for_model_strips_stale_refusals():
+    """Past 'I can't access real-time data' turns (and the questions that
+    prompted them) are removed from the replayed context so they don't prime
+    the local model to refuse again. Good turns survive."""
+    memory = make_memory()
+    memory.get_history.return_value = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "Hello there!"},
+        {"role": "user", "content": "temp in Houston?"},
+        {"role": "assistant", "content": "I can't access real-time weather data or external APIs."},
+        {"role": "user", "content": "what is 2+2?"},
+        {"role": "assistant", "content": "That's 4."},
+    ]
+    manager = ConversationManager(memory=memory, router=make_router())
+    hist = manager._history_for_model("s1")
+    contents = [m["content"] for m in hist]
+    # refusal turn AND its prompting user question are gone
+    assert "I can't access real-time weather data or external APIs." not in contents
+    assert "temp in Houston?" not in contents
+    # unrelated good turns survive
+    assert {"role": "user", "content": "hi"} in hist
+    assert {"role": "assistant", "content": "Hello there!"} in hist
+    assert {"role": "assistant", "content": "That's 4."} in hist
+
+
 # ---------------------------------------------------------------------------
 # stream_chat passes system_prompt with semantic context
 # ---------------------------------------------------------------------------

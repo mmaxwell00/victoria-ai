@@ -1,5 +1,5 @@
 from victoria.core.memory import MemoryStore
-from victoria.core.llm_router import LLMRouter
+from victoria.core.llm_router import LLMRouter, _looks_like_tool_refusal
 from victoria.config import (
     settings,
     ESCALATION_SENTINEL,
@@ -435,6 +435,29 @@ class ConversationManager:
         from victoria.config import VICTORIA_SYSTEM_PROMPT
         return VICTORIA_SYSTEM_PROMPT
 
+    def _history_for_model(self, session_id: str) -> list[dict]:
+        """Replay history for the LLM with stale refusals stripped.
+
+        Past assistant turns like "I can't access real-time weather data" are
+        bugs from before the tools worked. Left in the replayed context they
+        prime the local model to refuse again (in-context learning) — which is
+        why a long session that accumulated such refusals keeps failing
+        tool-answerable questions even after the tools are fixed. We drop each
+        refusal turn together with the user question that prompted it. The
+        stored history and the UI transcript are untouched — this only shapes
+        what the model sees.
+        """
+        history = self.memory.get_history(session_id)
+        cleaned: list[dict] = []
+        for msg in history:
+            if (msg.get("role") == "assistant"
+                    and _looks_like_tool_refusal(msg.get("content", ""))):
+                if cleaned and cleaned[-1].get("role") == "user":
+                    cleaned.pop()   # drop the stale question that got refused
+                continue
+            cleaned.append(msg)
+        return cleaned
+
     def _spawn_profile_update(self, user_id: str, user_message: str, response: str) -> None:
         task = asyncio.create_task(self._update_profile_async(user_id, user_message, response))
         self._background_tasks.add(task)
@@ -531,7 +554,7 @@ class ConversationManager:
         session_id = session_id or self.new_session_id()
         self.memory.get_or_create_session(session_id, user_id, channel)
 
-        history = self.memory.get_history(session_id)
+        history = self._history_for_model(session_id)
         history.append({"role": "user", "content": user_message})
 
         # --- Review reply for pending GitHub skill imports ----------------
@@ -624,7 +647,7 @@ class ConversationManager:
         session_id = session_id or self.new_session_id()
         self.memory.get_or_create_session(session_id, user_id, channel)
 
-        history = self.memory.get_history(session_id)
+        history = self._history_for_model(session_id)
         history.append({"role": "user", "content": user_message})
 
         self.memory.add_message(session_id, "user", user_message)
