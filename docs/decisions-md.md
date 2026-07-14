@@ -85,6 +85,43 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-07-14 · Reliable local tool-use: stream-with-tools + forced-tool retry + history de-poisoning
+
+**Status:** Implemented (PRs #39, #41).
+
+**Context:** The local model intermittently declined tool-answerable questions
+("I'm unable to fetch real-time weather data") even though `get_weather` /
+`web_search` work. Three compounding causes: (1) the streaming chat path sent a
+plain completion with **no tools**, while only the non-streaming path passed
+them — and the HUD streams; (2) small instruct models are stochastic about
+tool-calling and occasionally refuse even with tools present; (3) worst of all,
+a long session replayed the model's **own past refusals** (from before tools
+worked) back into context, priming it to keep refusing — so single-city asks
+succeeded while harder multi-city asks failed.
+
+**Choice:**
+- Route the streaming local turn through the tool-aware `_local_answer`
+  (it already buffers to detect `[ESCALATE]`, so no streaming UX is lost).
+- In `_docker_with_tools`, if the model returns a tool-answerable refusal on its
+  first turn without calling anything, retry once with `tool_choice="required"`.
+  Guarded so a post-tool summary is never re-forced.
+- Add `_history_for_model()` to strip refusal-shaped assistant turns (and the
+  questions that prompted them) from the **replayed** context — stored history
+  and the UI transcript are untouched.
+
+**Why:** De-poisoning fixes the root cause (verified: poisoned session went 3/4
+→ 6/6); the forced retry is a deterministic backstop for residual stochastic
+refusals. Together they made the failing multi-city weather query reliable and
+let long-lived sessions self-heal.
+
+**Trade-offs:** The refusal detector is a regex heuristic (could miss a novel
+phrasing or, rarely, strip a legitimately-worded "can't"); acceptable because
+the cost of a false strip is only losing one stale turn of replayed context.
+The local tool path is fully buffered (no token streaming), which was already
+true for the escalation-enabled path.
+
+---
+
 ### 2026-06-28 · MCP architecture: client-side integration into existing tool registry
 
 **Status:** Accepted.

@@ -197,6 +197,14 @@ How the local model signals it's stuck: local backends are given an *escalation 
 
 > Requires the [Claude Code CLI](https://claude.com/claude-code) installed and logged in (`claude` on your PATH). Adding ChatGPT as an alternative is a planned follow-up.
 
+### Reliable tool use (no phantom "I can't access that")
+
+Small local models are stochastic about tool-calling — they occasionally reply *"I'm unable to fetch real-time data"* even with the tools right there. Three guardrails keep that from reaching you:
+
+- **Streamed replies get tools too.** The HUD streams, and the streaming path passes the full tool set (it used to send a plain, tool-less completion) — so weather/search work whether or not the reply streams.
+- **Refusal → forced tool call.** If the model refuses a tool-answerable question without calling anything, Victoria retries once forcing a tool choice (`tool_choice="required"`).
+- **Stale refusals don't poison the context.** Past *"I can't…"* replies are filtered out of the replayed history, so old failures don't prime the model to keep refusing — a long chat self-heals.
+
 ### Model tiers (right-size the model to the task)
 
 Victoria can route across three tiers so each request lands on the cheapest model that can do it well:
@@ -671,4 +679,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-278 tests across memory & semantic recall, conversation, tools & tool-calling, local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), Telegram, user profiles, and API layers.
+291 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), Telegram, user profiles, and API layers.
