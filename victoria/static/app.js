@@ -817,3 +817,92 @@ if (state.sessionId) {
   sessionDisplay.textContent = `SESSION: ${state.sessionId.slice(0, 8).toUpperCase()}`;
 }
 inputEl.focus();
+
+// ── Avatar (Tier 0 procedural presence) ────────────────────────
+// A zero-asset "AI core" in the bottom-left: breathes when idle, spins when
+// thinking, glows green when listening, and drives an equaliser off the live
+// TTS audio amplitude when speaking. Built to be swapped for Rive/Live2D later.
+(function initAvatar() {
+  const dock = document.getElementById('avatar-dock');
+  if (!dock) return;
+  const ring = document.getElementById('av-ring');
+  const stateEl = document.getElementById('av-state');
+  const bars = [0, 1, 2, 3, 4].map(i => document.getElementById('av-bar-' + i));
+  const barBase = bars.map(b => parseFloat(b.getAttribute('height')));
+  const barFactor = [0.6, 0.85, 1, 0.85, 0.6];
+  const CY = 56;
+  const LABEL = { idle: 'IDLE', listening: 'LISTENING', thinking: 'THINKING', speaking: 'SPEAKING' };
+
+  let audioCtx = null, analyser = null, freq = null, wiredEl = null;
+  let level = 0, tPrev = 0;
+
+  function isSpeaking() {
+    return currentAudio && !currentAudio.paused && !currentAudio.ended;
+  }
+
+  function deriveState() {
+    if (isSpeaking()) return 'speaking';
+    if (state.isStreaming || state.hfPhase === 'processing') return 'thinking';
+    if (state.hfPhase === 'listening' || state.hfPhase === 'capturing' || state.isRecording) return 'listening';
+    return 'idle';
+  }
+
+  // Attach an analyser to the current TTS <audio>, once per element. Any failure
+  // (autoplay policy, one-source-per-element, …) falls back to a synthetic mouth
+  // movement so the avatar still animates while speaking.
+  function wireAudio() {
+    if (!currentAudio || currentAudio === wiredEl) return;
+    wiredEl = currentAudio;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx = audioCtx || new AC();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const src = audioCtx.createMediaElementSource(currentAudio);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      freq = new Uint8Array(analyser.fftSize);
+      src.connect(analyser);
+      analyser.connect(audioCtx.destination);
+    } catch (e) {
+      analyser = null;
+    }
+  }
+
+  function frame(t) {
+    const dt = Math.min(0.05, (t - tPrev) / 1000) || 0;
+    tPrev = t;
+    const st = deriveState();
+    if (dock.getAttribute('data-avstate') !== st) {
+      dock.setAttribute('data-avstate', st);
+      stateEl.textContent = LABEL[st];
+    }
+
+    let target = 0;
+    if (st === 'speaking') {
+      wireAudio();
+      if (analyser) {
+        analyser.getByteTimeDomainData(freq);
+        let sum = 0;
+        for (let i = 0; i < freq.length; i++) { const v = (freq[i] - 128) / 128; sum += v * v; }
+        target = Math.min(1, Math.sqrt(sum / freq.length) * 3.4);
+      } else {
+        target = 0.4 + 0.35 * Math.abs(Math.sin(t * 0.011)) + 0.15 * Math.random();
+      }
+    } else if (st === 'listening') {
+      target = 0.12 + 0.05 * Math.sin(t * 0.004);
+    }
+
+    level += (target - level) * Math.min(1, dt * 14);
+    if (level < 0.001) level = 0;
+
+    for (let i = 0; i < bars.length; i++) {
+      const h = barBase[i] + level * 34 * barFactor[i];
+      bars[i].setAttribute('height', h.toFixed(1));
+      bars[i].setAttribute('y', (CY - h / 2).toFixed(1));
+    }
+    ring.setAttribute('r', st === 'speaking' ? (40 + level * 5).toFixed(1) : '40');
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
