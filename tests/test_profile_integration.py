@@ -161,12 +161,10 @@ async def test_stream_chat_fires_background_profile_update():
     profile_store.save = MagicMock()
     profile_store.add_memory = MagicMock()
 
-    async def _fake_stream(history, force_backend=None, system_prompt=None):
-        yield ("Hello", "ollama")
-        yield (" world", "ollama")
-
+    # The streaming local path routes through _local_answer (buffered tool
+    # loop), which with no tool_registry lands on router.chat().
     router = MagicMock()
-    router.stream_chat = _fake_stream
+    router.chat = AsyncMock(return_value=("Hello world", "ollama"))
 
     manager = _make_manager(
         profile_store=profile_store,
