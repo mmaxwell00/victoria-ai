@@ -214,6 +214,12 @@ Hold these true regardless of stack:
 - **Streaming leaks control tokens.** If you stream tokens straight through, the
   escalation sentinel (and any "thinking" prose) can flash to the user. Buffer
   the stream and filter/route control signals before display.
+- **Streaming must still pass the tools.** It's easy to end up with two chat
+  paths — a non-streaming one that includes the tool list and a streaming one
+  that doesn't. The streamed path then hands the model *zero* tools and it falls
+  back to "I can't access real-time data." Since you're buffering the stream
+  anyway (previous point), just run the normal tool-calling loop and emit the
+  result — don't keep a separate tool-less streaming call.
 - **Don't lean on tool-calling with small models.** They drop or malform tool
   calls. Use injected instructions + a parseable fenced block for structured
   actions (like creating a skill), and keep the tool list short. Two things
@@ -223,6 +229,21 @@ Hold these true regardless of stack:
   **cover the natural phrasings** of its job (e.g. a weather tool that returns a
   *forecast*, not just current conditions) so the model isn't tempted to give up.
   Expect residual flakiness — it's stochastic, not all-or-nothing.
+- **When it refuses anyway, force a tool.** Even instruct models sometimes return
+  a tool-answerable refusal *without* calling anything. Detect the refusal shape
+  ("can't / unable to … access / fetch … real-time / weather / …") and retry the
+  same turn once with `tool_choice="required"` so the model *must* pick a tool.
+  Only force on the first-turn refusal — never on the summary after a tool already
+  ran, or you'll loop.
+- **Replayed refusals poison the context** (the nasty one). If you replay history
+  to the model, its *own past refusals* — "I can't access real-time weather data",
+  from before the tools worked — become few-shot examples that train it to refuse
+  again. A long-lived session then keeps failing tool-answerable questions even
+  after you've fixed the tools, and *harder* asks (e.g. several cities at once)
+  fail while simple ones slip through — which reads as a baffling "single works,
+  multiple fails." Strip refusal-shaped assistant turns (and the questions that
+  prompted them) from the *replayed* context — not from stored history or the UI.
+  New chats were never affected; this is what makes old ones self-heal.
 - **Tool-aware escalation, or it cannibalizes your tools.** If the model has both
   tools *and* a "signal when you can't answer" escalation protocol, a naive
   escalation prompt makes it escalate for exactly the live questions its own
