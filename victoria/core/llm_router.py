@@ -77,6 +77,27 @@ def _is_coding_task(text: str) -> bool:
     return bool(_CODING_RE.search(text or ""))
 
 
+# Small instruct models occasionally ignore their tools and fall back to an
+# RLHF refusal ("I'm unable to fetch real-time weather data…") instead of
+# calling get_weather / web_search. We detect that shape and, when tools were
+# available, retry once forcing a tool call (tool_choice="required").
+_TOOL_REFUSAL_RE = re.compile(
+    r"(can'?t|cannot|can not|unable to|not able to|don'?t have|do not have|couldn'?t)"
+    r"[^.!?]{0,70}?"
+    r"(access|fetch|provide|get|retrieve|reach|obtain|look up|browse|connect)"
+    r"[^.!?]{0,70}?"
+    r"(real[\s-]?time|current|live|up[\s-]?to[\s-]?date|weather|temperature|"
+    r"forecast|internet|external|online|the web|latest|news)",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_tool_refusal(text: str) -> bool:
+    """True when the model deflected a tool-answerable question instead of
+    calling a tool (e.g. 'I'm currently unable to fetch real-time weather')."""
+    return bool(text) and bool(_TOOL_REFUSAL_RE.search(text))
+
+
 class LLMRouter:
     """Routes queries to Ollama (local) or Claude (cloud) based on config or complexity."""
 
@@ -491,14 +512,24 @@ class LLMRouter:
 
         working_messages = [{"role": "system", "content": system_prompt}] + list(messages)
         model = self._pick_local_model(messages)
+        tools = tool_registry.get_ollama_tools()  # OpenAI format
         last_message: dict = {}
-        for _ in range(5):
+        forced_retry = False
+        any_tool_executed = False
+        for _ in range(6):
             payload = {
                 "model": model,
                 "messages": working_messages,
-                "tools": tool_registry.get_ollama_tools(),  # OpenAI format
+                "tools": tools,
                 "stream": False,
             }
+            # Guardrail: the previous pass refused a tool-answerable question
+            # without calling anything, so force a tool call this time. qwen2.5
+            # is stochastic — usually it calls get_weather, but occasionally it
+            # falls back to "I can't access real-time data" even with tools
+            # present. tool_choice="required" makes it pick a tool.
+            if forced_retry:
+                payload["tool_choice"] = "required"
             resp = await self.http.post(
                 f"{settings.model_runner_url}/chat/completions", json=payload
             )
@@ -511,14 +542,28 @@ class LLMRouter:
             # the turn finish_reason "stop" even alongside tool_calls, so don't
             # gate on finish_reason or the calls get silently dropped.
             if not tool_calls:
-                return last_message.get("content") or ""
+                content = last_message.get("content") or ""
+                # Refused on the FIRST turn without ever using a tool → retry
+                # once, forcing one. Guard on any_tool_executed so a refusal-
+                # shaped *summary* after a real tool call isn't re-forced.
+                if (not forced_retry and not any_tool_executed
+                        and tools and _looks_like_tool_refusal(content)):
+                    logger.info(
+                        "Local model refused a tool-answerable question; "
+                        "retrying with tool_choice=required"
+                    )
+                    forced_retry = True
+                    continue
+                return content
             working_messages.append(last_message)
+            forced_retry = False  # a tool ran; let the model answer freely next
             for tc in tool_calls:
                 fn = tc["function"]
                 args = fn.get("arguments", {})
                 if isinstance(args, str):
                     args = _json.loads(args)
                 result = await tool_registry.execute(fn["name"], **args)
+                any_tool_executed = True
                 working_messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
