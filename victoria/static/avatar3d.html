@@ -125,13 +125,14 @@ if (!/^https?:/.test(location.protocol)) {
   log('NOT served over http — open http://localhost:8000/static/avatar3d.html in a real browser tab (Chrome/Safari), not a file or IDE preview. TTS needs the server.', 'err');
 }
 
-let THREE, GLTFLoader, DRACOLoader, KTX2Loader, MeshoptDecoder;
+let THREE, GLTFLoader, DRACOLoader, KTX2Loader, MeshoptDecoder, RoomEnvironment;
 try {
   THREE = await import('three');
   ({ GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js'));
   ({ DRACOLoader } = await import('three/addons/loaders/DRACOLoader.js'));
   ({ KTX2Loader } = await import('three/addons/loaders/KTX2Loader.js'));
   ({ MeshoptDecoder } = await import('three/addons/libs/meshopt_decoder.module.js'));
+  ({ RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js'));
   log('three.js r160 loaded', 'ok');
 } catch (e) {
   log('failed to load three.js from CDN: ' + e.message, 'err');
@@ -150,18 +151,28 @@ function initScene() {
   renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
   wrap.appendChild(renderer.domElement);
 
   scene = new THREE.Scene();
+  try {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    log('environment map ready', 'ok');
+  } catch (e) { log('env map failed: ' + e.message, 'err'); }
+
   camera = new THREE.PerspectiveCamera(26, 1, 0.1, 100);
   camera.position.set(0, 1.57, 0.82);
   camera.lookAt(0, 1.55, 0);
 
-  scene.add(new THREE.AmbientLight(0x3a3a5a, 0.7));
-  const key = new THREE.DirectionalLight(0xf4f0ff, 1.25);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  const key = new THREE.DirectionalLight(0xf4f0ff, 1.4);
   key.position.set(0.6, 2.2, 1.4); scene.add(key);
-  const rimM = new THREE.PointLight(0xff2bd6, 9, 12); rimM.position.set(-1.1, 1.7, -0.6); scene.add(rimM);
-  const rimC = new THREE.PointLight(0x00e5ff, 9, 12); rimC.position.set(1.1, 1.6, -0.6); scene.add(rimC);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.9);
+  fill.position.set(0, 1.5, 4); scene.add(fill);       // front fill toward the camera
+  const rimM = new THREE.PointLight(0xff2bd6, 12, 20); rimM.position.set(-1.4, 1.8, -0.4); scene.add(rimM);
+  const rimC = new THREE.PointLight(0x00e5ff, 12, 20); rimC.position.set(1.4, 1.6, -0.4); scene.add(rimC);
   scene.userData.rims = { rimM, rimC };
 
   clock = new THREE.Clock();
@@ -217,7 +228,10 @@ async function loadAvatar(url) {
     let meshCount = 0;
     const keys = new Set();
     model.traverse(o => {
-      if (o.isMesh && o.morphTargetDictionary) {
+      if (!o.isMesh) return;
+      o.frustumCulled = false;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m) m.side = THREE.DoubleSide; });
+      if (o.morphTargetDictionary) {
         meshCount++;
         const d = o.morphTargetDictionary;
         for (const k in d) {
