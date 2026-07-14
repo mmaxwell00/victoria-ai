@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Victoria · 3D Avatar Test Bench</title>
+<style>
+  :root {
+    --bg:#060d1a; --panel:#0a1628; --border:#1a3a60; --teal:#00b8d4; --teal-b:#00e5ff;
+    --green:#00e676; --amber:#ffb74d; --magenta:#ff2bd6; --text:#8ab8cc; --head:#cce8f4; --dim:#3a6080;
+    --mono:'Share Tech Mono',ui-monospace,monospace;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; height:100vh; display:flex; background:var(--bg); color:var(--text);
+         font-family:var(--mono); overflow:hidden; }
+  #stage {
+    flex:1; position:relative;
+    background:
+      radial-gradient(60% 60% at 30% 30%, rgba(255,43,214,.14), transparent 70%),
+      radial-gradient(60% 60% at 70% 60%, rgba(0,229,255,.14), transparent 70%),
+      #05070f;
+  }
+  #canvas-wrap { position:absolute; inset:0; }
+  #badge { position:absolute; left:16px; top:14px; font-family:var(--mono); letter-spacing:2px;
+           font-size:12px; color:var(--head); }
+  #badge b { color:var(--teal-b); }
+  #statechip { position:absolute; left:16px; top:38px; font-size:12px; letter-spacing:2px; color:var(--teal); }
+  aside {
+    width:300px; flex:0 0 300px; background:var(--panel); border-left:1px solid var(--border);
+    display:flex; flex-direction:column; padding:14px; gap:12px; overflow-y:auto;
+  }
+  h1 { font-family:var(--mono); font-size:13px; letter-spacing:2px; color:var(--head); margin:0 0 2px; font-weight:400; }
+  .sub { font-size:11px; color:var(--dim); line-height:1.5; }
+  label { font-size:11px; letter-spacing:1px; color:var(--dim); display:block; margin-bottom:4px; }
+  input[type=text] {
+    width:100%; background:#05070f; border:1px solid var(--border); color:var(--text);
+    font-family:var(--mono); font-size:11px; padding:7px 8px; border-radius:4px;
+  }
+  .btns { display:flex; flex-wrap:wrap; gap:6px; }
+  button {
+    background:#05070f; border:1px solid var(--border); color:var(--teal); font-family:var(--mono);
+    font-size:11px; letter-spacing:1px; padding:7px 10px; border-radius:4px; cursor:pointer;
+    transition:.15s;
+  }
+  button:hover { border-color:var(--teal); color:var(--teal-b); }
+  button.primary { border-color:var(--teal); color:var(--teal-b); }
+  .row { display:flex; gap:6px; }
+  .row > * { flex:1; }
+  #log {
+    margin-top:auto; background:#05070f; border:1px solid var(--border); border-radius:4px;
+    padding:8px; font-size:10.5px; line-height:1.55; height:150px; overflow-y:auto; white-space:pre-wrap;
+    color:var(--dim);
+  }
+  #log .ok { color:var(--green); }
+  #log .err { color:#ef5350; }
+  .hr { border-top:1px solid var(--border); margin:2px 0; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <div id="canvas-wrap"></div>
+    <div id="badge"><b>VICTORIA</b> · 3D AVATAR TEST BENCH</div>
+    <div id="statechip">STATE: IDLE</div>
+  </div>
+
+  <aside>
+    <div>
+      <h1>3D AVATAR PROTOTYPE</h1>
+      <div class="sub">Real-time 3D head, rendered locally in your browser (WebGL), lip-synced to Victoria's own TTS. Swap the model later for a custom cyberpunk look.</div>
+    </div>
+
+    <div>
+      <label>READY PLAYER ME .glb URL</label>
+      <input id="avatar-url" type="text"
+        value="https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb" />
+      <div class="sub" style="margin-top:5px">No avatar? Make a free one at <b>readyplayer.me</b> → copy its <b>.glb</b> URL → paste → Load. ARKit visemes are added automatically.</div>
+      <div style="margin-top:6px"><button id="load-btn" class="primary">▶ LOAD AVATAR</button></div>
+    </div>
+
+    <div class="hr"></div>
+
+    <div>
+      <label>PREVIEW STATE</label>
+      <div class="btns">
+        <button data-state="idle">IDLE</button>
+        <button data-state="listening">LISTENING</button>
+        <button data-state="thinking">THINKING</button>
+        <button data-state="speaking">SPEAKING</button>
+      </div>
+    </div>
+
+    <div>
+      <label>SPEAK (uses /v1/tts)</label>
+      <input id="say-text" type="text" value="Good afternoon, Mark. All systems nominal." />
+      <div style="margin-top:6px" class="row">
+        <button id="speak-btn" class="primary">🔊 SPEAK</button>
+        <button id="synth-btn">TEST MOUTH</button>
+      </div>
+    </div>
+
+    <div id="log"></div>
+  </aside>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+const logEl = document.getElementById('log');
+function log(msg, cls) {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = '› ' + msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+  (cls === 'err' ? console.error : console.log)('[avatar3d]', msg);
+}
+
+let THREE, GLTFLoader, DRACOLoader, MeshoptDecoder;
+try {
+  THREE = await import('three');
+  ({ GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js'));
+  ({ DRACOLoader } = await import('three/addons/loaders/DRACOLoader.js'));
+  ({ MeshoptDecoder } = await import('three/addons/libs/meshopt_decoder.module.js'));
+  log('three.js r160 loaded', 'ok');
+} catch (e) {
+  log('failed to load three.js from CDN: ' + e.message, 'err');
+  log('check your internet connection / CDN access.', 'err');
+}
+
+const wrap = document.getElementById('canvas-wrap');
+const stateChip = document.getElementById('statechip');
+const STATE_COLOR = { idle:0x00b8d4, listening:0x00e676, thinking:0xffb74d, speaking:0x00e5ff };
+let renderer, scene, camera, model, clock;
+let jaws = [], blinks = [], smiles = [];
+let level = 0, current = 'idle', blinkT = 2;
+
+function initScene() {
+  if (!THREE) return;
+  renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  wrap.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(26, 1, 0.1, 100);
+  camera.position.set(0, 1.57, 0.82);
+  camera.lookAt(0, 1.55, 0);
+
+  scene.add(new THREE.AmbientLight(0x3a3a5a, 0.7));
+  const key = new THREE.DirectionalLight(0xf4f0ff, 1.25);
+  key.position.set(0.6, 2.2, 1.4); scene.add(key);
+  const rimM = new THREE.PointLight(0xff2bd6, 9, 12); rimM.position.set(-1.1, 1.7, -0.6); scene.add(rimM);
+  const rimC = new THREE.PointLight(0x00e5ff, 9, 12); rimC.position.set(1.1, 1.6, -0.6); scene.add(rimC);
+  scene.userData.rims = { rimM, rimC };
+
+  clock = new THREE.Clock();
+  resize();
+  window.addEventListener('resize', resize);
+  renderer.setAnimationLoop(tick);
+  log('scene ready — load an avatar to begin', 'ok');
+}
+
+function resize() {
+  if (!renderer) return;
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+
+function withVisemes(url) {
+  if (!/readyplayer\.me/.test(url) || /morphTargets=/.test(url)) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return url + sep + 'morphTargets=ARKit,Oculus%20Visemes&textureSizeLimit=1024';
+}
+
+async function loadAvatar(url) {
+  if (!THREE) { log('three.js not available; cannot load', 'err'); return; }
+  url = withVisemes(url.trim());
+  log('loading avatar…');
+  const loader = new GLTFLoader();
+  try {
+    const draco = new DRACOLoader().setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/');
+    loader.setDRACOLoader(draco);
+    loader.setMeshoptDecoder(MeshoptDecoder);
+  } catch (e) { /* optional decoders */ }
+
+  loader.load(url, (gltf) => {
+    if (model) scene.remove(model);
+    model = gltf.scene;
+    scene.add(model);
+    jaws = []; blinks = []; smiles = [];
+    let meshCount = 0;
+    const keys = new Set();
+    model.traverse(o => {
+      if (o.isMesh && o.morphTargetDictionary) {
+        meshCount++;
+        const d = o.morphTargetDictionary;
+        Object.keys(d).forEach(k => keys.add(k));
+        const jaw = ['jawOpen','mouthOpen','viseme_aa'].find(k => k in d);
+        if (jaw) jaws.push([o, d[jaw]]);
+        ['eyeBlinkLeft','eyeBlinkRight'].forEach(k => { if (k in d) blinks.push([o, d[k]]); });
+        if ('mouthSmile' in d) smiles.push([o, d.mouthSmile]);
+      }
+    });
+    log('avatar loaded — ' + meshCount + ' morph meshes', 'ok');
+    log('mouth target: ' + (jaws.length ? 'found' : 'NONE (no visemes)'), jaws.length ? 'ok' : 'err');
+    if (!jaws.length) log('morphs present: ' + [...keys].slice(0,12).join(', '), 'err');
+    setState('idle');
+  },
+  (p) => { if (p.total) log('  ' + Math.round(p.loaded/p.total*100) + '%'); },
+  (err) => {
+    log('avatar FAILED to load: ' + (err?.message || err), 'err');
+    log('the default URL may be stale — create your own at readyplayer.me and paste it.', 'err');
+  });
+}
+
+function setState(s) {
+  current = s;
+  stateChip.textContent = 'STATE: ' + s.toUpperCase();
+  stateChip.style.color = '#' + STATE_COLOR[s].toString(16).padStart(6,'0');
+  if (scene) {
+    const { rimM, rimC } = scene.userData.rims;
+    const c = STATE_COLOR[s];
+    rimC.color.setHex(c);
+    rimM.color.setHex(s === 'speaking' ? 0xff2bd6 : (s === 'thinking' ? 0xffb74d : 0xff2bd6));
+  }
+}
+
+function setMorph(list, v) { list.forEach(([m, i]) => { m.morphTargetInfluences[i] = v; }); }
+
+function tick() {
+  const t = clock ? clock.elapsedTime : 0;
+  const dt = clock ? clock.getDelta() : 0.016;
+
+  if (model) {
+    // idle life: gentle sway + breathing bob + head tilt when thinking
+    model.rotation.y = 0.05 * Math.sin(t * 0.5);
+    model.position.y = 0.004 * Math.sin(t * 1.1);
+    model.rotation.z = current === 'thinking' ? 0.04 * Math.sin(t * 0.8) : 0;
+
+    // blink: quick triangle 0→1→0, then reschedule a few seconds out
+    blinkT -= dt;
+    let blink = 0;
+    if (blinkT <= 0) {
+      const s = -blinkT;
+      if (s < 0.12) blink = 1 - Math.abs(s - 0.06) / 0.06;
+      else blinkT = 2 + Math.random() * 4;
+    }
+    setMorph(blinks, blink);
+
+    // mouth
+    let target = 0;
+    if (current === 'speaking') {
+      target = analyser ? readLevel() : (0.35 + 0.35 * Math.abs(Math.sin(t * 9)));
+    } else if (current === 'listening') {
+      target = 0.04 + 0.03 * Math.sin(t * 3);
+    }
+    level += (target - level) * Math.min(1, dt * 16);
+    setMorph(jaws, Math.max(0, Math.min(0.75, level)));
+    setMorph(smiles, current === 'idle' ? 0.15 : 0.05);
+  }
+  if (renderer) renderer.render(scene, camera);
+}
+
+// ── audio / lip-sync ────────────────────────────────────────
+let audioCtx, analyser, freq, curAudio, wired;
+function readLevel() {
+  if (!analyser) return 0;
+  analyser.getByteTimeDomainData(freq);
+  let sum = 0;
+  for (let i = 0; i < freq.length; i++) { const v = (freq[i]-128)/128; sum += v*v; }
+  return Math.min(1, Math.sqrt(sum/freq.length) * 3.4);
+}
+function wireAudio(audio) {
+  if (audio === wired) return;
+  wired = audio;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = audioCtx || new AC();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const src = audioCtx.createMediaElementSource(audio);
+    analyser = audioCtx.createAnalyser(); analyser.fftSize = 256;
+    freq = new Uint8Array(analyser.fftSize);
+    src.connect(analyser); analyser.connect(audioCtx.destination);
+    log('audio analyser wired', 'ok');
+  } catch (e) { analyser = null; log('analyser failed (' + e.message + ') — synthetic mouth', 'err'); }
+}
+
+async function speak(text) {
+  log('requesting TTS…');
+  let blob;
+  try {
+    const r = await fetch('/v1/tts', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ text }) });
+    if (!r.ok) { log('TTS HTTP ' + r.status, 'err'); return; }
+    blob = await r.blob();
+    log('TTS ok (' + Math.round(blob.size/1024) + ' KB)', 'ok');
+  } catch (e) { log('TTS error: ' + e.message, 'err'); return; }
+  if (curAudio) curAudio.pause();
+  curAudio = new Audio(URL.createObjectURL(blob));
+  wireAudio(curAudio);
+  setState('speaking');
+  curAudio.addEventListener('ended', () => setState('idle'), { once:true });
+  curAudio.play().catch(e => log('play failed: ' + e.message, 'err'));
+}
+
+// ── controls ────────────────────────────────────────────────
+document.getElementById('load-btn').addEventListener('click', () => loadAvatar(document.getElementById('avatar-url').value));
+document.querySelectorAll('[data-state]').forEach(b => b.addEventListener('click', () => setState(b.dataset.state)));
+document.getElementById('speak-btn').addEventListener('click', () => speak(document.getElementById('say-text').value));
+document.getElementById('synth-btn').addEventListener('click', () => {
+  setState('speaking'); setTimeout(() => setState('idle'), 2500);
+});
+
+// ── go ───────────────────────────────────────────────────────
+initScene();
+if (THREE) loadAvatar(document.getElementById('avatar-url').value);
+</script>
+</body>
+</html>
