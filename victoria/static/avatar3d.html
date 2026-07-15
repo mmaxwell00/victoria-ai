@@ -73,8 +73,12 @@
       <label>READY PLAYER ME .glb URL</label>
       <input id="avatar-url" type="text"
         value="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/models/gltf/facecap.glb" />
-      <div class="sub" style="margin-top:5px">Default = Apple's ARKit demo face (proves live lip-sync). Ready Player Me shut down Jan 2026 — for a real character use an <b>Avaturn</b> .glb (avaturn.me, realistic + ARKit visemes) or a <b>VRoid</b> .vrm (free, needs VRM support). Paste a .glb URL and Load.</div>
-      <div style="margin-top:6px"><button id="load-btn" class="primary">▶ LOAD AVATAR</button></div>
+      <div class="sub" style="margin-top:5px">Default = Apple's ARKit demo face (proves live lip-sync). Ready Player Me shut down Jan 2026. Export a <b>.glb</b> from <b>Avaturn</b> (avaturn.me — realistic, ARKit visemes), then <b>drag it onto the view</b> or click LOAD FILE. A hosted .glb URL works too.</div>
+      <div class="row" style="margin-top:6px">
+        <button id="load-btn" class="primary">▶ LOAD URL</button>
+        <button id="file-btn">📁 LOAD FILE</button>
+      </div>
+      <input id="file-input" type="file" accept=".glb,model/gltf-binary" style="display:none" />
     </div>
 
     <div class="hr"></div>
@@ -350,6 +354,16 @@ async function speak(text) {
 
 // ── controls ────────────────────────────────────────────────
 document.getElementById('load-btn').addEventListener('click', () => loadAvatar(document.getElementById('avatar-url').value));
+function loadFromFile(f) {
+  if (!f) return;
+  log('loading file: ' + f.name + ' (' + Math.round(f.size / 1024) + ' KB)');
+  loadAvatar(URL.createObjectURL(f));
+}
+document.getElementById('file-btn').addEventListener('click', () => document.getElementById('file-input').click());
+document.getElementById('file-input').addEventListener('change', e => loadFromFile(e.target.files[0]));
+const stageEl = document.getElementById('stage');
+stageEl.addEventListener('dragover', e => { e.preventDefault(); });
+stageEl.addEventListener('drop', e => { e.preventDefault(); loadFromFile(e.dataTransfer.files[0]); });
 document.querySelectorAll('[data-state]').forEach(b => b.addEventListener('click', () => setState(b.dataset.state)));
 document.getElementById('speak-btn').addEventListener('click', () => speak(document.getElementById('say-text').value));
 document.getElementById('synth-btn').addEventListener('click', () => {
