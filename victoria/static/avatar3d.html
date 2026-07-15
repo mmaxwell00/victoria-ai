@@ -73,7 +73,7 @@
       <label>READY PLAYER ME .glb URL</label>
       <input id="avatar-url" type="text"
         value="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/models/gltf/facecap.glb" />
-      <div class="sub" style="margin-top:5px">Default = Apple's ARKit demo face (proves live lip-sync). For a real character, make a free avatar at <b>readyplayer.me</b>, copy its <b>.glb</b> URL, paste, and Load — visemes are added automatically.</div>
+      <div class="sub" style="margin-top:5px">Default = Apple's ARKit demo face (proves live lip-sync). Ready Player Me shut down Jan 2026 — for a real character use an <b>Avaturn</b> .glb (avaturn.me, realistic + ARKit visemes) or a <b>VRoid</b> .vrm (free, needs VRM support). Paste a .glb URL and Load.</div>
       <div style="margin-top:6px"><button id="load-btn" class="primary">▶ LOAD AVATAR</button></div>
     </div>
 
@@ -254,7 +254,7 @@ async function loadAvatar(url) {
     const m = err?.message || String(err);
     log('avatar FAILED to load: ' + m, 'err');
     if (/failed to fetch/i.test(m))
-      log('network/CORS block — an invalid readyplayer.me id returns 404 with no CORS headers (reads as "Failed to fetch"). Use a valid RPM URL, or the default face.', 'err');
+      log('network/CORS block — the host must send CORS headers and the URL must be valid. Try an Avaturn .glb, or keep the default face.', 'err');
   });
 }
 
