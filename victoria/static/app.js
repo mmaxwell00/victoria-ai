@@ -818,19 +818,17 @@ if (state.sessionId) {
 }
 inputEl.focus();
 
-// ── Avatar (Tier 0 procedural presence) ────────────────────────
-// A zero-asset "AI core" in the bottom-left: breathes when idle, spins when
-// thinking, glows green when listening, and drives an equaliser off the live
-// TTS audio amplitude when speaking. Built to be swapped for Rive/Live2D later.
+// ── Avatar (framed portrait with state-coloured glow) ──────────
+// Shows /static/victoria-avatar.png in a frame whose border + glow track the
+// state: teal idle · green listening · purple thinking · fuchsia speaking.
+// While speaking, the glow pulses with the live TTS amplitude. The frame
+// carries the life — no facial animation. Falls back to a placeholder
+// silhouette if the image file is missing.
 (function initAvatar() {
   const dock = document.getElementById('avatar-dock');
   if (!dock) return;
-  const ring = document.getElementById('av-ring');
+  const frameEl = document.getElementById('av-frame');
   const stateEl = document.getElementById('av-state');
-  const bars = [0, 1, 2, 3, 4].map(i => document.getElementById('av-bar-' + i));
-  const barBase = bars.map(b => parseFloat(b.getAttribute('height')));
-  const barFactor = [0.6, 0.85, 1, 0.85, 0.6];
-  const CY = 56;
   const LABEL = { idle: 'IDLE', listening: 'LISTENING', thinking: 'THINKING', speaking: 'SPEAKING' };
 
   let audioCtx = null, analyser = null, freq = null, wiredEl = null;
@@ -848,8 +846,7 @@ inputEl.focus();
   }
 
   // Attach an analyser to the current TTS <audio>, once per element. Any failure
-  // (autoplay policy, one-source-per-element, …) falls back to a synthetic mouth
-  // movement so the avatar still animates while speaking.
+  // (autoplay policy, one-source-per-element, …) falls back to a synthetic pulse.
   function wireAudio() {
     if (!currentAudio || currentAudio === wiredEl) return;
     wiredEl = currentAudio;
@@ -877,6 +874,7 @@ inputEl.focus();
       stateEl.textContent = LABEL[st];
     }
 
+    // glow pulses with the live voice while speaking; gentle breathing otherwise
     let target = 0;
     if (st === 'speaking') {
       wireAudio();
@@ -888,19 +886,14 @@ inputEl.focus();
       } else {
         target = 0.4 + 0.35 * Math.abs(Math.sin(t * 0.011)) + 0.15 * Math.random();
       }
-    } else if (st === 'listening') {
-      target = 0.12 + 0.05 * Math.sin(t * 0.004);
     }
-
-    level += (target - level) * Math.min(1, dt * 14);
+    level += (target - level) * Math.min(1, dt * 16);
     if (level < 0.001) level = 0;
 
-    for (let i = 0; i < bars.length; i++) {
-      const h = barBase[i] + level * 34 * barFactor[i];
-      bars[i].setAttribute('height', h.toFixed(1));
-      bars[i].setAttribute('y', (CY - h / 2).toFixed(1));
+    if (frameEl) {
+      const glow = st === 'speaking' ? (10 + level * 22) : (9 + 3 * Math.sin(t * 0.002));
+      frameEl.style.boxShadow = '0 0 ' + glow.toFixed(1) + 'px var(--av)';
     }
-    ring.setAttribute('r', st === 'speaking' ? (40 + level * 5).toFixed(1) : '40');
 
     requestAnimationFrame(frame);
   }

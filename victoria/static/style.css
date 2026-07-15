@@ -10,9 +10,9 @@
   --teal-dim:      rgba(0,184,212,0.25);
   --red:           #ef5350;
   --green:         #00e676;
-  --text:          #8ab8cc;
-  --text-dim:      #3a6080;
-  --text-header:   #cce8f4;
+  --text:          #c3e4f2;
+  --text-dim:      #84acc6;
+  --text-header:   #e9f8ff;
   --font-hud:      'Orbitron', sans-serif;
   --font-mono:     'Share Tech Mono', 'Courier New', monospace;
   --panel-header-h: 26px;
@@ -721,42 +721,30 @@ select#backend-select:focus, select#model-select:focus { outline: none; border-c
   .ring-svg { width: min(60%, 280px); }
 }
 
-/* ── Avatar dock (Tier 0 procedural presence) ─────────────────── */
+/* ── Avatar dock (framed portrait, state-coloured glow) ───────── */
 .avatar-dock {
   border-top: 1px solid var(--teal-dim);
   background: var(--bg-panel);
-  padding: 10px 8px 12px;
+  padding: 12px 8px 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 7px;
   --av: var(--teal);
 }
-.avatar-dock[data-avstate="listening"] { --av: var(--green); }
-.avatar-dock[data-avstate="thinking"]  { --av: #ffb74d; }
-.avatar-dock[data-avstate="speaking"]  { --av: var(--teal-bright); }
+.avatar-dock[data-avstate="listening"] { --av: #00e676; }
+.avatar-dock[data-avstate="thinking"]  { --av: #a855f7; }
+.avatar-dock[data-avstate="speaking"]  { --av: #ff2bd6; }
 
-.av-svg { width: 118px; height: 100px; overflow: visible; }
-.av-ring, .av-ring2, .av-arc { fill: none; }
-.av-ring {
-  stroke: var(--av); stroke-width: 2;
-  filter: drop-shadow(0 0 6px var(--av));
-  transform-box: fill-box; transform-origin: center;
-  animation: avBreath 3.4s ease-in-out infinite;
-  transition: stroke .4s ease;
+.av-frame {
+  width: 108px; height: 122px; border-radius: 12px; overflow: hidden;
+  position: relative; background: #0c1c35;
+  border: 2px solid var(--av);
+  box-shadow: 0 0 10px var(--av);
+  transition: border-color .35s ease;
 }
-.av-ring2 { stroke: var(--av); stroke-width: 1; opacity: .22; }
-.av-arc {
-  stroke: var(--av); stroke-width: 2.5; stroke-linecap: round;
-  stroke-dasharray: 55 300; opacity: 0;
-  transform-box: fill-box; transform-origin: center;
-}
-.avatar-dock[data-avstate="thinking"] .av-arc { opacity: .9; animation: avSpin 1.1s linear infinite; }
-.avatar-dock[data-avstate="speaking"] .av-ring { animation-duration: 1.6s; }
-.av-bar { fill: var(--av); opacity: .9; transition: fill .4s ease; }
+.av-img, .av-fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
+.av-img { object-fit: cover; }
 .av-label { display: flex; flex-direction: column; align-items: center; line-height: 1.25; }
 .av-name { font-family: var(--font-hud); font-size: 11px; letter-spacing: 2.5px; color: var(--text-header); }
-.av-state { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; color: var(--av); transition: color .4s ease; }
-
-@keyframes avBreath { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-@keyframes avSpin { to { transform: rotate(360deg); } }
+.av-state { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; color: var(--av); transition: color .35s ease; }
