@@ -721,41 +721,30 @@ select#backend-select:focus, select#model-select:focus { outline: none; border-c
   .ring-svg { width: min(60%, 280px); }
 }
 
-/* ── Avatar dock (Tier 0 procedural presence) ─────────────────── */
+/* ── Avatar dock (framed portrait, state-coloured glow) ───────── */
 .avatar-dock {
   border-top: 1px solid var(--teal-dim);
   background: var(--bg-panel);
-  padding: 10px 8px 12px;
+  padding: 12px 8px 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 7px;
   --av: var(--teal);
 }
-.avatar-dock[data-avstate="listening"] { --av: var(--green); }
-.avatar-dock[data-avstate="thinking"]  { --av: #ffb74d; }
-.avatar-dock[data-avstate="speaking"]  { --av: var(--teal-bright); }
+.avatar-dock[data-avstate="listening"] { --av: #00e676; }
+.avatar-dock[data-avstate="thinking"]  { --av: #a855f7; }
+.avatar-dock[data-avstate="speaking"]  { --av: #ff2bd6; }
 
-.av-svg { width: 104px; height: 112px; overflow: visible; filter: drop-shadow(0 0 4px var(--av)); transition: filter .4s ease; }
-.av-body { fill: #0c1c35; stroke: var(--av); stroke-width: 1.6; transition: stroke .4s ease; }
-.av-hair { fill: #0a1424; stroke: var(--av); stroke-width: 1.5; transition: stroke .4s ease; }
-.av-hairline { fill: none; stroke: var(--av); stroke-width: 1.2; opacity: .55; }
-.av-head { fill: #0c1c35; stroke: var(--av); stroke-width: 2; transition: stroke .4s ease; }
-.av-nose { fill: none; stroke: var(--av); stroke-width: 1.3; stroke-linecap: round; opacity: .8; }
-.eye { transform-box: fill-box; transform-origin: center; }
-.av-svg .fill { fill: var(--av); }
-.av-svg .stroke { fill: none; stroke: var(--av); stroke-width: 2; stroke-linecap: round; }
-.av-svg .thin { stroke-width: 1.5; }
-.av-svg .dim { opacity: .55; }
-.av-svg .dim2 { opacity: .4; }
-.av-svg .mouth-open { fill: #04222b; stroke: var(--av); stroke-width: 2; }
-.feat { display: none; }
-.avatar-dock[data-avstate="idle"] .f-idle,
-.avatar-dock[data-avstate="listening"] .f-listening,
-.avatar-dock[data-avstate="thinking"] .f-thinking,
-.avatar-dock[data-avstate="speaking"] .f-speaking { display: block; }
+.av-frame {
+  width: 108px; height: 122px; border-radius: 12px; overflow: hidden;
+  position: relative; background: #0c1c35;
+  border: 2px solid var(--av);
+  box-shadow: 0 0 10px var(--av);
+  transition: border-color .35s ease;
+}
+.av-img, .av-fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
+.av-img { object-fit: cover; }
 .av-label { display: flex; flex-direction: column; align-items: center; line-height: 1.25; }
 .av-name { font-family: var(--font-hud); font-size: 11px; letter-spacing: 2.5px; color: var(--text-header); }
-.av-state { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; color: var(--av); transition: color .4s ease; }
-
-@keyframes avBreath { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+.av-state { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; color: var(--av); transition: color .35s ease; }

@@ -818,23 +818,21 @@ if (state.sessionId) {
 }
 inputEl.focus();
 
-// ── Avatar (Tier 0 procedural face — stylized human portrait) ──
-// A zero-asset SVG portrait in the bottom-left: hair, brows, eyes, nose and
-// lips that shift per state (idle / listening / thinking / speaking). She
-// blinks, sways gently, and opens her mouth in time with the live TTS
-// amplitude. Swappable for a 3D/Rive rig later, behind the same state model.
+// ── Avatar (framed portrait with state-coloured glow) ──────────
+// Shows /static/victoria-avatar.png in a frame whose border + glow track the
+// state: teal idle · green listening · purple thinking · fuchsia speaking.
+// While speaking, the glow pulses with the live TTS amplitude. The frame
+// carries the life — no facial animation. Falls back to a placeholder
+// silhouette if the image file is missing.
 (function initAvatar() {
   const dock = document.getElementById('avatar-dock');
   if (!dock) return;
+  const frameEl = document.getElementById('av-frame');
   const stateEl = document.getElementById('av-state');
-  const mouth = document.getElementById('av-mouth');
-  const portrait = document.getElementById('av-portrait');
-  const eyes = ['av-eye-l', 'av-eye-r'].map(id => document.getElementById(id));
-  const MOUTH_RY = mouth ? parseFloat(mouth.getAttribute('ry')) : 5;
   const LABEL = { idle: 'IDLE', listening: 'LISTENING', thinking: 'THINKING', speaking: 'SPEAKING' };
 
   let audioCtx = null, analyser = null, freq = null, wiredEl = null;
-  let level = 0, tPrev = 0, blinkT = 2;
+  let level = 0, tPrev = 0;
 
   function isSpeaking() {
     return currentAudio && !currentAudio.paused && !currentAudio.ended;
@@ -848,8 +846,7 @@ inputEl.focus();
   }
 
   // Attach an analyser to the current TTS <audio>, once per element. Any failure
-  // (autoplay policy, one-source-per-element, …) falls back to a synthetic mouth
-  // movement so the avatar still animates while speaking.
+  // (autoplay policy, one-source-per-element, …) falls back to a synthetic pulse.
   function wireAudio() {
     if (!currentAudio || currentAudio === wiredEl) return;
     wiredEl = currentAudio;
@@ -877,7 +874,7 @@ inputEl.focus();
       stateEl.textContent = LABEL[st];
     }
 
-    // mouth opens with the live voice while speaking
+    // glow pulses with the live voice while speaking; gentle breathing otherwise
     let target = 0;
     if (st === 'speaking') {
       wireAudio();
@@ -892,23 +889,10 @@ inputEl.focus();
     }
     level += (target - level) * Math.min(1, dt * 16);
     if (level < 0.001) level = 0;
-    if (mouth && st === 'speaking') mouth.setAttribute('ry', (MOUTH_RY + level * 4).toFixed(1));
 
-    // blink (every few seconds, any state) — squash the eyes vertically
-    blinkT -= dt;
-    let open = 1;
-    if (blinkT <= 0) {
-      const s = -blinkT;
-      if (s < 0.14) open = 1 - 0.9 * (1 - Math.abs(s - 0.07) / 0.07);
-      else blinkT = 2.5 + Math.random() * 4;
-    }
-    eyes.forEach(e => { if (e) e.style.transform = 'scaleY(' + open.toFixed(2) + ')'; });
-
-    // subtle head sway so she feels alive
-    if (portrait) {
-      const dx = Math.sin(t * 0.0006) * 1.4;
-      const dy = Math.sin(t * 0.0011) * 0.7;
-      portrait.style.transform = 'translate(' + dx.toFixed(2) + 'px,' + dy.toFixed(2) + 'px)';
+    if (frameEl) {
+      const glow = st === 'speaking' ? (10 + level * 22) : (9 + 3 * Math.sin(t * 0.002));
+      frameEl.style.boxShadow = '0 0 ' + glow.toFixed(1) + 'px var(--av)';
     }
 
     requestAnimationFrame(frame);
