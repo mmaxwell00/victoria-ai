@@ -86,45 +86,49 @@
       </div>
 
       <div class="avatar-dock" id="avatar-dock" data-avstate="idle">
-        <svg class="av-svg" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <circle class="av-halo" cx="70" cy="48" r="40"></circle>
-          <circle class="av-head" cx="70" cy="48" r="30"></circle>
+        <svg class="av-svg" viewBox="0 0 120 130" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path class="av-body" d="M18 130 Q22 104 46 98 L74 98 Q98 104 102 130 Z"></path>
+          <path class="av-body" d="M52 99 L52 88 Q60 92 68 88 L68 99 Z"></path>
+          <g id="av-portrait">
+            <ellipse class="av-hair" cx="60" cy="52" rx="30" ry="33"></ellipse>
+            <path class="av-hairline" d="M60 20 L60 40 M44 24 Q40 44 42 62 M76 24 Q80 44 78 62"></path>
+            <ellipse class="av-head" cx="60" cy="58" rx="24" ry="29"></ellipse>
+            <path class="av-nose" d="M60 59 L57 68 Q60 70 63 68"></path>
 
-          <g class="feat f-idle">
-            <ellipse class="fill" cx="60" cy="44" rx="5" ry="3"></ellipse>
-            <ellipse class="fill" cx="80" cy="44" rx="5" ry="3"></ellipse>
-            <path class="stroke" d="M61 58 Q70 66 79 58"></path>
-          </g>
+            <g class="eye" id="av-eye-l">
+              <path class="stroke thin" d="M45 57 Q51 52 57 57 Q51 61 45 57 Z"></path>
+              <circle class="fill" cx="51" cy="56" r="2.6"></circle>
+            </g>
+            <g class="eye" id="av-eye-r">
+              <path class="stroke thin" d="M63 57 Q69 52 75 57 Q69 61 63 57 Z"></path>
+              <circle class="fill" cx="69" cy="56" r="2.6"></circle>
+            </g>
 
-          <g class="feat f-listening">
-            <circle class="fill" cx="60" cy="44" r="5"></circle>
-            <circle class="fill" cx="80" cy="44" r="5"></circle>
-            <ellipse class="stroke" cx="70" cy="60" rx="4.5" ry="3.5"></ellipse>
-            <path class="stroke thin" d="M101 40 Q108 48 101 56"></path>
-            <path class="stroke thin dim" d="M107 35 Q116 48 107 61"></path>
-          </g>
-
-          <g class="feat f-thinking">
-            <path class="stroke" d="M55 46 Q60 41 65 46"></path>
-            <path class="stroke" d="M75 46 Q80 41 85 46"></path>
-            <line class="stroke" x1="64" y1="60" x2="76" y2="60"></line>
-            <circle class="fill" cx="101" cy="15" r="3"></circle>
-            <circle class="fill dim" cx="110" cy="12" r="2.4"></circle>
-            <circle class="fill dim2" cx="118" cy="12" r="1.8"></circle>
-          </g>
-
-          <g class="feat f-speaking">
-            <path class="stroke" d="M55 46 Q60 42 65 46"></path>
-            <path class="stroke" d="M75 46 Q80 42 85 46"></path>
-            <ellipse class="mouth-open" id="av-mouth" cx="70" cy="60" rx="7" ry="6"></ellipse>
-          </g>
-
-          <g class="feat f-speaking" id="av-bars">
-            <rect class="av-bar" id="av-bar-0" x="50" y="96" width="4" height="8" rx="2"></rect>
-            <rect class="av-bar" id="av-bar-1" x="59" y="90" width="4" height="14" rx="2"></rect>
-            <rect class="av-bar" id="av-bar-2" x="68" y="94" width="4" height="10" rx="2"></rect>
-            <rect class="av-bar" id="av-bar-3" x="77" y="90" width="4" height="14" rx="2"></rect>
-            <rect class="av-bar" id="av-bar-4" x="86" y="96" width="4" height="8" rx="2"></rect>
+            <g class="feat f-idle">
+              <path class="stroke" d="M45 50 Q51 47 57 50"></path>
+              <path class="stroke" d="M63 50 Q69 47 75 50"></path>
+              <path class="stroke" d="M52 76 Q60 81 68 76"></path>
+            </g>
+            <g class="feat f-listening">
+              <path class="stroke" d="M45 48 Q51 44 57 48"></path>
+              <path class="stroke" d="M63 48 Q69 44 75 48"></path>
+              <ellipse class="stroke" cx="60" cy="77" rx="4" ry="3"></ellipse>
+              <path class="stroke thin" d="M96 50 Q103 58 96 66"></path>
+              <path class="stroke thin dim" d="M102 45 Q111 58 102 71"></path>
+            </g>
+            <g class="feat f-thinking">
+              <path class="stroke" d="M45 49 Q51 52 57 47"></path>
+              <path class="stroke" d="M63 47 Q69 52 75 49"></path>
+              <path class="stroke" d="M54 77 Q60 75 66 77"></path>
+              <circle class="fill" cx="98" cy="20" r="3"></circle>
+              <circle class="fill dim" cx="107" cy="16" r="2.3"></circle>
+              <circle class="fill dim2" cx="115" cy="16" r="1.7"></circle>
+            </g>
+            <g class="feat f-speaking">
+              <path class="stroke" d="M45 50 Q51 47 57 50"></path>
+              <path class="stroke" d="M63 50 Q69 47 75 50"></path>
+              <ellipse class="mouth-open" id="av-mouth" cx="60" cy="77" rx="7" ry="5"></ellipse>
+            </g>
           </g>
         </svg>
         <div class="av-label">

@@ -736,22 +736,19 @@ select#backend-select:focus, select#model-select:focus { outline: none; border-c
 .avatar-dock[data-avstate="thinking"]  { --av: #ffb74d; }
 .avatar-dock[data-avstate="speaking"]  { --av: var(--teal-bright); }
 
-.av-svg { width: 118px; height: 102px; overflow: visible; }
-.av-halo {
-  fill: none; stroke: var(--av); stroke-width: 1.5; opacity: .55;
-  filter: drop-shadow(0 0 6px var(--av));
-  transform-box: fill-box; transform-origin: center;
-  animation: avBreath 3.6s ease-in-out infinite;
-  transition: stroke .4s ease;
-}
+.av-svg { width: 104px; height: 112px; overflow: visible; filter: drop-shadow(0 0 4px var(--av)); transition: filter .4s ease; }
+.av-body { fill: #0c1c35; stroke: var(--av); stroke-width: 1.6; transition: stroke .4s ease; }
+.av-hair { fill: #0a1424; stroke: var(--av); stroke-width: 1.5; transition: stroke .4s ease; }
+.av-hairline { fill: none; stroke: var(--av); stroke-width: 1.2; opacity: .55; }
 .av-head { fill: #0c1c35; stroke: var(--av); stroke-width: 2; transition: stroke .4s ease; }
+.av-nose { fill: none; stroke: var(--av); stroke-width: 1.3; stroke-linecap: round; opacity: .8; }
+.eye { transform-box: fill-box; transform-origin: center; }
 .av-svg .fill { fill: var(--av); }
 .av-svg .stroke { fill: none; stroke: var(--av); stroke-width: 2; stroke-linecap: round; }
-.av-svg .thin { stroke-width: 1.6; }
+.av-svg .thin { stroke-width: 1.5; }
 .av-svg .dim { opacity: .55; }
 .av-svg .dim2 { opacity: .4; }
 .av-svg .mouth-open { fill: #04222b; stroke: var(--av); stroke-width: 2; }
-.av-bar { fill: var(--av); }
 .feat { display: none; }
 .avatar-dock[data-avstate="idle"] .f-idle,
 .avatar-dock[data-avstate="listening"] .f-listening,
