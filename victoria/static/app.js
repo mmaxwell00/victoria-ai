@@ -818,19 +818,21 @@ if (state.sessionId) {
 }
 inputEl.focus();
 
-// ── Avatar (Tier 0 procedural presence) ────────────────────────
-// A zero-asset "AI core" in the bottom-left: breathes when idle, spins when
-// thinking, glows green when listening, and drives an equaliser off the live
-// TTS audio amplitude when speaking. Built to be swapped for Rive/Live2D later.
+// ── Avatar (Tier 0 procedural face) ────────────────────────────
+// A zero-asset stylized face in the bottom-left: calm when idle, alert green
+// when listening, amber + thought-dots when thinking, and an open mouth +
+// equaliser driven by the live TTS amplitude when speaking. Swappable for a
+// Rive/Live2D/3D rig later, behind the same state model.
 (function initAvatar() {
   const dock = document.getElementById('avatar-dock');
   if (!dock) return;
-  const ring = document.getElementById('av-ring');
   const stateEl = document.getElementById('av-state');
+  const mouth = document.getElementById('av-mouth');
   const bars = [0, 1, 2, 3, 4].map(i => document.getElementById('av-bar-' + i));
   const barBase = bars.map(b => parseFloat(b.getAttribute('height')));
+  const barBottom = bars.map(b => parseFloat(b.getAttribute('y')) + parseFloat(b.getAttribute('height')));
   const barFactor = [0.6, 0.85, 1, 0.85, 0.6];
-  const CY = 56;
+  const MOUTH_RY = mouth ? parseFloat(mouth.getAttribute('ry')) : 6;
   const LABEL = { idle: 'IDLE', listening: 'LISTENING', thinking: 'THINKING', speaking: 'SPEAKING' };
 
   let audioCtx = null, analyser = null, freq = null, wiredEl = null;
@@ -888,19 +890,19 @@ inputEl.focus();
       } else {
         target = 0.4 + 0.35 * Math.abs(Math.sin(t * 0.011)) + 0.15 * Math.random();
       }
-    } else if (st === 'listening') {
-      target = 0.12 + 0.05 * Math.sin(t * 0.004);
     }
 
-    level += (target - level) * Math.min(1, dt * 14);
+    level += (target - level) * Math.min(1, dt * 16);
     if (level < 0.001) level = 0;
 
-    for (let i = 0; i < bars.length; i++) {
-      const h = barBase[i] + level * 34 * barFactor[i];
-      bars[i].setAttribute('height', h.toFixed(1));
-      bars[i].setAttribute('y', (CY - h / 2).toFixed(1));
+    if (st === 'speaking') {
+      for (let i = 0; i < bars.length; i++) {
+        const h = barBase[i] + level * 22 * barFactor[i];
+        bars[i].setAttribute('height', h.toFixed(1));
+        bars[i].setAttribute('y', (barBottom[i] - h).toFixed(1));
+      }
+      if (mouth) mouth.setAttribute('ry', (MOUTH_RY + level * 5).toFixed(1));
     }
-    ring.setAttribute('r', st === 'speaking' ? (40 + level * 5).toFixed(1) : '40');
 
     requestAnimationFrame(frame);
   }

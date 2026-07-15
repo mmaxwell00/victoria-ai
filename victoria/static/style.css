@@ -736,27 +736,29 @@ select#backend-select:focus, select#model-select:focus { outline: none; border-c
 .avatar-dock[data-avstate="thinking"]  { --av: #ffb74d; }
 .avatar-dock[data-avstate="speaking"]  { --av: var(--teal-bright); }
 
-.av-svg { width: 118px; height: 100px; overflow: visible; }
-.av-ring, .av-ring2, .av-arc { fill: none; }
-.av-ring {
-  stroke: var(--av); stroke-width: 2;
+.av-svg { width: 118px; height: 102px; overflow: visible; }
+.av-halo {
+  fill: none; stroke: var(--av); stroke-width: 1.5; opacity: .55;
   filter: drop-shadow(0 0 6px var(--av));
   transform-box: fill-box; transform-origin: center;
-  animation: avBreath 3.4s ease-in-out infinite;
+  animation: avBreath 3.6s ease-in-out infinite;
   transition: stroke .4s ease;
 }
-.av-ring2 { stroke: var(--av); stroke-width: 1; opacity: .22; }
-.av-arc {
-  stroke: var(--av); stroke-width: 2.5; stroke-linecap: round;
-  stroke-dasharray: 55 300; opacity: 0;
-  transform-box: fill-box; transform-origin: center;
-}
-.avatar-dock[data-avstate="thinking"] .av-arc { opacity: .9; animation: avSpin 1.1s linear infinite; }
-.avatar-dock[data-avstate="speaking"] .av-ring { animation-duration: 1.6s; }
-.av-bar { fill: var(--av); opacity: .9; transition: fill .4s ease; }
+.av-head { fill: #0c1c35; stroke: var(--av); stroke-width: 2; transition: stroke .4s ease; }
+.av-svg .fill { fill: var(--av); }
+.av-svg .stroke { fill: none; stroke: var(--av); stroke-width: 2; stroke-linecap: round; }
+.av-svg .thin { stroke-width: 1.6; }
+.av-svg .dim { opacity: .55; }
+.av-svg .dim2 { opacity: .4; }
+.av-svg .mouth-open { fill: #04222b; stroke: var(--av); stroke-width: 2; }
+.av-bar { fill: var(--av); }
+.feat { display: none; }
+.avatar-dock[data-avstate="idle"] .f-idle,
+.avatar-dock[data-avstate="listening"] .f-listening,
+.avatar-dock[data-avstate="thinking"] .f-thinking,
+.avatar-dock[data-avstate="speaking"] .f-speaking { display: block; }
 .av-label { display: flex; flex-direction: column; align-items: center; line-height: 1.25; }
 .av-name { font-family: var(--font-hud); font-size: 11px; letter-spacing: 2.5px; color: var(--text-header); }
 .av-state { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; color: var(--av); transition: color .4s ease; }
 
 @keyframes avBreath { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-@keyframes avSpin { to { transform: rotate(360deg); } }
