@@ -34,8 +34,10 @@
 |---------|--------|--------|
 | Model Runner | `localhost:12434` | Local LLM (requires `sbx policy` on host) |
 | Claude API | `api.anthropic.com` | Escalation |
-| Web search | `api.duckduckgo.com` | Built-in tool |
-| Weather | `wttr.in` | Built-in tool |
+| Web search | `duckduckgo.com`, `*.duckduckgo.com` | Built-in tool (ddgs) |
+| Weather | `wttr.in` | Built-in tool + dashboard weather |
+| Markets | `query1/2.finance.yahoo.com` | Dashboard stocks box |
+| Headlines | `rss.cnn.com`, `moxie.foxnews.com` | Dashboard news box (RSS) |
 | GitHub | `github.com`, `api.github.com` | Skill import + MCP |
 | Models | `huggingface.co` | Piper TTS + model downloads |
 | Packages | `registry.npmjs.org`, `pypi.org` | Dependencies |

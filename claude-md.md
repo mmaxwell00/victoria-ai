@@ -64,7 +64,7 @@ victoria-ai/
 │   ├── chat.py                 # Terminal chat
 │   ├── run_telegram.py
 │   └── run_voice.py
-├── tests/                      # 83 pytest tests
+├── tests/                      # 303 pytest tests
 ├── docs/
 │   └── DECISIONS.md            # Running decision log
 ├── CLAUDE.md                   # This file
@@ -131,7 +131,7 @@ Interfaces (Web HUD / Telegram / Voice / Terminal)
 - **Virtual env in `.venv/`** — standard `python -m venv`, not Poetry/PDM.
 - **Dependencies in `requirements.txt`** — keep it simple.
 - **Config via `.env`** — see `.env.example` for the full list of vars.
-- **Tests with pytest** — 83 tests currently. Never let coverage regress.
+- **Tests with pytest** — 303 tests currently. Never let coverage regress.
 - **Decorator-based tool registry** — `@tool` in `victoria/tools/registry.py`.
 - **All settings env-driven** — never hardcode credentials or paths.
 - **Async where it counts** — FastAPI endpoints, Telegram handlers. Sync OK for tool calls.
@@ -167,10 +167,10 @@ docker compose up --build
 
 > When this changes, update both this section AND append an entry to `docs/DECISIONS.md`.
 
-**Active workstream:** MCP integration + RAG document ingestion.
+**Recently shipped:** reliable local tool-use (stream-with-tools + forced-tool retry + history de-poisoning), the sidebar avatar (framed portrait with state-coloured glow), and the HUD dashboard row (weather / stocks / news + conversational tracking). MCP client integration is done.
 
-- **MCP servers being added:** Gmail (via `workspace-mcp`), GitHub (remote hosted MCP), Runway video (TBD by Alex)
-- **RAG:** ChromaDB document collection separate from semantic memory; local embeddings via sentence-transformers (TBD)
+**Next up:** RAG document ingestion (ChromaDB doc collection separate from semantic memory; local embeddings — not yet built), plus more MCP servers (Gmail, video).
+
 - **Open questions:** see `docs/DECISIONS.md` § Open
 
 ---

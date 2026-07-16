@@ -97,8 +97,14 @@ network:
     # Victoria built-in tools
     - duckduckgo.com            # Web search — the ddgs library queries
     - "*.duckduckgo.com"        # html./lite./links.duckduckgo.com (NOT api.duckduckgo.com)
-    - wttr.in                   # Weather tool
-    
+    - wttr.in                   # Weather tool + dashboard weather box
+
+    # HUD dashboard boxes (markets + headlines)
+    - query1.finance.yahoo.com  # Stock prices (Yahoo Finance)
+    - query2.finance.yahoo.com  # Yahoo Finance failover host
+    - rss.cnn.com               # CNN headlines (RSS)
+    - moxie.foxnews.com         # Fox News headlines (RSS)
+
     # Model/dependency downloads (setup phase)
     - huggingface.co
     - cdn-lfs.huggingface.co
