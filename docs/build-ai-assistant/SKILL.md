@@ -244,6 +244,15 @@ Hold these true regardless of stack:
   multiple fails." Strip refusal-shaped assistant turns (and the questions that
   prompted them) from the *replayed* context — not from stored history or the UI.
   New chats were never affected; this is what makes old ones self-heal.
+- **For a mutation that MUST happen, extract JSON — don't route it through a
+  tool-call.** A small model will confidently say "done — added Miami!" (even
+  fabricating the result) without ever emitting the tool call, and forcing the
+  call is unreliable (it may escalate or return an empty completion). So when a
+  request has to change state — "add X to my dashboard", "remember Y" — detect
+  the intent in code, have the model only *extract* the parameters as strict
+  JSON (`{"action","kind","value"}`), which it does reliably, then perform the
+  mutation yourself and confirm from the *real* result. Reserve tool-calls for
+  read/lookup-style actions where a miss is harmless.
 - **Tool-aware escalation, or it cannibalizes your tools.** If the model has both
   tools *and* a "signal when you can't answer" escalation protocol, a naive
   escalation prompt makes it escalate for exactly the live questions its own

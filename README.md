@@ -61,7 +61,7 @@ victoria-ai/
 │   ├── ensure-model-runner.sh  # Re-bind the Docker Model Runner host-TCP port if it drops
 │   └── claude-login.sh         # Authenticate Claude escalation (subscription login or token)
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
-├── tests/                      # 303 pytest tests
+├── tests/                      # 305 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
 ├── docker-compose.yml
 ├── Dockerfile
@@ -685,4 +685,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-303 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), Telegram, user profiles, and API layers.
+305 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), Telegram, user profiles, and API layers.

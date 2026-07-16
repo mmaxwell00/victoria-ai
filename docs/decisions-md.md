@@ -85,6 +85,34 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-07-15 · Dashboard tracking via deterministic interception; installer fully interactive
+
+**Status:** Implemented (PRs #50, #51).
+
+**Context:** Two follow-ups after the dashboard shipped. (1) "Include Saraland
+in the weather" changed nothing — qwen2.5 confidently replied "added!" (even
+fabricating the weather) but never called `track_dashboard`; forcing the tool
+made it escalate or return an empty completion. (2) The installer only asked
+about escalation; the local model and voice were silent defaults / flag-only.
+
+**Choice:** (1) Intercept dashboard commands in the conversation manager
+(`_is_dashboard_command` + `_handle_dashboard_command`): detect add/remove
+intent, have the local model only EXTRACT `{action, kind, value}` as JSON, then
+mutate the store in code. (2) `setup-victoria-mac.sh` now prompts for model
+(RAM-recommended), escalation token, and voice up front via `/dev/tty` (works
+through `curl | bash`); each flag skips its prompt; no TTY → sensible defaults.
+
+**Why:** Small local models won't reliably *call* a tool but will reliably
+return *structured JSON* — so a must-happen mutation shouldn't ride on
+stochastic tool-calling. And an installer that asks beats one that hides
+choices behind flags the user has to know exist.
+
+**Trade-offs:** The intent detector is a keyword heuristic — a missed phrasing
+falls through to a normal turn (no harm, just no change). JSON extraction adds
+one local-model call per dashboard command.
+
+---
+
 ### 2026-07-15 · HUD dashboard row: four info boxes + conversational tracking
 
 **Status:** Implemented (PR #46; layout tuned in #47/#48).
