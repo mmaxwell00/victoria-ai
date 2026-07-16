@@ -106,7 +106,7 @@ The diagram below is the **containerised** (docker-compose) layout. Running nati
 process instead; the connection points are the same.
 
 <p align="center">
-  <img src="docs/screenshots/architecture.png" width="760"
+  <img src="docs/architecture.svg" width="760"
        alt="Victoria deployment topology — three zones (host macOS, the container, cloud/external) with every boundary-crossing connection labeled by protocol and port">
 </p>
 
@@ -127,6 +127,7 @@ the **bundled Claude Code CLI**. No GPU, nothing photoreal.
 **Cloud connection points (these leave your Mac — mostly opt-in):**
 - **Anthropic API** — only on **escalation** (your "yes"), via the bundled Claude CLI (`CLAUDE_CODE_OAUTH_TOKEN`) or the `claude` backend (`ANTHROPIC_API_KEY`).
 - **DuckDuckGo** + **wttr.in** — hit only when the web-search / weather tools fire (HTTPS, no key).
+- **Yahoo Finance** + **CNN / Fox RSS** — the dashboard's markets + headlines boxes (HTTPS, no key).
 - **GitHub** — only during on-demand skill import.
 - **ElevenLabs** — only if `TTS_ENGINE=elevenlabs`; otherwise Piper runs fully local.
 - **Remote MCP (SSE)** — only if you list remote servers in `mcp.json`.

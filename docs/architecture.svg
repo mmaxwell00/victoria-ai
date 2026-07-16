@@ -18,6 +18,7 @@
   <rect x="40" y="126" width="145" height="46" rx="10" fill="#3A3A37" stroke="#57574F" stroke-width="1"/><text x="112.5" y="147" fill="#ECEBE7" font-size="14" font-weight="600" text-anchor="middle">GitHub</text><text x="112.5" y="164" fill="#B2B0A6" font-size="11.5" text-anchor="middle">skill import</text>
   <rect x="197" y="126" width="145" height="46" rx="10" fill="#3A3A37" stroke="#57574F" stroke-width="1"/><text x="269.5" y="147" fill="#ECEBE7" font-size="14" font-weight="600" text-anchor="middle">Telegram</text><text x="269.5" y="164" fill="#B2B0A6" font-size="11.5" text-anchor="middle">bot · opt</text>
   <rect x="354" y="126" width="145" height="46" rx="10" fill="#3A3A37" stroke="#57574F" stroke-width="1"/><text x="426.5" y="147" fill="#ECEBE7" font-size="14" font-weight="600" text-anchor="middle">Remote MCP</text><text x="426.5" y="164" fill="#B2B0A6" font-size="11.5" text-anchor="middle">SSE · opt</text>
+  <rect x="511" y="126" width="145" height="46" rx="10" fill="#3A3A37" stroke="#57574F" stroke-width="1"/><text x="583.5" y="147" fill="#ECEBE7" font-size="14" font-weight="600" text-anchor="middle">Dashboard feeds</text><text x="583.5" y="164" fill="#B2B0A6" font-size="11.5" text-anchor="middle">Yahoo · CNN · Fox</text>
 </g>
 
 <!-- ===== CONTAINER ZONE ===== -->
