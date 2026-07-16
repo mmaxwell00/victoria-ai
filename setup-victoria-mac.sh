@@ -13,9 +13,13 @@
 #   2. Click OK on the Xcode Command Line Tools + Docker first-run dialogs
 #   3. (voice only) Approve the browser's microphone prompt
 #
+# With no flags, it walks you through model / escalation / voice interactively
+# (works even through `curl … | bash`, via /dev/tty). Any flag skips its prompt;
+# a non-interactive run (no TTY) falls back to sensible defaults.
+#
 # Options:
 #   --dir <path>       Install location            (default: ~/victoria-ai)
-#   --model <name>     Local model to pull          (default: ai/qwen2.5:latest)
+#   --model <name>     Local model to pull          (default: RAM-based pick)
 #   --claude-token <t> Claude Code OAuth token — enables cloud escalation
 #                      (get one by running: claude setup-token)
 #   --with-voice       Also set up the native voice runner (Python + Piper)
@@ -26,7 +30,7 @@ set -euo pipefail
 
 DIR="$HOME/victoria-ai"
 REPO="https://github.com/mmaxwell00/victoria-ai.git"
-MODEL="ai/qwen2.5:latest"
+MODEL=""   # empty = ask (or fall back to a RAM-based default); --model overrides
 CLAUDE_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
 WITH_VOICE=0
 OPEN_BROWSER=1
@@ -54,6 +58,42 @@ kc_get() { security find-generic-password -a "$KC_ACCT" -s "$1" -w 2>/dev/null |
 kc_set() { security add-generic-password -U -a "$KC_ACCT" -s "$1" -w "$2" >/dev/null 2>&1; }
 
 [ "$(uname)" = "Darwin" ] || fail "This installer is for macOS."
+
+# ── 0. Interactive setup — ask unless a flag was passed / no TTY ─────
+# Reads from /dev/tty so the prompts work even through `curl … | bash`.
+RAM_GB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
+if   [ "$RAM_GB" -ge 64 ]; then MODEL_REC="ai/qwen2.5:32k"
+elif [ "$RAM_GB" -ge 16 ]; then MODEL_REC="ai/qwen2.5:latest"
+else                            MODEL_REC="ai/llama3.2"
+fi
+
+# 0a. Local model (skipped if --model was given)
+if [ -z "$MODEL" ] && [ -e /dev/tty ]; then
+  printf '\n\033[1mLocal model\033[0m — %s GB RAM detected, recommended \033[1m%s\033[0m.\n' "$RAM_GB" "$MODEL_REC"
+  printf 'Model id [Enter for %s]: ' "$MODEL_REC"
+  read -r _ans < /dev/tty || _ans=""
+  MODEL="${_ans:-$MODEL_REC}"
+fi
+[ -n "$MODEL" ] || MODEL="$MODEL_REC"   # non-interactive fallback
+
+# 0b. Cloud escalation token (skipped if supplied via flag/env or a prior run)
+[ -n "$CLAUDE_TOKEN" ] || CLAUDE_TOKEN="$(kc_get victoria-claude-token)"
+if [ -z "$CLAUDE_TOKEN" ] && [ -e /dev/tty ]; then
+  printf '\n\033[1mCloud escalation\033[0m (optional) — hand hard questions to Claude via your\n'
+  printf 'subscription. Run \033[1mclaude setup-token\033[0m in another terminal and paste it here.\n'
+  printf 'Token (or Enter to skip): '
+  read -r -t 120 CLAUDE_TOKEN < /dev/tty || CLAUDE_TOKEN=""
+fi
+
+# 0c. Voice (skipped if --with-voice was given)
+if [ "$WITH_VOICE" = 0 ] && [ -e /dev/tty ]; then
+  printf '\n\033[1mVoice\033[0m (optional) — microphone input + spoken replies (adds Python + Piper).\n'
+  printf 'Enable voice? [y/N]: '
+  read -r _ans < /dev/tty || _ans=""
+  case "$_ans" in [Yy]*) WITH_VOICE=1 ;; esac
+fi
+
+info "Setup → model: $MODEL · escalation: $([ -n "$CLAUDE_TOKEN" ] && echo on || echo off) · voice: $([ "$WITH_VOICE" = 1 ] && echo on || echo off)"
 
 # ── 1. Xcode Command Line Tools (provides git) ──────────────────────
 if ! xcode-select -p >/dev/null 2>&1; then
@@ -105,16 +145,16 @@ for _ in $(seq 1 15); do
 done
 [ -n "$(models_json)" ] || fail "Model Runner isn't responding on port $MODEL_RUNNER_TCP."
 
-# ── 5. Local model — reuse one if pulled, else pull the default ─────
+# ── 5. Local model — ensure the chosen model is pulled, then use it ──
 extract_ids() { tr ',' '\n' | sed -n 's/.*"id":"\([^"]*\)".*/\1/p'; }
+BASE="$(echo "$MODEL" | sed 's|.*/||; s|:.*||')"
 IDS="$(models_json | extract_ids)"
-if [ -z "$IDS" ]; then
+if ! echo "$IDS" | grep -qi "$BASE"; then
   info "Pulling local model $MODEL (a few GB — grab a cuppa)…"
-  docker model pull "$MODEL"
+  docker model pull "$MODEL" || warn "Couldn't pull $MODEL; using whatever's available."
   IDS="$(models_json | extract_ids)"
 fi
-# Prefer a model matching the requested name, else use the first available.
-BASE="$(echo "$MODEL" | sed 's|.*/||; s|:.*||')"
+# Prefer the chosen model, else fall back to the first available.
 MODEL_ID="$(echo "$IDS" | grep -i "$BASE" | head -1 || true)"
 [ -n "$MODEL_ID" ] || MODEL_ID="$(echo "$IDS" | head -1)"
 [ -n "$MODEL_ID" ] || fail "No model available in Model Runner after pull."
@@ -164,16 +204,9 @@ fi
 env_unset VICTORIA_VAULT_KEY
 export VICTORIA_VAULT_KEY="$VAULT_KEY"
 
-# Claude escalation token — Keychain (service: victoria-claude-token). Prompt on
-# a fresh interactive run if none was supplied or stored.
+# Claude escalation token — collected interactively in step 0 (or supplied via
+# --claude-token / CLAUDE_CODE_OAUTH_TOKEN / a prior run's Keychain entry).
 [ -n "$CLAUDE_TOKEN" ] || CLAUDE_TOKEN="$(kc_get victoria-claude-token)"
-if [ -z "$CLAUDE_TOKEN" ] && [ -e /dev/tty ] && ! grep -q "^ESCALATION_ENABLED=" .env; then
-  printf '\n\033[1mOptional:\033[0m escalate hard questions to Claude (uses your Claude\n'
-  printf 'subscription). Run \033[1mclaude setup-token\033[0m in another terminal and paste it here.\n'
-  printf 'Token (or Enter to skip): '
-  read -r -t 120 CLAUDE_TOKEN < /dev/tty || CLAUDE_TOKEN=""
-  echo
-fi
 env_unset CLAUDE_CODE_OAUTH_TOKEN
 if [ -n "$CLAUDE_TOKEN" ]; then
   kc_set victoria-claude-token "$CLAUDE_TOKEN"

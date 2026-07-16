@@ -231,6 +231,8 @@ curl -fsSL https://raw.githubusercontent.com/mmaxwell00/victoria-ai/main/setup-v
 
 The script installs everything it can (Homebrew, Docker Desktop, Model Runner, a local model, Victoria herself in Docker) and is safe to re-run. It also installs a `victoria` command (`start` / `stop` / `status` / `logs` / `update`).
 
+On a fresh run it **walks you through three choices** up front: which **local model** (with a recommendation based on your Mac's RAM), whether to enable **cloud escalation** (paste a Claude token, or press Enter to skip), and whether to set up **voice**. These prompts work even through the piped `curl … | bash` — they read from your terminal (`/dev/tty`). Pass the matching flag below to skip any prompt; a fully non-interactive run (no terminal) falls back to sensible defaults.
+
 **Secrets stay out of plaintext.** The vault master key and (if set) the Claude token are stored in the **macOS Keychain**, and the `victoria` command injects them into the container at launch — they're never written to `.env`. So launch/manage Victoria with `victoria start` (not a bare `docker compose up`, which wouldn't have the secrets).
 
 macOS only makes you do three things it won't let any script do:
@@ -239,7 +241,7 @@ macOS only makes you do three things it won't let any script do:
 2. **Click OK** on the Xcode Command Line Tools and Docker first-run dialogs
 3. **Approve the microphone prompt** in your browser (voice features only)
 
-Options: `--model <name>` to choose the local model, `--claude-token <token>` to enable cloud escalation (get one with `claude setup-token`), `--with-voice` for the native voice runner, `--dir <path>` for a custom location.
+Flags — each one **skips its interactive prompt**: `--model <name>` (local model), `--claude-token <token>` (enable escalation — get one with `claude setup-token`), `--with-voice` (native voice runner), `--dir <path>` (custom install location).
 
 Escalation note: the Docker image bundles the Claude Code CLI (plus `git` + `ffmpeg`, so skill import and browser-voice transcription also work in the container). Escalation turns on once a token is stored — via the installer, or later with `./setup-victoria-mac.sh --claude-token "$(claude setup-token)"` then `victoria start`. The token lands in the Keychain, not `.env`.
 
