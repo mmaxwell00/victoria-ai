@@ -33,10 +33,14 @@ victoria-ai/
 │   │   ├── weather.py          # wttr.in weather (no API key)
 │   │   ├── datetime_tool.py    # Current date/time with timezone
 │   │   ├── calculator.py       # Safe AST-based math evaluator
-│   │   └── skills_tools.py     # Skill use/save/list/delete tools
+│   │   ├── skills_tools.py     # Skill use/save/list/delete tools
+│   │   └── dashboard_tools.py  # Track/untrack dashboard cities/stocks/news
 │   ├── skills/
 │   │   ├── store.py            # SkillStore — Markdown skill files (CRUD)
 │   │   └── importer.py         # Fetch + discover skills from a GitHub repo/URL
+│   ├── dashboard/
+│   │   ├── store.py            # Tracked cities/stocks/news (persisted JSON)
+│   │   └── feeds.py            # Weather / stocks (Yahoo) / news (RSS) fetchers
 │   ├── mcp/
 │   │   └── manager.py          # MCP client — connect servers, expose their tools
 │   ├── vault/
@@ -355,6 +359,7 @@ The interface is a full-screen dark HUD inspired by the Iron Man JARVIS OS — d
 - Memory banks — live list of all stored explicit memories
 - Topics — your chat history: each past conversation, newest first; click one to reopen it. Starting a new chat archives the current one here
 - Session log — today's and total session counts with a fill bar
+- Avatar (bottom) — a framed portrait of Victoria; the glowing frame shifts colour with her state: teal idle, green listening, purple thinking, fuchsia speaking (the fuchsia glow pulses with her voice). Drop your own image at `victoria/static/victoria-avatar.png`
 
 **Center**
 - **Dashboard row (top):** four live info boxes — **Weather** (tracked cities, each shown `City · 24-hr local time · °F`), **Markets** (top 5 tracked stocks by share price, `Name (SYM) $price`), **Headlines** (CNN + Fox News RSS — click a headline to open it in a new tab), and a reserved fourth box. Manage them by talking to Victoria — "track Dallas", "add Apple stock", "follow Fox News", "drop Tesla" — and the boxes refresh right away. Data is free/no-key: wttr.in (weather), Yahoo Finance (stocks), RSS (news).

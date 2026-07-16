@@ -85,6 +85,57 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-07-15 · HUD dashboard row: four info boxes + conversational tracking
+
+**Status:** Implemented (PR #46; layout tuned in #47/#48).
+
+**Context:** Wanted an at-a-glance top strip in the HUD — weather, stocks,
+headlines — that the operator manages by talking to Victoria.
+
+**Choice:** A `dash-row` of four boxes above a shortened chat (WEATHER / MARKETS
+/ HEADLINES / reserved). Data via free, no-key sources — wttr.in (weather,
+24-hr local time + °F), Yahoo Finance v8 (stock price + name), CNN/Fox RSS
+(headlines, open in a new tab). Tracked lists persist in `data/dashboard.json`
+(`victoria/dashboard/store.py`); fetchers in `feeds.py` are independently
+fault-tolerant. Tracking is conversational via `track_dashboard` /
+`untrack_dashboard` tools; the LLM converts company names → tickers.
+
+**Why:** No API keys keeps it local-first and zero-setup; per-source resilience
+means one dead feed never blanks the row; tools reuse the existing registry so
+"track Dallas" just works.
+
+**Trade-offs:** Yahoo/wttr are unofficial endpoints (can rate-limit or change
+shape → box shows a placeholder). wttr switches output by User-Agent (needs a
+curl UA). Drudge Report has no feed, so it's unsupported. Sandbox egress must
+allowlist the new hosts (done in `sbx-kit.yaml`).
+
+---
+
+### 2026-07-15 · Avatar: stylized SVG face, then a framed portrait image
+
+**Status:** Implemented (PRs #43, #45).
+
+**Context:** Wanted a visible "Victoria" presence in the sidebar that reacts to
+state (idle / listening / thinking / speaking). Explored a real-time 3D head
+(three.js + Ready Player Me, PR #44) but RPM shut down (Jan 2026) and true
+photoreal-live-local isn't practical on a Mac.
+
+**Choice:** Ship a lightweight avatar dock bottom-left whose look is swappable
+behind a fixed state model. Landed on a **framed portrait image**
+(`victoria-avatar.png`) with a state-coloured, voice-reactive glowing border
+(teal idle · green listening · purple thinking · fuchsia speaking) — the exact
+look with zero 3D/asset pipeline. The 3D test bench is preserved on a branch.
+
+**Why:** The state model (`hfPhase` / `isStreaming` / TTS amplitude) is the
+contract; the renderer (SVG → framed image → future 3D/Rive) can change without
+re-plumbing. A framed image gives lifelike fidelity locally that in-browser 3D
+can't match cheaply.
+
+**Trade-offs:** No facial lip-sync (the frame glow carries the "life"). The
+image is user-supplied (licensing is the operator's call).
+
+---
+
 ### 2026-07-14 · Reliable local tool-use: stream-with-tools + forced-tool retry + history de-poisoning
 
 **Status:** Implemented (PRs #39, #41).
