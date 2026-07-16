@@ -61,7 +61,7 @@ victoria-ai/
 │   ├── ensure-model-runner.sh  # Re-bind the Docker Model Runner host-TCP port if it drops
 │   └── claude-login.sh         # Authenticate Claude escalation (subscription login or token)
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
-├── tests/                      # 303 pytest tests
+├── tests/                      # 305 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
 ├── docker-compose.yml
 ├── Dockerfile
@@ -106,7 +106,7 @@ The diagram below is the **containerised** (docker-compose) layout. Running nati
 process instead; the connection points are the same.
 
 <p align="center">
-  <img src="docs/screenshots/architecture.png" width="760"
+  <img src="docs/architecture.svg" width="760"
        alt="Victoria deployment topology — three zones (host macOS, the container, cloud/external) with every boundary-crossing connection labeled by protocol and port">
 </p>
 
@@ -127,6 +127,7 @@ the **bundled Claude Code CLI**. No GPU, nothing photoreal.
 **Cloud connection points (these leave your Mac — mostly opt-in):**
 - **Anthropic API** — only on **escalation** (your "yes"), via the bundled Claude CLI (`CLAUDE_CODE_OAUTH_TOKEN`) or the `claude` backend (`ANTHROPIC_API_KEY`).
 - **DuckDuckGo** + **wttr.in** — hit only when the web-search / weather tools fire (HTTPS, no key).
+- **Yahoo Finance** + **CNN / Fox RSS** — the dashboard's markets + headlines boxes (HTTPS, no key).
 - **GitHub** — only during on-demand skill import.
 - **ElevenLabs** — only if `TTS_ENGINE=elevenlabs`; otherwise Piper runs fully local.
 - **Remote MCP (SSE)** — only if you list remote servers in `mcp.json`.
@@ -685,4 +686,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-303 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), Telegram, user profiles, and API layers.
+305 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), Telegram, user profiles, and API layers.
