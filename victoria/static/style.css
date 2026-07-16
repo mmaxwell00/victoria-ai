@@ -322,7 +322,7 @@ select#backend-select:focus, select#model-select:focus { outline: none; border-c
 /* Ring backdrop */
 .ring-wrap {
   position: absolute;
-  left: 0; right: 0; bottom: 0; top: 38%;   /* sit in the chat area, lower */
+  left: 0; right: 0; bottom: 0; top: 26%;   /* sit in the chat area (now ~3/4) */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -330,7 +330,7 @@ select#backend-select:focus, select#model-select:focus { outline: none; border-c
   z-index: 0;
 }
 .ring-svg {
-  width: min(52%, 300px);
+  width: min(58%, 340px);
   height: auto;
   opacity: 0.6;
 }
@@ -353,7 +353,7 @@ select#backend-select:focus, select#model-select:focus { outline: none; border-c
 .chat-area {
   position: relative;
   z-index: 1;
-  flex: 2 1 0;
+  flex: 3 1 0;            /* chat : dashboard = 3 : 1 */
   display: flex;
   flex-direction: column;
   min-height: 220px;
@@ -756,7 +756,7 @@ select#backend-select:focus, select#model-select:focus { outline: none; border-c
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
   padding: 12px 14px 4px;
 }
-.chat-area { flex: 1 1 0; min-height: 190px; }   /* center chat cut ~2/3 */
+/* .chat-area flex + min-height live in the Chat area section above (single source of truth) */
 
 .dash-box {
   background: rgba(10, 22, 40, 0.85);
