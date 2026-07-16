@@ -458,6 +458,67 @@ class ConversationManager:
             cleaned.append(msg)
         return cleaned
 
+    # ------------------------------------------------------------------ #
+    # Dashboard commands (add/remove tracked cities / stocks / news)      #
+    # Handled deterministically — the local model won't reliably CALL a   #
+    # tool, but it will reliably EXTRACT the change as JSON.              #
+    # ------------------------------------------------------------------ #
+    _DASH_VERBS = ("track", "untrack", "add", "include", "put", "follow",
+                   "watch", "append", "remove", "drop", "unfollow", "delete")
+    _DASH_CTX = ("dashboard", "weather", "stock", "ticker", "market",
+                 "news", "headline")
+
+    @classmethod
+    def _is_dashboard_command(cls, message: str) -> bool:
+        """Coarse detector for 'add/remove X on the dashboard' requests."""
+        m = (message or "").lower()
+        verb = any(v in m for v in cls._DASH_VERBS)
+        ctx = any(c in m for c in cls._DASH_CTX)
+        starts = m.strip().startswith(("track ", "untrack ", "stop tracking",
+                                       "follow ", "unfollow "))
+        return (verb and ctx) or starts
+
+    async def _handle_dashboard_command(self, user_message: str):
+        """Ask the local model to EXTRACT the change as JSON (far more reliable
+        than tool-calling here), then mutate the store directly. Returns a
+        confirmation string, or None if unparseable (caller falls through)."""
+        import json
+        from victoria.dashboard.store import dashboard_store
+        sys = (
+            "Extract the operator's dashboard change from their message. Respond "
+            "with ONLY a compact JSON object and nothing else:\n"
+            '{"action": "add"|"remove", "kind": "city"|"stock"|"news", "value": "..."}\n'
+            "For a stock, value MUST be the ticker SYMBOL (Apple->AAPL, "
+            "Tesla->TSLA, Microsoft->MSFT). For a city, the city name (keep the "
+            "state/country if given). For news, the outlet (CNN or Fox News). "
+            "If it is not a dashboard change, respond with {}."
+        )
+        try:
+            text, _ = await self.router.chat(
+                [{"role": "user", "content": user_message}],
+                force_backend=self._local_backend(),
+                system_prompt=sys,
+            )
+        except Exception:
+            logger.exception("Dashboard extraction failed")
+            return None
+        match = re.search(r"\{.*\}", text or "", re.S)
+        if not match:
+            return None
+        try:
+            obj = json.loads(match.group())
+        except Exception:
+            return None
+        kind, value = obj.get("kind", ""), (obj.get("value") or "").strip()
+        action = str(obj.get("action", "")).lower()
+        if not kind or not value:
+            return None
+        if action.startswith(("rem", "del", "drop", "unt", "unf", "stop")):
+            _, reply = dashboard_store.remove(kind, value)
+        else:
+            _, reply = dashboard_store.add(kind, value)
+        return reply
+
     def _spawn_profile_update(self, user_id: str, user_message: str, response: str) -> None:
         task = asyncio.create_task(self._update_profile_async(user_id, user_message, response))
         self._background_tasks.add(task)
@@ -579,6 +640,14 @@ class ConversationManager:
             )
             return self._finalize(session_id, user_id, user_message, response, backend)
 
+        # --- Dashboard command (add/remove a tracked city/stock/news) -----
+        if self._is_dashboard_command(user_message):
+            reply = await self._handle_dashboard_command(user_message)
+            if reply:
+                self.memory.add_message(session_id, "user", user_message)
+                return self._finalize(session_id, user_id, user_message, reply, "victoria")
+            # unparseable → fall through to the normal turn
+
         # --- Reply to a pending "shall I escalate?" prompt ----------------
         if settings.escalation_enabled and session_id in self._pending_escalation:
             decision = self._classify_reply(user_message)
@@ -682,6 +751,19 @@ class ConversationManager:
             yield {"session_id": session_id, "chunk": response, "backend": backend, "done": False}
             yield {"session_id": session_id, "chunk": "", "backend": backend, "done": True}
             return
+
+        # --- Dashboard command (add/remove a tracked city/stock/news) -----
+        if self._is_dashboard_command(user_message):
+            reply = await self._handle_dashboard_command(user_message)
+            if reply:
+                self.memory.add_message(session_id, "assistant", reply, llm_used="victoria")
+                if self.semantic_memory:
+                    self.semantic_memory.add(session_id, "user", user_message)
+                    self.semantic_memory.add(session_id, "assistant", reply)
+                yield {"session_id": session_id, "chunk": reply, "backend": "victoria", "done": False}
+                yield {"session_id": session_id, "chunk": "", "backend": "victoria", "done": True}
+                return
+            # unparseable → fall through to the normal turn
 
         # --- Reply to a pending "shall I escalate?" prompt ----------------
         if settings.escalation_enabled and session_id in self._pending_escalation:
