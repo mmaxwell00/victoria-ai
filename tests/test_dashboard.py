@@ -128,3 +128,33 @@ async def test_track_untrack_tools(tmp_path, monkeypatch):
     assert "NFLX" in store.get()["stocks"] and "NFLX" in msg
     await dashboard_tools.untrack_dashboard("stock", "NFLX")
     assert "NFLX" not in store.get()["stocks"]
+
+
+# ── Deterministic command interception (bypasses flaky tool-calling) ─────
+def test_is_dashboard_command():
+    from victoria.core.conversation import ConversationManager as CM
+    assert CM._is_dashboard_command("Include Saraland, Alabama in the weather")
+    assert CM._is_dashboard_command("add Apple to my stocks")
+    assert CM._is_dashboard_command("track Dallas")
+    assert CM._is_dashboard_command("drop Tesla from the dashboard")
+    # not dashboard commands
+    assert not CM._is_dashboard_command("what's the capital of France?")
+    assert not CM._is_dashboard_command("what's the weather in Paris?")
+    assert not CM._is_dashboard_command("add 2 and 2")
+
+
+async def test_handle_dashboard_command_mutates_store(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+    from victoria.core.conversation import ConversationManager
+    from victoria.dashboard import store as store_mod
+    st = _store(tmp_path)
+    monkeypatch.setattr(store_mod, "dashboard_store", st)
+
+    router = MagicMock()
+    router.chat = AsyncMock(return_value=(
+        'Sure: {"action":"add","kind":"city","value":"Saraland, Alabama"}', "docker"))
+    mgr = ConversationManager(memory=MagicMock(), router=router)
+
+    reply = await mgr._handle_dashboard_command("Include Saraland, Alabama in the weather")
+    assert "Saraland" in reply
+    assert any("saraland" in c.lower() for c in st.get()["cities"])

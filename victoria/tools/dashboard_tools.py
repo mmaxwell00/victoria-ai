@@ -29,8 +29,12 @@ _PARAMS = {
     description=(
         "Add an item to the operator's HUD dashboard so Victoria keeps it on "
         "screen: a city's weather, a stock's share price, or a news source's "
-        "headlines. Use when the user asks to track / add / watch / follow "
-        "something on their dashboard."
+        "headlines. Call this whenever the user wants something ADDED to or "
+        "SHOWN on their dashboard — 'track Dallas', 'add Apple stock', 'follow "
+        "Fox News', 'include Miami in the weather', 'put Tesla on my dashboard', "
+        "'update the dashboard with Chicago', 'show London'. This is the ONLY "
+        "way to change the dashboard — never claim you added something without "
+        "calling it."
     ),
     parameters=_PARAMS,
 )
@@ -43,8 +47,10 @@ async def track_dashboard(kind: str, value: str) -> str:
     name="untrack_dashboard",
     description=(
         "Remove an item from the operator's HUD dashboard (a city, a stock, or a "
-        "news source). Use when the user asks to stop tracking / drop / remove / "
-        "unfollow something from their dashboard."
+        "news source). Call this whenever the user wants something taken OFF the "
+        "dashboard — 'stop tracking London', 'drop Tesla', 'remove CNN', "
+        "'unfollow Fox News', 'take Miami off the weather'. This is the ONLY way "
+        "to remove something — never claim you removed it without calling it."
     ),
     parameters=_PARAMS,
 )
