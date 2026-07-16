@@ -39,6 +39,7 @@ Use this to see a working version of each layer the playbook describes.
 | Interfaces — REST API (`/v1`) | `victoria/interfaces/api.py` |
 | Interfaces — chat platform bot | `victoria/interfaces/telegram_bot.py` |
 | Interfaces — web HUD | `victoria/static/{index.html,app.js,style.css}` |
+| HUD dashboard — weather / stocks / news + conversational tracking | `victoria/dashboard/{store,feeds}.py`, `victoria/tools/dashboard_tools.py` (dashboard row in `victoria/static/`) |
 | Ops — install / update / self-heal / launch | `setup-victoria-mac.sh`, `scripts/{update,ensure-model-runner,start}.sh` |
 | Deployment | `Dockerfile`, `docker-compose.yml` (native or containerized) |
 | Docs — README, arch diagram, decisions | `README.md`, `docs/architecture.svg`, `docs/decisions-md.md` |
@@ -54,6 +55,7 @@ All under a `/v1` prefix, plus a top-level `/health`:
 - `POST /transcribe`, `POST /tts` — voice in/out
 - `GET /vault`, `POST /vault`, `DELETE /vault/{name}` — write-only secrets
 - `GET /models`, `POST /models/select` — runtime local-model switch
+- `GET /dashboard/{config,weather,stocks,news}` — HUD dashboard data (tracked cities / stocks / headlines; items are managed conversationally via the `track_dashboard` / `untrack_dashboard` tools)
 
 ## Phase → repo mapping
 

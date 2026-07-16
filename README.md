@@ -598,6 +598,9 @@ curl -X POST http://localhost:8000/v1/tts \
   -H "Content-Type: application/json" \
   -d '{"text": "Good evening."}' --output victoria.wav
 
+# Dashboard data — polled by the HUD; manage tracked items by chatting with Victoria
+curl http://localhost:8000/v1/dashboard/weather   # also /stocks, /news, /config
+
 # Health check (includes tool count + memory status)
 curl http://localhost:8000/health
 ```
