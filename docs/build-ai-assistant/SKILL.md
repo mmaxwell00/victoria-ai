@@ -259,6 +259,13 @@ Hold these true regardless of stack:
   while every query comes back empty and the model says "I couldn't find
   anything." Pin the maintained package, and add a smoke check ("does a known
   query return ≥1 result?") so a dead search fails loudly.
+- **Some data APIs switch output by User-Agent.** `wttr.in`, for one, returns
+  its plain/parseable format only to curl-like agents and the full **HTML page**
+  to browser (`Mozilla/…`) agents — so a "reasonable" browser UA silently yields
+  an unparseable page (garbage temps, blank times). Match the UA to the format
+  you expect: a curl UA for `wttr.in`, a browser UA for endpoints that gate on
+  one (e.g. Yahoo Finance's quote API). Also: pass format codes like `%T` as a
+  literal URL, not via a params dict — encoding the `%` (→`%25`) breaks them.
 - **Match the exact model id.** Local runtimes resolve tags — pulling `foo/bar`
   may become `foo/bar:3B-Q4_K_M`. Use the id the runtime actually lists, or you'll
   get silent 404s.
