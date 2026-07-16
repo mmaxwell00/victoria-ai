@@ -57,7 +57,7 @@ victoria-ai/
 │   ├── ensure-model-runner.sh  # Re-bind the Docker Model Runner host-TCP port if it drops
 │   └── claude-login.sh         # Authenticate Claude escalation (subscription login or token)
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
-├── tests/                      # 278 pytest tests
+├── tests/                      # 303 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
 ├── docker-compose.yml
 ├── Dockerfile
@@ -357,9 +357,8 @@ The interface is a full-screen dark HUD inspired by the Iron Man JARVIS OS — d
 - Session log — today's and total session counts with a fill bar
 
 **Center**
-- Rotating V.I.C.T.O.R.I.A. arc reactor ring (glows and pulses while thinking)
-- Chat messages overlaid on the ring — `OPERATOR` / `VICTORIA` labels with `HH:MM:SS` timestamps
-- Each response gets a backend badge: `[DOCKER]`, `[OLLAMA]`, or `[CLAUDE]`
+- **Dashboard row (top):** four live info boxes — **Weather** (tracked cities, each shown `City · 24-hr local time · °F`), **Markets** (top 5 tracked stocks by share price, `Name (SYM) $price`), **Headlines** (CNN + Fox News RSS — click a headline to open it in a new tab), and a reserved fourth box. Manage them by talking to Victoria — "track Dallas", "add Apple stock", "follow Fox News", "drop Tesla" — and the boxes refresh right away. Data is free/no-key: wttr.in (weather), Yahoo Finance (stocks), RSS (news).
+- Below the dashboard: the rotating V.I.C.T.O.R.I.A. arc-reactor ring with the chat messages overlaid — `OPERATOR` / `VICTORIA` labels, `HH:MM:SS` timestamps, and a `[DOCKER]` / `[OLLAMA]` / `[CLAUDE]` backend badge on each reply. (The clock stays pinned in the top header.)
 
 **Right sidebar**
 - System status — active backend, tool count, memory status, API health
@@ -679,4 +678,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-291 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), Telegram, user profiles, and API layers.
+303 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), Telegram, user profiles, and API layers.

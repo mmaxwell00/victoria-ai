@@ -104,6 +104,26 @@
     <!-- CENTER -->
     <main class="hud-center">
 
+      <!-- Dashboard row: four info boxes -->
+      <section class="dash-row">
+        <div class="dash-box">
+          <div class="dash-box-header">WEATHER</div>
+          <div class="dash-box-body" id="dash-weather"><div class="dash-empty">loading…</div></div>
+        </div>
+        <div class="dash-box">
+          <div class="dash-box-header">MARKETS</div>
+          <div class="dash-box-body" id="dash-stocks"><div class="dash-empty">loading…</div></div>
+        </div>
+        <div class="dash-box">
+          <div class="dash-box-header">HEADLINES</div>
+          <div class="dash-box-body" id="dash-news"><div class="dash-empty">loading…</div></div>
+        </div>
+        <div class="dash-box">
+          <div class="dash-box-header">SYSTEM</div>
+          <div class="dash-box-body"><div class="dash-empty">— reserved —</div></div>
+        </div>
+      </section>
+
       <!-- Ring backdrop -->
       <div class="ring-wrap" id="ring-wrap">
         <svg class="ring-svg" viewBox="0 0 400 400" id="ring-svg">

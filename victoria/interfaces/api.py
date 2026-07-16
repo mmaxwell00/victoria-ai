@@ -301,3 +301,35 @@ async def tts(req: TTSRequest):
         logger.exception("TTS failed")
         raise HTTPException(status_code=500, detail=f"TTS failed: {exc}")
     return Response(content=audio_bytes, media_type=mime)
+
+
+# ── Dashboard (HUD info boxes) ──────────────────────────────────────────
+@router.get("/dashboard/config")
+def dashboard_config():
+    """The operator's tracked cities / stock tickers / news sources."""
+    from victoria.dashboard.store import dashboard_store
+    return dashboard_store.get()
+
+
+@router.get("/dashboard/weather")
+async def dashboard_weather():
+    """Per-city local time (24-hr) + temperature (°F) for tracked cities."""
+    from victoria.dashboard.store import dashboard_store
+    from victoria.dashboard import feeds
+    return {"items": await feeds.fetch_weather(dashboard_store.get()["cities"])}
+
+
+@router.get("/dashboard/stocks")
+async def dashboard_stocks():
+    """Tracked stocks, top 5 by share price."""
+    from victoria.dashboard.store import dashboard_store
+    from victoria.dashboard import feeds
+    return {"items": await feeds.fetch_stocks(dashboard_store.get()["stocks"])}
+
+
+@router.get("/dashboard/news")
+async def dashboard_news():
+    """Latest headlines (title + link) from tracked news sources."""
+    from victoria.dashboard.store import dashboard_store
+    from victoria.dashboard import feeds
+    return {"items": await feeds.fetch_news(dashboard_store.get()["news"])}

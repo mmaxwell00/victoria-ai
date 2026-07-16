@@ -395,6 +395,8 @@ async function sendMessage(text) {
     console.error(err);
   } finally {
     setStreaming(false);
+    // A turn may have changed what's tracked ("track Dallas") — reflect it now.
+    if (window.refreshDashboard) window.refreshDashboard();
   }
 }
 
@@ -898,4 +900,98 @@ inputEl.focus();
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+})();
+
+// ── Dashboard boxes (weather / markets / headlines) ────────────
+// Fetch the tracked cities/stocks/news from the API and render each box.
+// Refreshes on a timer, and immediately after a chat turn (so "track X"
+// spoken to Victoria shows up right away). News titles come from external
+// RSS, so build them as text nodes — never innerHTML — to avoid injection.
+(function initDashboard() {
+  const elW = document.getElementById('dash-weather');
+  const elS = document.getElementById('dash-stocks');
+  const elN = document.getElementById('dash-news');
+  if (!elW && !elS && !elN) return;
+
+  function empty(el, msg) {
+    el.innerHTML = '';
+    const d = document.createElement('div');
+    d.className = 'dash-empty';
+    d.textContent = msg;
+    el.appendChild(d);
+  }
+
+  async function load(path) {
+    const r = await fetch(path);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return (await r.json()).items || [];
+  }
+
+  async function refreshWeather() {
+    if (!elW) return;
+    try {
+      const items = await load('/v1/dashboard/weather');
+      if (!items.length) return empty(elW, 'No cities tracked — ask Victoria to track one.');
+      elW.innerHTML = '';
+      for (const it of items) {
+        const line = document.createElement('div');
+        line.className = 'dash-line';
+        line.append(`${it.city} · ${it.time || '--:--'} · `);
+        const s = document.createElement('span');
+        s.className = 'price';
+        s.textContent = it.tempF == null ? '--' : it.tempF + '°F';
+        line.append(s);
+        elW.appendChild(line);
+      }
+    } catch (e) { empty(elW, 'weather unavailable'); }
+  }
+
+  async function refreshStocks() {
+    if (!elS) return;
+    try {
+      const items = await load('/v1/dashboard/stocks');
+      if (!items.length) return empty(elS, 'No stocks tracked — ask Victoria to add one.');
+      elS.innerHTML = '';
+      for (const it of items) {
+        const line = document.createElement('div');
+        line.className = 'dash-line';
+        line.append(`${it.name} (${it.symbol}) `);
+        const s = document.createElement('span');
+        s.className = 'price';
+        s.textContent = it.price == null ? '—' : '$' + Number(it.price).toFixed(2);
+        line.append(s);
+        elS.appendChild(line);
+      }
+    } catch (e) { empty(elS, 'markets unavailable'); }
+  }
+
+  async function refreshNews() {
+    if (!elN) return;
+    try {
+      const items = await load('/v1/dashboard/news');
+      if (!items.length) return empty(elN, 'No sources tracked — ask Victoria to follow one.');
+      elN.innerHTML = '';
+      for (const it of items) {
+        const a = document.createElement('a');
+        a.className = 'dash-news-item';
+        a.href = it.url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        const src = document.createElement('span');
+        src.className = 'dash-news-src';
+        src.textContent = it.source;
+        a.appendChild(src);
+        a.append(it.title);
+        elN.appendChild(a);
+      }
+    } catch (e) { empty(elN, 'headlines unavailable'); }
+  }
+
+  function every(ms, fn) { fn(); return setInterval(fn, ms); }
+  every(5 * 60 * 1000, refreshWeather);
+  every(60 * 1000, refreshStocks);
+  every(5 * 60 * 1000, refreshNews);
+
+  // Exposed so a chat turn can refresh immediately after "track/drop X".
+  window.refreshDashboard = () => { refreshWeather(); refreshStocks(); refreshNews(); };
 })();
