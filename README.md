@@ -64,7 +64,7 @@ victoria-ai/
 │   ├── ensure-model-runner.sh  # Re-bind the Docker Model Runner host-TCP port if it drops
 │   └── claude-login.sh         # Authenticate Claude escalation (subscription login or token)
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
-├── tests/                      # 305 pytest tests
+├── tests/                      # 331 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
 ├── docker-compose.yml
 ├── Dockerfile
@@ -173,10 +173,10 @@ Point Victoria at your **Obsidian vaults** and she can read, search, and update 
 
 > Not to be confused with the **Credentials Vault** above: that holds *secrets*; these hold *notes* (knowledge).
 
-- **Three vaults**, each pointed at a folder via `.env` (blank = disabled): `OBSIDIAN_DOCKER_PATH` (work), `OBSIDIAN_PERSONAL_PATH`, `OBSIDIAN_AI_PATH` (Victoria's own). `OBSIDIAN_WRITABLE` picks which she may write to.
-- **Talk to her:** *"search my Docker notes for the staging compose command", "what do my personal notes say about the peptide protocol", "save a grocery list to my personal vault", "note that down in my AI vault."* Backed by four tools — `search_notes`, `read_note`, `list_notes`, `write_note`.
-- **Safe by construction:** every path is resolved inside its vault root (traversal, absolute escapes, and Obsidian's `.obsidian`/`.trash` dirs are rejected); read-only vaults refuse writes; a missing vault degrades quietly.
-- **API:** `GET /v1/knowledge/vaults` lists the configured vaults with note counts.
+- **Recommended — one vault, folders as areas:** set `OBSIDIAN_VAULT_PATH` to a single vault and Victoria sees **everything** in it; its top-level folders (`Docker/`, `Personal/`, `Brain/`, …) become areas she can target. Keeps your `[[wikilinks]]`, graph, and search unified. (Alternative: `OBSIDIAN_{DOCKER,PERSONAL,AI}_PATH` for three independent vaults.)
+- **Talk to her:** *"search my Docker notes for the staging compose command", "what do my Personal notes say about the peptide protocol", "save a grocery list to my Personal folder", "note that down."* Backed by four tools — `search_notes`, `read_note`, `list_notes`, `write_note` — with an optional `folder` to scope to an area.
+- **Safe by construction:** every path is resolved inside the vault root (traversal, absolute escapes, and Obsidian's `.obsidian`/`.trash` dirs are rejected); read-only vaults refuse writes; a missing vault degrades quietly.
+- **API:** `GET /v1/knowledge/vaults` lists the configured vault(s) with note counts and top-level folders.
 - **Coming next:** semantic recall (RAG) across your notes, and using the AI vault as Victoria's own durable, human-readable memory.
 
 ### MCP servers (connect external tools)
@@ -707,4 +707,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-325 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.
+331 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.

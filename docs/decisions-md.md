@@ -125,6 +125,18 @@ won't be re-indexed until the Phase 4 file-watcher. "Victoria across computers"
 (running the *server* on multiple machines) is a separate, deferred question —
 Sync only solves knowledge portability.
 
+**Update (2026-07-17, later):** Alex went with a **single vault** (recommended
+over multiple, since Obsidian's `[[wikilinks]]` / graph / search are vault-scoped
+and a connected corpus is the point). Added **single-vault mode**
+(`OBSIDIAN_VAULT_PATH`): one whole-vault knowledge base — Victoria sees
+everything, and top-level folders (`Docker/`, `Personal/`, `Brain/`…) are the
+areas she targets via a `folder` argument (with tolerant "folder-as-vault"
+matching so "search my Personal notes" just works). His vault is
+`~/Obsidian/AI/AI-Victoria`; a separate, empty `Docker` vault predates the
+decision and is being folded in as a folder (to confirm). Verified live against
+the real vault (list + folder-scoped write). Per-area mode retained as the
+alternative.
+
 ---
 
 ### 2026-07-15 · Dashboard tracking via deterministic interception; installer fully interactive
