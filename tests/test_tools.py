@@ -32,6 +32,55 @@ async def test_registry_execute_unknown_tool():
     assert "does_not_exist" in result
 
 
+async def test_registry_coerces_string_args_to_schema_types():
+    """Small local models send every arg as a string; the registry coerces
+    them to the schema-declared type before calling the tool."""
+    received = {}
+
+    def probe(count: int = 1, ratio: float = 1.0, flag: bool = False, label: str = "x"):
+        received.update(count=count, ratio=ratio, flag=flag, label=label)
+        return "ok"
+
+    registry.add("probe_types", "test probe", {
+        "type": "object",
+        "properties": {
+            "count": {"type": "integer"},
+            "ratio": {"type": "number"},
+            "flag": {"type": "boolean"},
+            "label": {"type": "string"},
+        },
+    }, probe)
+    try:
+        await registry.execute(
+            "probe_types", count="3", ratio="0.5", flag="true", label="7"
+        )
+    finally:
+        registry.remove("probe_types")
+
+    assert received == {"count": 3, "ratio": 0.5, "flag": True, "label": "7"}
+
+
+async def test_registry_passes_unparseable_strings_through():
+    """A string that can't be coerced reaches the tool unchanged (the tool's
+    own error handling applies) instead of crashing the registry."""
+    received = {}
+
+    def probe(count: int = 1):
+        received["count"] = count
+        return "ok"
+
+    registry.add("probe_bad", "test probe", {
+        "type": "object",
+        "properties": {"count": {"type": "integer"}},
+    }, probe)
+    try:
+        await registry.execute("probe_bad", count="lots")
+    finally:
+        registry.remove("probe_bad")
+
+    assert received["count"] == "lots"
+
+
 # ---------------------------------------------------------------------------
 # Calculator tests
 # ---------------------------------------------------------------------------

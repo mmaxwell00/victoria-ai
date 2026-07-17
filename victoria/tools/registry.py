@@ -52,12 +52,40 @@ class ToolRegistry:
             for t in self._tools.values()
         ]
 
+    @staticmethod
+    def _coerce_args(schema: dict, kwargs: dict) -> dict:
+        """Coerce string-typed argument values to the types the schema declares.
+
+        Small local models often emit every tool argument as a string
+        ("max_results": "3"); left as-is these crash tools (and libraries
+        underneath them) that expect real numbers or booleans. Values that
+        don't parse are passed through unchanged so the tool's own error
+        handling still applies.
+        """
+        props = schema.get("properties") or {}
+        out = {}
+        for key, value in kwargs.items():
+            declared = (props.get(key) or {}).get("type")
+            if isinstance(value, str):
+                try:
+                    if declared == "integer":
+                        value = int(value)
+                    elif declared == "number":
+                        value = float(value)
+                    elif declared == "boolean" and value.lower() in ("true", "false"):
+                        value = value.lower() == "true"
+                except ValueError:
+                    pass
+            out[key] = value
+        return out
+
     async def execute(self, name: str, **kwargs) -> str:
         """Execute a tool by name. Returns string result or error message."""
         logger.info("Tool call: %s(%s)", name, ", ".join(kwargs))
         if name not in self._tools:
             return f"Unknown tool: {name}"
         try:
+            kwargs = self._coerce_args(self._tools[name].parameters, kwargs)
             result = self._tools[name].fn(**kwargs)
             if asyncio.iscoroutine(result):
                 result = await result
