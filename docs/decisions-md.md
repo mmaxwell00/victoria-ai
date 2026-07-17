@@ -85,6 +85,48 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-07-17 · Obsidian knowledge bases: three vaults Victoria reads/searches/writes
+
+**Status:** Phase 1a implemented (this PR — native file access + tools + tests).
+RAG (1b), AI-vault-as-memory (2), and Obsidian REST/MCP (3) are sequenced next.
+
+**Context:** Alex wants Victoria's knowledge to live in **Obsidian**, across three
+vaults — **Docker** (work), **Personal**, **AI** (Victoria's own) — synced across
+machines via Obsidian Sync (a paid upgrade he's taking). This also feeds the
+long-planned RAG work (see Open Q4/Q5).
+
+**Choice (three forks, Alex's calls):**
+- **Access = Both.** Native, path-safe file access (an Obsidian vault is just a
+  Markdown folder) is the substrate now; Obsidian's Local REST API + MCP layers
+  live actions later (Phase 3). Phase 1a ships native only.
+- **Memory model = AI vault becomes durable memory.** Victoria's learned facts /
+  profile will persist as human-readable Markdown in the AI vault (Phase 2);
+  SQLite keeps per-session history; ChromaDB becomes the *index over the vaults*
+  rather than a separate semantic store. Mirrors the `~/.claude/memory/*.md`
+  pattern Alex already uses.
+- **Write policy = all three read-write.** `OBSIDIAN_WRITABLE` still enforces
+  per-vault mode in code, so any vault can be locked read-only later.
+
+Implemented as `victoria/knowledge/vaults.py` (`KnowledgeBase`, path-traversal
+guarded, `.obsidian`/`.trash` reserved) + four tools (`search_notes`,
+`read_note`, `list_notes`, `write_note`) + `GET /v1/knowledge/vaults`. Vault
+paths are env-driven (`OBSIDIAN_*_PATH`); blank = disabled, so the feature ships
+dormant until pointed at real folders.
+
+**Why:** Markdown-on-disk makes Victoria's memory *inspectable and editable by
+Alex in Obsidian* (trust + portability) instead of an opaque vector blob;
+native file access has no dependency on Obsidian running and works headless;
+keyword search ships value in 1a while RAG is built.
+
+**Trade-offs:** Naming overlap with the **Credentials Vault** (secrets) — kept
+distinct by calling these "knowledge bases." Keyword search is O(notes) per
+query until RAG lands (fine at personal scale). External edits in Obsidian
+won't be re-indexed until the Phase 4 file-watcher. "Victoria across computers"
+(running the *server* on multiple machines) is a separate, deferred question —
+Sync only solves knowledge portability.
+
+---
+
 ### 2026-07-15 · Dashboard tracking via deterministic interception; installer fully interactive
 
 **Status:** Implemented (PRs #50, #51).

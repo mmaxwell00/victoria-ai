@@ -72,6 +72,22 @@ class Settings(BaseSettings):
     vault_path: str = "data/vault.enc"
     vault_keychain_service: str = "victoria-vault-key"
 
+    # Obsidian knowledge bases — folders of Markdown notes Victoria can read,
+    # search, and (for writable ones) update. Point each at a local vault folder;
+    # with Obsidian Sync those folders stay in step across your machines. An empty
+    # path disables that vault. NOTE: distinct from the *Credentials Vault* above —
+    # these hold knowledge (notes), not secrets.
+    obsidian_docker_path: str = ""
+    obsidian_personal_path: str = ""
+    obsidian_ai_path: str = ""
+    # Comma-separated vault names Victoria may WRITE to; any others are read-only.
+    obsidian_writable: str = "docker,personal,ai"
+    # The vault that holds Victoria's own durable memory (Phase 2+): learned
+    # facts, profile, and operational notes, as human-readable Markdown.
+    obsidian_memory_vault: str = "ai"
+    # Cap (characters) on a single note Victoria reads into context at once.
+    obsidian_max_note_chars: int = 60000
+
     # Voice (Week 5)
     tts_engine: Literal["piper", "elevenlabs"] = "piper"
     elevenlabs_api_key: str = ""
