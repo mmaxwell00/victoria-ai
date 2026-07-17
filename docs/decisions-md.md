@@ -135,7 +135,10 @@ matching so "search my Personal notes" just works). His vault is
 `~/Obsidian/AI/AI-Victoria`; a separate, empty `Docker` vault predates the
 decision and is being folded in as a folder (to confirm). Verified live against
 the real vault (list + folder-scoped write). Per-area mode retained as the
-alternative.
+alternative. The installer (`setup-victoria-mac.sh`) now prompts for the vault —
+detecting candidates from Obsidian's own `obsidian.json` and letting the user
+pick one, type a path, or skip — so no location or name is hard-coded
+(`--obsidian-vault` / a no-TTY run skip the prompt).
 
 ---
 
