@@ -13,9 +13,9 @@
 #   2. Click OK on the Xcode Command Line Tools + Docker first-run dialogs
 #   3. (voice only) Approve the browser's microphone prompt
 #
-# With no flags, it walks you through model / escalation / voice interactively
-# (works even through `curl … | bash`, via /dev/tty). Any flag skips its prompt;
-# a non-interactive run (no TTY) falls back to sensible defaults.
+# With no flags, it walks you through model / escalation / voice / knowledge base
+# interactively (works even through `curl … | bash`, via /dev/tty). Any flag skips
+# its prompt; a non-interactive run (no TTY) falls back to sensible defaults.
 #
 # Options:
 #   --dir <path>       Install location            (default: ~/victoria-ai)
@@ -23,6 +23,8 @@
 #   --claude-token <t> Claude Code OAuth token — enables cloud escalation
 #                      (get one by running: claude setup-token)
 #   --with-voice       Also set up the native voice runner (Python + Piper)
+#   --obsidian-vault <path>  Obsidian vault Victoria reads/searches/writes
+#                      (default: ask, detecting your vaults; blank = skip)
 #   --no-browser       Don't open the web UI when done
 # ─────────────────────────────────────────────────────────────────────
 
@@ -35,6 +37,7 @@ CLAUDE_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
 WITH_VOICE=0
 OPEN_BROWSER=1
 MODEL_RUNNER_TCP=12434
+OBSIDIAN_VAULT=""   # empty = ask (detect from Obsidian) or skip; --obsidian-vault overrides
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -42,6 +45,7 @@ while [ $# -gt 0 ]; do
     --model)        MODEL="$2"; shift 2 ;;
     --claude-token) CLAUDE_TOKEN="$2"; shift 2 ;;
     --with-voice)   WITH_VOICE=1; shift ;;
+    --obsidian-vault) OBSIDIAN_VAULT="$2"; shift 2 ;;
     --no-browser)   OPEN_BROWSER=0; shift ;;
     -h|--help)      grep '^#' "$0" | head -30; exit 0 ;;
     *) echo "Unknown option: $1 (see --help)"; exit 1 ;;
@@ -93,7 +97,39 @@ if [ "$WITH_VOICE" = 0 ] && [ -e /dev/tty ]; then
   case "$_ans" in [Yy]*) WITH_VOICE=1 ;; esac
 fi
 
-info "Setup → model: $MODEL · escalation: $([ -n "$CLAUDE_TOKEN" ] && echo on || echo off) · voice: $([ "$WITH_VOICE" = 1 ] && echo on || echo off)"
+# 0d. Obsidian knowledge base (skipped if --obsidian-vault given / no TTY).
+# Nothing is hard-coded: candidate vaults are read from Obsidian's own config,
+# and the path is whatever you pick or type.
+if [ -z "$OBSIDIAN_VAULT" ] && [ -e /dev/tty ]; then
+  OBS_CFG="$HOME/Library/Application Support/obsidian/obsidian.json"
+  DETECTED=""
+  if [ -f "$OBS_CFG" ]; then
+    DETECTED="$(grep -oE '"path":"[^"]*"' "$OBS_CFG" 2>/dev/null | sed 's/^"path":"//; s/"$//' || true)"
+  fi
+  printf '\n\033[1mObsidian knowledge base\033[0m (optional) — let Victoria read, search,\n'
+  printf 'and write your notes. Point her at ONE Obsidian vault; its top-level\n'
+  printf 'folders become areas she can target ("save to Personal", "search Docker").\n'
+  if [ -n "$DETECTED" ]; then
+    printf 'Detected vaults:\n'
+    printf '%s\n' "$DETECTED" | awk '{printf "  %d. %s\n", NR, $0}'
+    printf 'Pick a number, type a path, or Enter to skip: '
+  else
+    printf 'Path to your Obsidian vault (or Enter to skip): '
+  fi
+  _ans=""; read -r _ans < /dev/tty || _ans=""
+  if [ -n "$_ans" ]; then
+    case "$_ans" in
+      *[!0-9]*) OBSIDIAN_VAULT="$_ans" ;;                                              # has a non-digit → a path
+      *)        OBSIDIAN_VAULT="$(printf '%s\n' "$DETECTED" | sed -n "${_ans}p")" ;;    # all digits → Nth detected vault
+    esac
+  fi
+  case "$OBSIDIAN_VAULT" in "~"*) OBSIDIAN_VAULT="$HOME${OBSIDIAN_VAULT#\~}" ;; esac
+  if [ -n "$OBSIDIAN_VAULT" ] && [ ! -d "$OBSIDIAN_VAULT" ]; then
+    warn "That folder isn't there yet — Victoria will pick it up once it exists."
+  fi
+fi
+
+info "Setup → model: $MODEL · escalation: $([ -n "$CLAUDE_TOKEN" ] && echo on || echo off) · voice: $([ "$WITH_VOICE" = 1 ] && echo on || echo off) · notes: $([ -n "$OBSIDIAN_VAULT" ] && echo on || echo off)"
 
 # ── 1. Xcode Command Line Tools (provides git) ──────────────────────
 if ! xcode-select -p >/dev/null 2>&1; then
@@ -187,6 +223,13 @@ env_unset() {    # drop a KEY=... line from .env (used to migrate legacy secrets
 }
 env_default DEFAULT_LLM "docker"
 env_default MODEL_RUNNER_MODEL "$MODEL_ID"
+
+# Obsidian knowledge base — the vault path chosen in step 0 (or --obsidian-vault).
+# Nothing is written when skipped, so the feature simply stays off.
+if [ -n "$OBSIDIAN_VAULT" ]; then
+  env_default OBSIDIAN_VAULT_PATH "$OBSIDIAN_VAULT"
+  info "Knowledge base: $OBSIDIAN_VAULT"
+fi
 
 # Vault master key — kept in the Keychain (service: victoria-vault-key). Reuse an
 # existing one, migrate a legacy key out of .env, or generate fresh. It encrypts
