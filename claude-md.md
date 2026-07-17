@@ -64,7 +64,7 @@ victoria-ai/
 │   ├── chat.py                 # Terminal chat
 │   ├── run_telegram.py
 │   └── run_voice.py
-├── tests/                      # 305 pytest tests
+├── tests/                      # 325 pytest tests
 ├── docs/
 │   └── DECISIONS.md            # Running decision log
 ├── CLAUDE.md                   # This file
@@ -131,7 +131,7 @@ Interfaces (Web HUD / Telegram / Voice / Terminal)
 - **Virtual env in `.venv/`** — standard `python -m venv`, not Poetry/PDM.
 - **Dependencies in `requirements.txt`** — keep it simple.
 - **Config via `.env`** — see `.env.example` for the full list of vars.
-- **Tests with pytest** — 305 tests currently. Never let coverage regress.
+- **Tests with pytest** — 325 tests currently. Never let coverage regress.
 - **Decorator-based tool registry** — `@tool` in `victoria/tools/registry.py`.
 - **All settings env-driven** — never hardcode credentials or paths.
 - **Async where it counts** — FastAPI endpoints, Telegram handlers. Sync OK for tool calls.
@@ -167,9 +167,9 @@ docker compose up --build
 
 > When this changes, update both this section AND append an entry to `docs/DECISIONS.md`.
 
-**Recently shipped:** reliable local tool-use (stream-with-tools + forced-tool retry + history de-poisoning), the sidebar avatar (framed portrait with state-coloured glow), and the HUD dashboard row (weather / stocks / news + conversational tracking). MCP client integration is done.
+**Recently shipped:** reliable local tool-use (stream-with-tools + forced-tool retry + history de-poisoning), the sidebar avatar (framed portrait with state-coloured glow), the HUD dashboard row (weather / stocks / news + conversational tracking), and the **Obsidian knowledge bases** foundation — three vaults (Docker / Personal / AI) Victoria reads, searches, and writes via native, path-safe file access (`victoria/knowledge/`, four `*_notes` tools). MCP client integration is done.
 
-**Next up:** RAG document ingestion (ChromaDB doc collection separate from semantic memory; local embeddings — not yet built), plus more MCP servers (Gmail, video).
+**Next up (knowledge bases, phased):** RAG over the vaults (embed notes → semantic recall with citations), then use the **AI vault as Victoria's durable, human-readable memory** (profile + learned facts as Markdown; ChromaDB becomes the index over it), then Obsidian Local REST API for live actions. Plus more MCP servers (Gmail, video).
 
 - **Open questions:** see `docs/DECISIONS.md` § Open
 

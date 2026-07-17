@@ -333,3 +333,16 @@ async def dashboard_news():
     from victoria.dashboard.store import dashboard_store
     from victoria.dashboard import feeds
     return {"items": await feeds.fetch_news(dashboard_store.get()["news"])}
+
+
+# ── Knowledge bases (Obsidian vaults) ───────────────────────────────────
+@router.get("/knowledge/vaults")
+def knowledge_vaults():
+    """Configured, on-disk Obsidian vaults with note counts + writability."""
+    from victoria.knowledge.vaults import knowledge_base
+    return {
+        "vaults": [
+            {"name": v.name, "writable": v.writable, "notes": knowledge_base.note_count(v)}
+            for v in knowledge_base.vaults()
+        ]
+    }

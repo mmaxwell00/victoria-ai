@@ -8,7 +8,7 @@ is unclear, look at how Victoria actually did it.
   Docker Model Runner / Ollama (local) + Claude Code CLI (cloud escalation),
   Piper + faster-whisper (voice), Fernet + macOS Keychain (vault). Runs native
   (uvicorn in a venv) or containerized (docker-compose).
-- **Scale as of this writing:** ~30 Python modules, 305 tests (21 files),
+- **Scale as of this writing:** ~33 Python modules, 325 tests (22 files),
   3 shipped skills.
 - **Reliable local tool-use lives in two places:** `llm_router._docker_with_tools`
   (forced-tool retry via `tool_choice="required"` + the `_looks_like_tool_refusal`
@@ -40,6 +40,7 @@ Use this to see a working version of each layer the playbook describes.
 | Interfaces — chat platform bot | `victoria/interfaces/telegram_bot.py` |
 | Interfaces — web HUD | `victoria/static/{index.html,app.js,style.css}` |
 | HUD dashboard — weather / stocks / news + conversational tracking | `victoria/dashboard/{store,feeds}.py`, `victoria/tools/dashboard_tools.py` (dashboard row in `victoria/static/`) |
+| Knowledge bases — Obsidian vaults (read / search / write notes) | `victoria/knowledge/vaults.py`, `victoria/tools/knowledge_tools.py` — path-safe native file access over Markdown vaults |
 | Ops — install / update / self-heal / launch | `setup-victoria-mac.sh`, `scripts/{update,ensure-model-runner,start}.sh` |
 | Deployment | `Dockerfile`, `docker-compose.yml` (native or containerized) |
 | Docs — README, arch diagram, decisions | `README.md`, `docs/architecture.svg`, `docs/decisions-md.md` |
@@ -56,6 +57,7 @@ All under a `/v1` prefix, plus a top-level `/health`:
 - `GET /vault`, `POST /vault`, `DELETE /vault/{name}` — write-only secrets
 - `GET /models`, `POST /models/select` — runtime local-model switch
 - `GET /dashboard/{config,weather,stocks,news}` — HUD dashboard data (tracked cities / stocks / headlines; items are managed conversationally via the `track_dashboard` / `untrack_dashboard` tools)
+- `GET /knowledge/vaults` — configured Obsidian vaults + note counts (notes are read / searched / written via the `search_notes` / `read_note` / `list_notes` / `write_note` tools)
 
 ## Phase → repo mapping
 

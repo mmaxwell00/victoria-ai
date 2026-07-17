@@ -34,13 +34,16 @@ victoria-ai/
 │   │   ├── datetime_tool.py    # Current date/time with timezone
 │   │   ├── calculator.py       # Safe AST-based math evaluator
 │   │   ├── skills_tools.py     # Skill use/save/list/delete tools
-│   │   └── dashboard_tools.py  # Track/untrack dashboard cities/stocks/news
+│   │   ├── dashboard_tools.py  # Track/untrack dashboard cities/stocks/news
+│   │   └── knowledge_tools.py  # Search/read/write Obsidian vault notes
 │   ├── skills/
 │   │   ├── store.py            # SkillStore — Markdown skill files (CRUD)
 │   │   └── importer.py         # Fetch + discover skills from a GitHub repo/URL
 │   ├── dashboard/
 │   │   ├── store.py            # Tracked cities/stocks/news (persisted JSON)
 │   │   └── feeds.py            # Weather / stocks (Yahoo) / news (RSS) fetchers
+│   ├── knowledge/
+│   │   └── vaults.py           # Obsidian knowledge bases (path-safe read/search/write)
 │   ├── mcp/
 │   │   └── manager.py          # MCP client — connect servers, expose their tools
 │   ├── vault/
@@ -163,6 +166,18 @@ Victoria can hold API tokens/keys and inject them into endpoints **without ever 
 - **API:** `POST /v1/vault` (store), `GET /v1/vault` (names only), `DELETE /v1/vault/{name}`. None return a plaintext value.
 
 > Write-only by design: there is no operation — for Victoria or anyone reading her — that hands a stored value back. So she can authenticate to your services without being able to leak the credentials.
+
+### Knowledge bases (your Obsidian vaults)
+
+Point Victoria at your **Obsidian vaults** and she can read, search, and update your notes by talking to her. An Obsidian vault is just a folder of Markdown, so this is plain, guarded file access — no plugin required — and with **Obsidian Sync** those folders stay in step across your machines.
+
+> Not to be confused with the **Credentials Vault** above: that holds *secrets*; these hold *notes* (knowledge).
+
+- **Three vaults**, each pointed at a folder via `.env` (blank = disabled): `OBSIDIAN_DOCKER_PATH` (work), `OBSIDIAN_PERSONAL_PATH`, `OBSIDIAN_AI_PATH` (Victoria's own). `OBSIDIAN_WRITABLE` picks which she may write to.
+- **Talk to her:** *"search my Docker notes for the staging compose command", "what do my personal notes say about the peptide protocol", "save a grocery list to my personal vault", "note that down in my AI vault."* Backed by four tools — `search_notes`, `read_note`, `list_notes`, `write_note`.
+- **Safe by construction:** every path is resolved inside its vault root (traversal, absolute escapes, and Obsidian's `.obsidian`/`.trash` dirs are rejected); read-only vaults refuse writes; a missing vault degrades quietly.
+- **API:** `GET /v1/knowledge/vaults` lists the configured vaults with note counts.
+- **Coming next:** semantic recall (RAG) across your notes, and using the AI vault as Victoria's own durable, human-readable memory.
 
 ### MCP servers (connect external tools)
 
@@ -601,6 +616,9 @@ curl -X POST http://localhost:8000/v1/tts \
 # Dashboard data — polled by the HUD; manage tracked items by chatting with Victoria
 curl http://localhost:8000/v1/dashboard/weather   # also /stocks, /news, /config
 
+# Knowledge bases — configured Obsidian vaults with note counts
+curl http://localhost:8000/v1/knowledge/vaults
+
 # Health check (includes tool count + memory status)
 curl http://localhost:8000/health
 ```
@@ -689,4 +707,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-305 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), Telegram, user profiles, and API layers.
+325 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.
