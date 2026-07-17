@@ -342,7 +342,12 @@ def knowledge_vaults():
     from victoria.knowledge.vaults import knowledge_base
     return {
         "vaults": [
-            {"name": v.name, "writable": v.writable, "notes": knowledge_base.note_count(v)}
+            {
+                "name": v.name,
+                "writable": v.writable,
+                "notes": knowledge_base.note_count(v),
+                "folders": knowledge_base.top_folders(v),
+            }
             for v in knowledge_base.vaults()
         ]
     }

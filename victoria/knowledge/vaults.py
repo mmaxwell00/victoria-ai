@@ -76,6 +76,24 @@ class KnowledgeBase:
     def get(self, name: str) -> Optional[Vault]:
         return self._vaults.get(_norm_name(name))
 
+    def default_vault(self) -> Optional[Vault]:
+        """The sole enabled vault (single-vault mode), else None."""
+        enabled = self.vaults()
+        return enabled[0] if len(enabled) == 1 else None
+
+    def top_folders(self, vault: Optional[Vault]) -> list[str]:
+        """Top-level folder names in a vault — its 'areas' — minus reserved dirs."""
+        if not vault or not vault.exists:
+            return []
+        out: list[str] = []
+        try:
+            for p in sorted(vault.root.iterdir()):
+                if p.is_dir() and p.name not in _SKIP_DIRS:
+                    out.append(p.name)
+        except OSError:
+            pass
+        return out
+
     # -- path safety ---------------------------------------------------
     def _resolve(self, vault: Vault, rel_path: str) -> Path:
         """Resolve ``rel_path`` inside the vault root, or raise ``ValueError``."""
@@ -144,24 +162,40 @@ class KnowledgeBase:
             text = text[: self.max_note_chars] + "\n\n…[truncated]…"
         return text
 
-    def search(self, query: str, vault_name: str = "all", limit: int = 8) -> list[dict]:
+    def search(
+        self, query: str, vault_name: str = "all", folder: str = "", limit: int = 8
+    ) -> list[dict]:
         """Keyword search across note titles + bodies (semantic RAG is Phase 1b).
 
         Each hit: ``{"vault", "path", "title", "snippet"}``. All whitespace-split
-        terms must appear (AND) in the note's stem or body.
+        terms must appear (AND) in the note's stem or body. ``folder`` scopes the
+        search to a top-level area (e.g. "Personal"). As a convenience, if
+        ``vault_name`` isn't a real vault but names a top-level folder of the sole
+        vault, it's treated as that folder — so "search my Personal notes" works
+        whether the caller passes it as the vault or the folder.
         """
         q = (query or "").strip().lower()
         if not q:
             return []
-        if _norm_name(vault_name) in ("", "all"):
+        name = _norm_name(vault_name)
+        if name not in ("", "all") and self.get(name) is None:
+            sole = self.default_vault()
+            if sole and name in {f.lower() for f in self.top_folders(sole)}:
+                folder = folder or vault_name
+                name = "all"
+        if name in ("", "all"):
             targets = self.vaults()
         else:
-            v = self.get(vault_name)
+            v = self.get(name)
             targets = [v] if v and v.exists else []
+        prefix = (folder.strip("/") + "/").lower() if folder and folder.strip("/") else ""
         terms = [t for t in re.split(r"\s+", q) if t]
         hits: list[dict] = []
         for v in targets:
             for p in self._iter_notes(v):
+                rel = p.relative_to(v.root).as_posix()
+                if prefix and not rel.lower().startswith(prefix):
+                    continue
                 try:
                     text = p.read_text(encoding="utf-8", errors="replace")
                 except OSError:
@@ -171,7 +205,7 @@ class KnowledgeBase:
                     hits.append(
                         {
                             "vault": v.name,
-                            "path": p.relative_to(v.root).as_posix(),
+                            "path": rel,
                             "title": p.stem,
                             "snippet": _snippet(text, terms),
                         }
@@ -227,6 +261,13 @@ def _vaults_from_settings() -> dict[str, Vault]:
         for n in (settings.obsidian_writable or "").split(",")
         if n.strip()
     }
+    # Single-vault mode wins when set: one whole-vault knowledge base (writable),
+    # named after the vault folder. Its top-level folders are the areas.
+    single = (getattr(settings, "obsidian_vault_path", "") or "").strip()
+    if single:
+        root = Path(single).expanduser()
+        name = root.name.lower() or "notes"
+        return {name: Vault(name=name, root=root, writable=True)}
     spec = {
         "docker": settings.obsidian_docker_path,
         "personal": settings.obsidian_personal_path,

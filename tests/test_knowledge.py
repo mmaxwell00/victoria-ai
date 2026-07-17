@@ -129,3 +129,49 @@ def test_write_rejects_path_traversal(kb: KnowledgeBase, evil: str):
 
 def test_read_rejects_path_traversal(kb: KnowledgeBase):
     assert kb.read_note("ai", "../../etc/passwd") is None
+
+
+# -- single-vault mode (one vault, top-level folders = areas) ---------------
+@pytest.fixture
+def single(tmp_path: Path) -> KnowledgeBase:
+    root = tmp_path / "AI-Victoria"
+    (root / "Docker").mkdir(parents=True)
+    (root / "Personal").mkdir(parents=True)
+    (root / ".obsidian").mkdir(parents=True)
+    (root / "Welcome.md").write_text("# Welcome\nA note at the vault root.\n")
+    (root / "Docker" / "staging.md").write_text("# Staging\ndocker compose up for staging.\n")
+    (root / "Personal" / "groceries.md").write_text("# Groceries\nmilk, eggs, coffee\n")
+    return KnowledgeBase(vaults={"ai-victoria": Vault("ai-victoria", root, True)})
+
+
+def test_default_vault_is_sole_vault(single: KnowledgeBase, kb: KnowledgeBase):
+    assert single.default_vault().name == "ai-victoria"
+    assert kb.default_vault() is None  # more than one → no default
+
+
+def test_top_folders_are_the_areas(single: KnowledgeBase):
+    assert single.top_folders(single.default_vault()) == ["Docker", "Personal"]
+
+
+def test_search_spans_whole_vault_including_root(single: KnowledgeBase):
+    # "see all": a root-level note is found without naming any folder.
+    titles = {h["title"] for h in single.search("note")}
+    assert "Welcome" in titles
+
+
+def test_search_folder_scopes_to_area(single: KnowledgeBase):
+    hits = single.search("compose", folder="Docker")
+    assert len(hits) == 1 and hits[0]["path"] == "Docker/staging.md"
+    assert single.search("compose", folder="Personal") == []
+
+
+def test_search_folder_as_vault_is_tolerated(single: KnowledgeBase):
+    # "search my Personal notes" — Personal passed as the vault, not the folder.
+    hits = single.search("groceries", vault_name="Personal")
+    assert len(hits) == 1 and hits[0]["path"] == "Personal/groceries.md"
+
+
+def test_write_into_a_folder_area(single: KnowledgeBase):
+    ok, _ = single.write_note("ai-victoria", "Personal/todo", "- ship RAG")
+    assert ok
+    assert (single.default_vault().root / "Personal" / "todo.md").is_file()

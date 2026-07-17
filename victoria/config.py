@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     # with Obsidian Sync those folders stay in step across your machines. An empty
     # path disables that vault. NOTE: distinct from the *Credentials Vault* above —
     # these hold knowledge (notes), not secrets.
+    # Single-vault mode (recommended): point Victoria at ONE Obsidian vault so she
+    # sees everything in it; its top-level folders act as areas she can target
+    # ("save to Personal", "search my Docker notes"). When set, this takes
+    # precedence over the three per-area paths below.
+    obsidian_vault_path: str = ""
+    # Per-area mode (alternative): three independent vault folders.
     obsidian_docker_path: str = ""
     obsidian_personal_path: str = ""
     obsidian_ai_path: str = ""
