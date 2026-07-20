@@ -4,7 +4,7 @@ source yields a placeholder rather than breaking the box or the others.
 Data sources (all free, no API key):
 - weather: wttr.in  (temp in °F + the city's LOCAL time, one call per city)
 - stocks:  Yahoo Finance v8 chart endpoint (price + company name)
-- news:    CNN + Fox News RSS, parsed with the stdlib XML parser
+- news:    NBC News + Fox News RSS, parsed with the stdlib XML parser
 """
 import asyncio
 import logging

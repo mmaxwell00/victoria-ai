@@ -35,7 +35,7 @@
 | `duckduckgo.com` + `*.duckduckgo.com` | ✓ | Web search (built-in, ddgs) | `html.`/`lite.`/`links.` — NOT api.duckduckgo.com |
 | `wttr.in` | ✓ | Weather tool + dashboard weather box | When asking about weather / dashboard on |
 | `query1/2.finance.yahoo.com` | ✓ | Dashboard markets box (stock prices) | When the dashboard tracks stocks |
-| `rss.cnn.com`, `moxie.foxnews.com` | ✓ | Dashboard headlines box (CNN / Fox RSS) | When the dashboard tracks news |
+| `feeds.nbcnews.com`, `moxie.foxnews.com` | ✓ | Dashboard headlines box (NBC News / Fox RSS) | When the dashboard tracks news |
 | `github.com` + `api.github.com` | ✓ | Skill import + GitHub MCP | When importing skills or using GitHub tool |
 | `huggingface.co` | ✓ | Model downloads (setup phase) | During initial sandbox creation |
 | `registry.npmjs.org` | ✓ | NPM packages (setup + runtime) | During dependency install |

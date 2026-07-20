@@ -12,22 +12,23 @@ from victoria.config import settings
 logger = logging.getLogger(__name__)
 
 # News sources we can actually pull headlines from (must have a usable RSS feed).
+# CNN was removed — it retired its public RSS (feed frozen since 2024).
 # Drudge Report is intentionally absent — it publishes no feed.
 SUPPORTED_NEWS: dict[str, dict] = {
-    "cnn": {"name": "CNN", "rss": "http://rss.cnn.com/rss/cnn_topstories.rss"},
+    "nbcnews": {"name": "NBC News", "rss": "https://feeds.nbcnews.com/nbcnews/public/news"},
     "foxnews": {"name": "Fox News", "rss": "https://moxie.foxnews.com/google-publisher/latest.xml"},
 }
 
 # Aliases so "Fox News", "fox", "foxnews" all resolve to the same key.
 _NEWS_ALIASES = {
-    "cnn": "cnn",
+    "nbc": "nbcnews", "nbcnews": "nbcnews", "nbc news": "nbcnews",
     "fox": "foxnews", "foxnews": "foxnews", "fox news": "foxnews",
 }
 
 DEFAULTS = {
     "cities": ["Dallas", "New York", "Seattle", "London"],
     "stocks": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"],
-    "news": ["cnn", "foxnews"],
+    "news": ["nbcnews", "foxnews"],
 }
 
 _KINDS = ("city", "stock", "news")
@@ -55,7 +56,11 @@ class DashboardStore:
             with open(self.path) as f:
                 data = json.load(f)
             # Merge over defaults so a partial/old file still has every key.
-            return {k: data.get(k, list(v)) for k, v in DEFAULTS.items()}
+            merged = {k: data.get(k, list(v)) for k, v in DEFAULTS.items()}
+            # Drop any news source we no longer support (e.g. a retired feed)
+            # so a stale entry can't linger in a persisted store.
+            merged["news"] = [n for n in merged["news"] if n in SUPPORTED_NEWS]
+            return merged
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             return {k: list(v) for k, v in DEFAULTS.items()}
 

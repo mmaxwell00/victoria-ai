@@ -12,7 +12,7 @@ _VALUE_DESC = (
     "The thing to track. For a city, the city name (e.g. 'Dallas'). For a stock, "
     "the TICKER SYMBOL, not the company name (e.g. 'AAPL' for Apple, 'TSLA' for "
     "Tesla) — convert the company name to its symbol yourself. For news, the "
-    "outlet name ('CNN' or 'Fox News')."
+    "outlet name ('NBC News' or 'Fox News')."
 )
 _PARAMS = {
     "type": "object",
@@ -48,7 +48,7 @@ async def track_dashboard(kind: str, value: str) -> str:
     description=(
         "Remove an item from the operator's HUD dashboard (a city, a stock, or a "
         "news source). Call this whenever the user wants something taken OFF the "
-        "dashboard — 'stop tracking London', 'drop Tesla', 'remove CNN', "
+        "dashboard — 'stop tracking London', 'drop Tesla', 'remove NBC News', "
         "'unfollow Fox News', 'take Miami off the weather'. This is the ONLY way "
         "to remove something — never claim you removed it without calling it."
     ),

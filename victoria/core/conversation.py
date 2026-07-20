@@ -490,7 +490,7 @@ class ConversationManager:
             '{"action": "add"|"remove", "kind": "city"|"stock"|"news", "value": "..."}\n'
             "For a stock, value MUST be the ticker SYMBOL (Apple->AAPL, "
             "Tesla->TSLA, Microsoft->MSFT). For a city, the city name (keep the "
-            "state/country if given). For news, the outlet (CNN or Fox News). "
+            "state/country if given). For news, the outlet (NBC News or Fox News). "
             "If it is not a dashboard change, respond with {}."
         )
         try:

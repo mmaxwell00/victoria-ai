@@ -37,7 +37,7 @@
 | Web search | `duckduckgo.com`, `*.duckduckgo.com` | Built-in tool (ddgs) |
 | Weather | `wttr.in` | Built-in tool + dashboard weather |
 | Markets | `query1/2.finance.yahoo.com` | Dashboard stocks box |
-| Headlines | `rss.cnn.com`, `moxie.foxnews.com` | Dashboard news box (RSS) |
+| Headlines | `feeds.nbcnews.com`, `moxie.foxnews.com` | Dashboard news box (RSS) |
 | GitHub | `github.com`, `api.github.com` | Skill import + MCP |
 | Models | `huggingface.co` | Piper TTS + model downloads |
 | Packages | `registry.npmjs.org`, `pypi.org` | Dependencies |

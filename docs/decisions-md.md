@@ -85,6 +85,32 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-07-20 · Dashboard news: dropped CNN (dead RSS), added NBC News
+
+**Status:** Implemented (this PR).
+
+**Context:** The HUD headlines box stopped updating. CNN retired its public RSS —
+`rss.cnn.com` returns HTTP 200 but frozen content (items from 2023, last built
+Aug 2024); Fox was fine. MSNBC + Newsmax were evaluated as replacements: MSNBC has
+no working feed (rebranded to "MS NOW"; old + new domains + Google News all dead or
+stale to 2021), and Newsmax blocks direct RSS (Cloudflare) — reachable only via a
+lagging Google-News proxy.
+
+**Choice:** Drop CNN; add **NBC News** (`feeds.nbcnews.com/nbcnews/public/news` —
+direct, fresh, reliable) alongside Fox. Direct feeds only (no proxy). `_load` now
+prunes any unsupported news source from a persisted store, so a retired feed can't
+linger.
+
+**Why:** Direct feeds beat proxies (which bring redirect links, title suffixes,
+days-lag, and an unofficial dependency). NBC News is a reliable, fresh counterpart
+to Fox — the balance CNN used to provide.
+
+**Trade-offs:** No Newsmax/MSNBC (no usable feeds today). A Google-News-proxy mode
+was offered and declined for now; it remains the path if an outlet without a real
+feed is ever required.
+
+---
+
 ### 2026-07-17 · Obsidian knowledge bases: three vaults Victoria reads/searches/writes
 
 **Status:** Phase 1a implemented (this PR — native file access + tools + tests).
@@ -179,7 +205,7 @@ headlines — that the operator manages by talking to Victoria.
 
 **Choice:** A `dash-row` of four boxes above a shortened chat (WEATHER / MARKETS
 / HEADLINES / reserved). Data via free, no-key sources — wttr.in (weather,
-24-hr local time + °F), Yahoo Finance v8 (stock price + name), CNN/Fox RSS
+24-hr local time + °F), Yahoo Finance v8 (stock price + name), NBC News/Fox RSS
 (headlines, open in a new tab). Tracked lists persist in `data/dashboard.json`
 (`victoria/dashboard/store.py`); fetchers in `feeds.py` are independently
 fault-tolerant. Tracking is conversational via `track_dashboard` /
