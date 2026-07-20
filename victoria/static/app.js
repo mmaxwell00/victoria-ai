@@ -946,21 +946,55 @@ inputEl.focus();
     } catch (e) { empty(elW, 'weather unavailable'); }
   }
 
+  function fmtVol(v) {
+    v = Number(v);
+    if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+    if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+    return v.toLocaleString('en-US');
+  }
+  function marketLine(el, label, valueText) {
+    const line = document.createElement('div');
+    line.className = 'dash-line';
+    line.append(label + ' ');
+    const s = document.createElement('span');
+    s.className = 'price';
+    s.textContent = valueText;
+    line.append(s);
+    el.appendChild(line);
+  }
+  function subhead(el, text) {
+    const d = document.createElement('div');
+    d.className = 'dash-sub';
+    d.textContent = text;
+    el.appendChild(d);
+  }
   async function refreshStocks() {
     if (!elS) return;
     try {
-      const items = await load('/v1/dashboard/stocks');
-      if (!items.length) return empty(elS, 'No stocks tracked — ask Victoria to add one.');
+      const r = await fetch('/v1/dashboard/stocks');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      const items = data.items || [], metals = data.metals || [], indices = data.indices || [];
       elS.innerHTML = '';
       for (const it of items) {
-        const line = document.createElement('div');
-        line.className = 'dash-line';
-        line.append(`${it.name} (${it.symbol}) `);
-        const s = document.createElement('span');
-        s.className = 'price';
-        s.textContent = it.price == null ? '—' : '$' + Number(it.price).toFixed(2);
-        line.append(s);
-        elS.appendChild(line);
+        marketLine(elS, `${it.name} (${it.symbol})`,
+                   it.price == null ? '—' : '$' + Number(it.price).toFixed(2));
+      }
+      if (metals.length) {
+        subhead(elS, 'METALS');
+        for (const m of metals) {
+          marketLine(elS, m.label, m.price == null ? '—'
+            : '$' + Number(m.price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+        }
+      }
+      if (indices.length) {
+        subhead(elS, 'VOLUME');
+        for (const ix of indices) {
+          marketLine(elS, ix.label, ix.volume == null ? '—' : fmtVol(ix.volume));
+        }
+      }
+      if (!items.length && !metals.length && !indices.length) {
+        empty(elS, 'No stocks tracked — ask Victoria to add one.');
       }
     } catch (e) { empty(elS, 'markets unavailable'); }
   }

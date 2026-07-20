@@ -64,7 +64,7 @@ victoria-ai/
 │   ├── ensure-model-runner.sh  # Re-bind the Docker Model Runner host-TCP port if it drops
 │   └── claude-login.sh         # Authenticate Claude escalation (subscription login or token)
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
-├── tests/                      # 333 pytest tests
+├── tests/                      # 335 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
 ├── docker-compose.yml
 ├── Dockerfile
@@ -380,7 +380,7 @@ The interface is a full-screen dark HUD inspired by the Iron Man JARVIS OS — d
 - Avatar (bottom) — a framed portrait of Victoria; the glowing frame shifts colour with her state: teal idle, green listening, purple thinking, fuchsia speaking (the fuchsia glow pulses with her voice). Drop your own image at `victoria/static/victoria-avatar.png`
 
 **Center**
-- **Dashboard row (top):** four live info boxes — **Weather** (tracked cities, each shown `City · 24-hr local time · °F`), **Markets** (top 5 tracked stocks by share price, `Name (SYM) $price`), **Headlines** (NBC News + Fox News RSS — click a headline to open it in a new tab), and a reserved fourth box. Manage them by talking to Victoria — "track Dallas", "add Apple stock", "follow Fox News", "drop Tesla" — and the boxes refresh right away. Data is free/no-key: wttr.in (weather), Yahoo Finance (stocks), RSS (news).
+- **Dashboard row (top):** four live info boxes — **Weather** (tracked cities, each shown `City · 24-hr local time · °F`), **Markets** (top 5 tracked stocks by share price as `Name (SYM) $price`, plus **Gold & Silver** prices and **S&P 500 / NASDAQ** trading volume), **Headlines** (NBC News + Fox News RSS — click a headline to open it in a new tab), and a reserved fourth box. Manage them by talking to Victoria — "track Dallas", "add Apple stock", "follow Fox News", "drop Tesla" — and the boxes refresh right away. Data is free/no-key: wttr.in (weather), Yahoo Finance (stocks), RSS (news).
 - Below the dashboard: the rotating V.I.C.T.O.R.I.A. arc-reactor ring with the chat messages overlaid — `OPERATOR` / `VICTORIA` labels, `HH:MM:SS` timestamps, and a `[DOCKER]` / `[OLLAMA]` / `[CLAUDE]` backend badge on each reply. (The clock stays pinned in the top header.)
 
 **Right sidebar**
@@ -707,4 +707,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-333 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.
+335 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.

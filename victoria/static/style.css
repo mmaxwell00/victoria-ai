@@ -785,6 +785,11 @@ select#backend-select:focus, select#model-select:focus { outline: none; border-c
 .dash-line { padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dash-line .price { color: var(--teal-bright); }
 .dash-line .muted { color: var(--text-dim); }
+.dash-sub {
+  margin-top: 6px; padding-top: 3px; border-top: 1px solid rgba(26, 58, 96, 0.45);
+  font-family: var(--font-hud); font-size: 9px; letter-spacing: 1.5px; color: var(--text-dim);
+}
+.dash-sub:first-child { margin-top: 0; border-top: none; }
 .dash-news-item {
   display: block; padding: 4px 0; color: var(--text); text-decoration: none;
   border-bottom: 1px solid rgba(26, 58, 96, 0.35); white-space: normal;

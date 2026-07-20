@@ -64,7 +64,7 @@ victoria-ai/
 │   ├── chat.py                 # Terminal chat
 │   ├── run_telegram.py
 │   └── run_voice.py
-├── tests/                      # 333 pytest tests
+├── tests/                      # 335 pytest tests
 ├── docs/
 │   └── DECISIONS.md            # Running decision log
 ├── CLAUDE.md                   # This file
@@ -131,7 +131,7 @@ Interfaces (Web HUD / Telegram / Voice / Terminal)
 - **Virtual env in `.venv/`** — standard `python -m venv`, not Poetry/PDM.
 - **Dependencies in `requirements.txt`** — keep it simple.
 - **Config via `.env`** — see `.env.example` for the full list of vars.
-- **Tests with pytest** — 333 tests currently. Never let coverage regress.
+- **Tests with pytest** — 335 tests currently. Never let coverage regress.
 - **Decorator-based tool registry** — `@tool` in `victoria/tools/registry.py`.
 - **All settings env-driven** — never hardcode credentials or paths.
 - **Async where it counts** — FastAPI endpoints, Telegram handlers. Sync OK for tool calls.

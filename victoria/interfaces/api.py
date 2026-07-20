@@ -321,10 +321,11 @@ async def dashboard_weather():
 
 @router.get("/dashboard/stocks")
 async def dashboard_stocks():
-    """Tracked stocks, top 5 by share price."""
+    """MARKETS box: tracked stocks (top 5 by price) + Gold/Silver prices +
+    S&P 500 / NASDAQ trading volume."""
     from victoria.dashboard.store import dashboard_store
     from victoria.dashboard import feeds
-    return {"items": await feeds.fetch_stocks(dashboard_store.get()["stocks"])}
+    return await feeds.fetch_markets(dashboard_store.get()["stocks"])
 
 
 @router.get("/dashboard/news")

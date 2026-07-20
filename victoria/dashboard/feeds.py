@@ -4,6 +4,8 @@ source yields a placeholder rather than breaking the box or the others.
 Data sources (all free, no API key):
 - weather: wttr.in  (temp in °F + the city's LOCAL time, one call per city)
 - stocks:  Yahoo Finance v8 chart endpoint (price + company name)
+- metals:  Gold + Silver price (COMEX futures) via the same Yahoo endpoint
+- indices: S&P 500 + NASDAQ regular-session volume via the same Yahoo endpoint
 - news:    NBC News + Fox News RSS, parsed with the stdlib XML parser
 """
 import asyncio
@@ -86,6 +88,52 @@ async def fetch_stocks(symbols: list[str], top: int = 5) -> list[dict]:
         quotes = list(await asyncio.gather(*[_one_stock(client, s) for s in symbols]))
     quotes.sort(key=lambda q: (q["price"] is not None, q["price"] or 0), reverse=True)
     return quotes[:top]
+
+
+# ── Metals + index volume (fixed MARKETS extras) ─────────────────────────
+# Gold/Silver are COMEX front-month futures; the indices give trading volume.
+# All via the same Yahoo v8 endpoint (host already allow-listed for stocks).
+METALS = [("Gold", "GC=F"), ("Silver", "SI=F")]
+INDICES = [("S&P 500", "^GSPC"), ("NASDAQ", "^IXIC")]
+
+
+async def _quote(client: httpx.AsyncClient, symbol: str) -> dict:
+    """Yahoo chart meta → {price, volume}; both None on failure (never raises)."""
+    try:
+        r = await client.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol)}",
+            params={"interval": "1d", "range": "1d"},
+        )
+        r.raise_for_status()
+        meta = r.json()["chart"]["result"][0]["meta"]
+        return {"price": meta.get("regularMarketPrice"),
+                "volume": meta.get("regularMarketVolume")}
+    except Exception:
+        logger.debug("quote fetch failed for %s", symbol, exc_info=True)
+        return {"price": None, "volume": None}
+
+
+async def fetch_metals() -> list[dict]:
+    """Gold + Silver price (COMEX front-month futures). [{label, price}]."""
+    async with httpx.AsyncClient(timeout=8.0, headers=_UA) as client:
+        qs = await asyncio.gather(*[_quote(client, sym) for _, sym in METALS])
+    return [{"label": label, "price": q["price"]} for (label, _), q in zip(METALS, qs)]
+
+
+async def fetch_indices() -> list[dict]:
+    """S&P 500 + NASDAQ regular-session trading volume. [{label, volume}]."""
+    async with httpx.AsyncClient(timeout=8.0, headers=_UA) as client:
+        qs = await asyncio.gather(*[_quote(client, sym) for _, sym in INDICES])
+    return [{"label": label, "volume": q["volume"]} for (label, _), q in zip(INDICES, qs)]
+
+
+async def fetch_markets(symbols: list[str]) -> dict:
+    """Everything the MARKETS box shows — tracked stocks (top by price) +
+    Gold/Silver prices + S&P/NASDAQ volume — fetched concurrently."""
+    items, metals, indices = await asyncio.gather(
+        fetch_stocks(symbols), fetch_metals(), fetch_indices()
+    )
+    return {"items": items, "metals": metals, "indices": indices}
 
 
 # ── News ───────────────────────────────────────────────────────────────
