@@ -36,9 +36,9 @@ def test_add_city_capitalises(tmp_path):
 def test_news_kind_not_broken_by_trailing_s(tmp_path):
     """Regression: normalising 'news' must not become 'new' (rstrip('s') bug)."""
     s = _store(tmp_path)
-    s.remove("news", "cnn")               # start clean
-    ok, msg = s.add("news", "CNN")
-    assert ok and "cnn" in s.get()["news"], msg
+    s.remove("news", "nbcnews")               # start clean
+    ok, msg = s.add("news", "NBC News")
+    assert ok and "nbcnews" in s.get()["news"], msg
 
 
 def test_news_alias_and_unsupported(tmp_path):
@@ -47,7 +47,7 @@ def test_news_alias_and_unsupported(tmp_path):
     ok, _ = s.add("news", "Fox News")     # alias -> foxnews
     assert ok and "foxnews" in s.get()["news"]
     ok, msg = s.add("news", "Drudge")     # no feed
-    assert not ok and "CNN" in msg and "Fox News" in msg
+    assert not ok and "NBC News" in msg and "Fox News" in msg
 
 
 def test_remove(tmp_path):
@@ -70,10 +70,10 @@ def test_parse_rss():
            b"<item><title>Second</title><link>http://x/2</link></item>"
            b"<item><title>Third</title><link>http://x/3</link></item>"
            b"</channel></rss>")
-    items = feeds.parse_rss(xml, "CNN", limit=2)
+    items = feeds.parse_rss(xml, "NBC News", limit=2)
     assert items == [
-        {"source": "CNN", "title": "First", "url": "http://x/1"},
-        {"source": "CNN", "title": "Second", "url": "http://x/2"},
+        {"source": "NBC News", "title": "First", "url": "http://x/1"},
+        {"source": "NBC News", "title": "Second", "url": "http://x/2"},
     ]
 
 
@@ -104,7 +104,7 @@ async def test_config_endpoint():
 async def test_data_endpoints(monkeypatch):
     async def fw(cities): return [{"city": "Dallas", "time": "16:22", "tempF": 93}]
     async def fs(symbols): return [{"symbol": "AAPL", "name": "Apple Inc.", "price": 155.25}]
-    async def fn(sources): return [{"source": "CNN", "title": "H", "url": "http://x/1"}]
+    async def fn(sources): return [{"source": "NBC News", "title": "H", "url": "http://x/1"}]
     monkeypatch.setattr(feeds, "fetch_weather", fw)
     monkeypatch.setattr(feeds, "fetch_stocks", fs)
     monkeypatch.setattr(feeds, "fetch_news", fn)
