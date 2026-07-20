@@ -85,6 +85,32 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-07-20 · MARKETS box: add Gold/Silver prices + S&P/NASDAQ volume
+
+**Status:** Implemented (this PR).
+
+**Context:** Alex wanted the MARKETS box to show more than tracked equities —
+precious-metal prices and index trading volume.
+
+**Choice:** Two FIXED sub-sections in the box (not conversationally tracked,
+unlike stocks): **Metals** (Gold `GC=F`, Silver `SI=F` — COMEX front-month
+futures) and **Volume** (S&P 500 `^GSPC`, NASDAQ `^IXIC` regular-session volume).
+All four come from the same Yahoo v8 chart endpoint already used for stocks
+(`query1.finance.yahoo.com` — already allow-listed, no new egress).
+`GET /v1/dashboard/stocks` now returns `{items, metals, indices}`, fetched
+concurrently via `feeds.fetch_markets()`; the box renders labelled sub-sections
+and scrolls if needed.
+
+**Why:** Reuses the proven Yahoo fetcher and existing egress; fixed (not tracked)
+keeps a small, stable set simple. Volume formatted B/M; metals as `$` with
+thousands separators.
+
+**Trade-offs:** Metals follow the front-month futures contract (near spot, not
+exact spot). The box scrolls when stocks + metals + volume exceed its height —
+stock count can be trimmed later if a no-scroll at-a-glance view is preferred.
+
+---
+
 ### 2026-07-20 · Dashboard news: dropped CNN (dead RSS), added NBC News
 
 **Status:** Implemented (this PR).

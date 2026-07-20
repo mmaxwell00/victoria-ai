@@ -88,6 +88,23 @@ async def test_fetch_stocks_sorts_by_price_and_caps(monkeypatch):
     assert [q["symbol"] for q in out] == ["B", "F", "C", "E", "A"]  # desc, None dropped, top 5
 
 
+async def test_fetch_metals_maps_labels(monkeypatch):
+    async def fake_quote(client, sym):
+        return {"price": {"GC=F": 4014.2, "SI=F": 57.1}[sym], "volume": None}
+    monkeypatch.setattr(feeds, "_quote", fake_quote)
+    out = await feeds.fetch_metals()
+    assert out == [{"label": "Gold", "price": 4014.2}, {"label": "Silver", "price": 57.1}]
+
+
+async def test_fetch_indices_maps_volume(monkeypatch):
+    async def fake_quote(client, sym):
+        return {"price": None, "volume": {"^GSPC": 1_089_007_000, "^IXIC": 3_044_085_000}[sym]}
+    monkeypatch.setattr(feeds, "_quote", fake_quote)
+    out = await feeds.fetch_indices()
+    assert out == [{"label": "S&P 500", "volume": 1089007000},
+                   {"label": "NASDAQ", "volume": 3044085000}]
+
+
 # ── API endpoints ───────────────────────────────────────────────────────
 async def _client():
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
@@ -105,16 +122,21 @@ async def test_data_endpoints(monkeypatch):
     async def fw(cities): return [{"city": "Dallas", "time": "16:22", "tempF": 93}]
     async def fs(symbols): return [{"symbol": "AAPL", "name": "Apple Inc.", "price": 155.25}]
     async def fn(sources): return [{"source": "NBC News", "title": "H", "url": "http://x/1"}]
+    async def fm(): return [{"label": "Gold", "price": 4014.2}]
+    async def fi(): return [{"label": "S&P 500", "volume": 1089007000}]
     monkeypatch.setattr(feeds, "fetch_weather", fw)
     monkeypatch.setattr(feeds, "fetch_stocks", fs)
     monkeypatch.setattr(feeds, "fetch_news", fn)
+    monkeypatch.setattr(feeds, "fetch_metals", fm)
+    monkeypatch.setattr(feeds, "fetch_indices", fi)
 
     async with await _client() as c:
         w = (await c.get("/v1/dashboard/weather")).json()["items"]
-        s = (await c.get("/v1/dashboard/stocks")).json()["items"]
+        sj = (await c.get("/v1/dashboard/stocks")).json()
         n = (await c.get("/v1/dashboard/news")).json()["items"]
     assert w[0]["tempF"] == 93 and w[0]["time"] == "16:22"
-    assert s[0]["symbol"] == "AAPL"
+    assert sj["items"][0]["symbol"] == "AAPL"
+    assert sj["metals"][0]["label"] == "Gold" and sj["indices"][0]["label"] == "S&P 500"
     assert n[0]["url"] == "http://x/1"
 
 
