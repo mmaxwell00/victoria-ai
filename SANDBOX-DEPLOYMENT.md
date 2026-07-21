@@ -1,243 +1,74 @@
-## Victoria Sandbox Kit — Deployment Guide
+# Victoria in a Docker Sandbox (sbx)
 
-### What's Ready
+Run Victoria as a **persistent service inside an isolated Docker Sandbox** —
+hardware-isolated from the host filesystem/processes, default-deny egress,
+credentials proxied in — while the heavy local LLM stays on the host's Docker
+Model Runner. **Verified working end-to-end (Phase 1).**
 
-✓ **sbx-kit.yaml** — Production sandbox kit with:
-  - All dependencies (Python 3.11, ffmpeg, Node.js, portaudio)
-  - Voice model download (Piper en_GB-jenny_dioco)
-  - Environment configuration (Model Runner, data paths, escalation)
-  - Credential injection (API keys never written to sandbox)
-  - Whitelisted network domains (default deny, explicit allow)
+![Victoria running inside a Docker Sandbox](docs/screenshots/sbx-hud.png)
 
-✓ **deploy-sandbox.sh** — Pre-flight checklist that:
-  - Verifies sbx CLI installed
-  - Checks Docker Desktop and Model Runner
-  - Confirms models are pulled
-  - **Creates the required sbx policy rule** ← CRITICAL
-  - Validates YAML syntax
+*The HUD above is served from inside the sandbox (`127.0.0.1:8001`): chat via the
+host Model Runner, the Obsidian knowledge base (mounted vault), and the live
+dashboard (weather · markets incl. metals/volume · NBC+Fox headlines).*
 
-✓ **SECURITY-AUDIT.md** — Detailed audit of:
-  - Network rules (what's allowed and why)
-  - Optional endpoints (ElevenLabs, Telegram)
-  - MCP fetch security trade-offs
-  - Data privacy (what stays on host)
+## What runs where
 
-### Security Implementation
+```
+HOST (macOS)                          SANDBOX microVM (Linux, isolated)
+  Docker Model Runner  ◀──:12434───     Victoria (uvicorn :8000) ──published──▶ 127.0.0.1:8001
+    (host.docker.internal)  allowlisted   knowledge base · tools · dashboard
+  ~/Obsidian/**  (mounted, per policy) ▶  memory / RAG substrate
+  Browser ────────────────────────────▶  the HUD
+```
 
-**Network Model:**
-- `allowedDomains` — explicit whitelist (Victoria's tools, Claude API, package managers)
-- `deniedDomains` — block telemetry/analytics
-- Default: **deny everything else**
+## Prerequisites
 
-**Endpoints Allowed:**
-| Service | Domain | Reason |
-|---------|--------|--------|
-| Model Runner | `localhost:12434` | Local LLM (requires `sbx policy` on host) |
-| Claude API | `api.anthropic.com` | Escalation |
-| Web search | `duckduckgo.com`, `*.duckduckgo.com` | Built-in tool (ddgs) |
-| Weather | `wttr.in` | Built-in tool + dashboard weather |
-| Markets | `query1/2.finance.yahoo.com` | Dashboard stocks box |
-| Headlines | `feeds.nbcnews.com`, `moxie.foxnews.com` | Dashboard news box (RSS) |
-| GitHub | `github.com`, `api.github.com` | Skill import + MCP |
-| Models | `huggingface.co` | Piper TTS + model downloads |
-| Packages | `registry.npmjs.org`, `pypi.org` | Dependencies |
+- **`sbx`** — `brew install docker/tap/sbx` (macOS) / `winget install Docker.sbx` (Windows)
+- **Docker Desktop** + **Model Runner** with host TCP: `docker desktop enable model-runner --tcp=12434`, and a model pulled (`docker model pull ai/qwen2.5`)
+- **Mount policy** (this environment is org-governed): a sandbox may only mount
+  approved roots. Code is staged under **`~/sandboxes/**`** (allowed); the Obsidian
+  vault needs its own filesystem-allow rule for its exact path (e.g. `~/Obsidian/**`).
 
-**Credentials (Injected from Host):**
-- `ANTHROPIC_API_KEY` — Claude escalation
-- `CLAUDE_CODE_OAUTH_TOKEN` — Alternative Claude auth
-- `VICTORIA_VAULT_KEY` — Encrypted vault
-- `TELEGRAM_BOT_TOKEN` — Telegram interface
-- `GitHub_Victoria` — MCP GitHub server
-
-None of these are written to `.env` or exposed inside the sandbox. They're proxied from the host.
-
-### Pre-Deployment Checklist
-
-1. **Run the checklist script:**
-   ```bash
-   bash deploy-sandbox.sh
-   ```
-   This verifies all prerequisites and **creates the required `sbx policy` rule**.
-
-2. **Verify Docker Desktop:**
-   - Docker running
-   - Model Runner enabled (Settings → Features in development)
-   - At least one model pulled: `docker model ls`
-
-3. **Check Model Runner accessibility:**
-   ```bash
-   curl http://localhost:12434/engines/llama.cpp/v1/models
-   ```
-
-4. **Verify policy was created:**
-   ```bash
-   sbx policy list
-   ```
-   Should show a rule allowing `localhost:12434`.
-
-### Deployment
+## Deploy
 
 ```bash
-# Launch the sandbox
-sbx run --kit ./sbx-kit.yaml
+./deploy-sandbox.sh          # stages code, packs the kit, runs it, publishes the HUD
+open http://127.0.0.1:8001   # use 127.0.0.1 — NOT localhost (resolves to ::1)
 ```
 
-This creates a microVM, installs dependencies (~5-10 min on first run), downloads the Piper model, and starts Victoria API on `:8000`.
+It packs [`sbx/spec.yaml`](sbx/spec.yaml) (`sbx kit pack`), runs it
+(`sbx run --kit … victoria <repo> <vault>`), and publishes the port
+(`sbx ports … --publish 127.0.0.1:8001:8000`). The kit header lists the exact commands.
 
-### Inside the Sandbox — Verification
+## Verified working (Phase 1)
 
-```bash
-# Browser
-http://localhost:8000
+| Capability | Status |
+|---|---|
+| HUD + `/health` (browser-reachable via `127.0.0.1:8001`) | ✅ |
+| Chat — local LLM via the **host Model Runner** (`host.docker.internal:12434`) | ✅ |
+| Obsidian **knowledge base** (mounted vault → memory/RAG) | ✅ |
+| Dashboard — weather · markets (stocks + Gold/Silver + S&P/NASDAQ volume) · NBC+Fox | ✅ |
+| Egress for tools/dashboard | ✅ |
+| Semantic memory (ChromaDB) + native voice | ⏳ degrade gracefully; need Python 3.11 (Phase 2) |
 
-# Check Model Runner connectivity
-curl http://localhost:12434/engines/llama.cpp/v1/models
+## Gotchas (all real, learned the hard way)
 
-# Test the chat API
-curl -X POST http://localhost:8000/v1/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "What time is it?",
-    "user_id": "test"
-  }'
+- **Kits are packed artifacts.** `sbx kit pack sbx/` → ZIP; a raw YAML won't run.
+- **Agent name = kit name.** `sbx run --kit … victoria <paths>`.
+- **Model Runner is `host.docker.internal:12434`**, not `localhost` (localhost is the sandbox itself).
+- **A service goes in `commands.startup` (`background: true`), not the entrypoint** — the entrypoint is the interactive agent and dies on detach. Bind `--host 0.0.0.0`.
+- **IPv4-only.** Publish/curl via `127.0.0.1`; `localhost` → `::1` resets the connection.
+- **Mounts are org-governed and case-sensitive.** Code under `~/sandboxes/**`; the vault rule must match the folder's exact case (`~/Obsidian/**`, capital O).
+- **The sandbox filesystem is per-instance** — `sbx rm` + recreate wipes installed deps, so they're baked into the kit's `install`.
 
-# Check health
-curl http://localhost:8000/health
-```
+## Isolation & credentials
 
-### Optional: Enable Premium Features
+- Network is currently broad (org `NetworkAll` allow). **Phase 3 hardening:** tighten
+  `network.allowedDomains` in the kit to just what Victoria uses.
+- Secrets: use the **sbx credential engine** (`sbx secret set`) — the proxy injects
+  them without the value entering the VM. `github`/`anthropic` are typically already set.
 
-**ElevenLabs Text-to-Speech:**
-```bash
-# On host
-sbx policy allow network api.elevenlabs.io
+## Roadmap
 
-# In .env
-TTS_ENGINE=elevenlabs
-ELEVENLABS_API_KEY=sk_...
-```
-
-**Telegram Bot Interface:**
-```bash
-# On host
-sbx policy allow network api.telegram.org
-
-# In .env
-TELEGRAM_BOT_TOKEN=1234567890:ABCdefghijklmnop
-```
-
-**Additional MCP Servers:**
-If you add MCP servers to `mcp.json` that need external access:
-```bash
-# Example: custom API server
-sbx policy allow network "api.your-domain.com"
-
-# Example: broader web access (not recommended)
-sbx policy allow network "*.github.io"
-```
-
-### Sandbox Lifecycle
-
-**List all sandboxes:**
-```bash
-sbx list
-```
-
-**View logs:**
-```bash
-sbx logs <sandbox-id>
-```
-
-**Stop a sandbox:**
-```bash
-sbx stop <sandbox-id>
-```
-
-**Reuse a sandbox:**
-Sandboxes persist — running `sbx run --kit ./sbx-kit.yaml` again will reuse the same VM unless mount paths change. To force a new one:
-```bash
-sbx rm <sandbox-id>
-sbx run --kit ./sbx-kit.yaml
-```
-
-### Data Persistence
-
-These directories persist on the host and survive sandbox lifecycle:
-
-| Path | Content | Persists |
-|------|---------|----------|
-| `/workspace/victoria-ai/data/victoria.db` | Conversations, user profiles | ✓ Yes |
-| `/workspace/victoria-ai/data/chromadb/` | Semantic memory | ✓ Yes |
-| `/workspace/victoria-ai/models/` | Downloaded TTS model | ✓ Yes |
-| `/workspace/victoria-ai/skills/` | Created/imported skills | ✓ Yes |
-
-**Encryption:** If you set `VICTORIA_VAULT_KEY`, the vault (`data/vault.enc`) is encrypted at rest.
-
-### Troubleshooting
-
-**Model Runner connection refused:**
-```bash
-# On host
-docker desktop enable model-runner --tcp=12434
-
-# Or verify from sandbox
-curl http://localhost:12434/engines/llama.cpp/v1/models
-```
-
-**Sandbox can't reach external APIs (e.g., Claude):**
-- Check policy: `sbx policy list`
-- Add domain: `sbx policy allow network api.anthropic.com`
-- View logs: `sbx logs <sandbox-id> | grep -i "blocked\|denied"`
-
-**Installation timeout or network errors:**
-- Increase timeout: `sbx run --timeout 600 --kit ./sbx-kit.yaml`
-- Check network: `curl https://huggingface.co` (Piper model download)
-
-**Credentials not working (API key not injected):**
-- Verify credentials in kit: `grep -A 5 "credentials:" sbx-kit.yaml`
-- Check host env: `echo $ANTHROPIC_API_KEY` (if set globally)
-- Check keychain (macOS): `security find-generic-password -l "Docker Sandbox" 2>/dev/null`
-
-### MCP Configuration for Sandbox
-
-Update `mcp.json` to use sandbox-relative paths:
-
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
-      "readOnly": true
-    },
-    "github": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${vault:GitHub_Victoria}" },
-      "readOnly": true
-    },
-    "fetch": {
-      "command": "python",
-      "args": ["-m", "mcp_server_fetch"],
-      "readOnly": true
-    }
-  }
-}
-```
-
-**Note on fetch server:** It can read any whitelisted URL but is restricted by network policy. Disable it in `mcp.json` if you want maximum security.
-
-### Next Steps
-
-1. Run: `bash deploy-sandbox.sh`
-2. Launch: `sbx run --kit ./sbx-kit.yaml`
-3. Test: `http://localhost:8000` in browser
-4. Optional: `sbx policy allow network api.elevenlabs.io` (if using premium TTS)
-5. Monitor: `sbx logs <sandbox-id>` for any errors
-
----
-
-**Resources:**
-- [Kit reference](https://docs.docker.com/ai/sandboxes/customize/kits/)
-- [Sandbox security](https://docs.docker.com/ai/sandboxes/security/)
-- [Network policies](https://docs.docker.com/ai/sandboxes/governance/concepts/)
+- **Phase 2** — pin **Python 3.11** in the kit image so ChromaDB + voice deps install (full feature parity).
+- **Phase 3** — tighten egress to an allowlist; move Victoria's vault secrets to `sbx secret`.

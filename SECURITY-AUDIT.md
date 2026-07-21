@@ -1,5 +1,11 @@
 ## Victoria Sandbox — Network Security Audit
 
+> **Status:** this describes the *target* egress hardening (Phase 3). The
+> **verified working** deployment is in [SANDBOX-DEPLOYMENT.md](SANDBOX-DEPLOYMENT.md)
+> and currently relies on the **org-managed** network policy (broad allow), with
+> the host Model Runner reached at `host.docker.internal:12434`. The allowlist
+> below is the goal for tightening egress in the kit's `network` block.
+
 ### Problems Found & Fixed
 
 1. **Wrong Kit Format** ✓ FIXED
@@ -46,7 +52,7 @@
 
 ### Critical Setup Steps
 
-**Before running `sbx run --kit ./sbx-kit.yaml`:**
+**Before running `sbx run --kit /tmp/victoria-kit.zip -d victoria ~/sandboxes/victoria-ai ~/Obsidian/AI/AI-Victoria`:**
 
 1. **Run the deployment checklist:**
    ```bash
@@ -164,7 +170,7 @@ sbx logs <sandbox-id> | grep -i "blocked\|denied\|connection refused"
 
 2. **Launch the sandbox:**
    ```bash
-   sbx run --kit ./sbx-kit.yaml
+   sbx run --kit /tmp/victoria-kit.zip -d victoria ~/sandboxes/victoria-ai ~/Obsidian/AI/AI-Victoria
    ```
 
 3. **Verify connectivity inside the sandbox:**

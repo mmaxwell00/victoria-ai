@@ -85,6 +85,41 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-07-20 · Docker Sandbox (sbx) deployment — verified Phase 1
+
+**Status:** Phase 1 verified working end-to-end. Kit + docs land in this PR.
+
+**Context:** Alex needs Victoria to run in a **Docker Sandbox (sbx)** for
+hardware isolation. The repo's original `sbx-kit.yaml` was aspirational and never
+actually ran.
+
+**Choice / what works:** A packed sbx kit (`sbx/spec.yaml`, `kind: sandbox` on
+`docker/sandbox-templates:shell-docker`) that installs core deps and runs uvicorn
+as a **background startup service**. The host Model Runner is reached at
+`host.docker.internal:12434`; the repo is staged under `~/sandboxes/**` and the
+Obsidian vault mounted (per an org filesystem-allow rule) as the knowledge base;
+the HUD is published to the host at `127.0.0.1:8001`. Verified live: chat (local
+LLM), knowledge base (mounted vault), dashboard (weather/markets/metals/volume/
+news), egress.
+
+**Gotchas (full list in SANDBOX-DEPLOYMENT.md):** kits must be *packed*
+(`sbx kit pack`), not raw YAML; the agent name must equal the kit name; Model
+Runner is `host.docker.internal`, not `localhost`; a long-running service belongs
+in `commands.startup` (`background: true`), not the entrypoint (which dies on
+detach); the published service is **IPv4-only** (`127.0.0.1`, not `localhost`→`::1`);
+mounts are **org-governed and case-sensitive** (`~/sandboxes/**`; the vault rule
+must match the folder case, `~/Obsidian/**`); the sandbox FS is per-instance, so
+deps are baked into the kit.
+
+**Deferred:** Phase 2 — pin **Python 3.11** in the kit for ChromaDB + voice (full
+parity). Phase 3 — tighten `network.allowedDomains` to an allowlist and move
+Victoria's vault secrets to the `sbx secret` engine.
+
+**Supersedes:** the old `kind: sandbox` `sbx-kit.yaml` (invalid for sbx v0.35) —
+removed in this PR.
+
+---
+
 ### 2026-07-20 · MARKETS box: add Gold/Silver prices + S&P/NASDAQ volume
 
 **Status:** Implemented (this PR).

@@ -1,0 +1,69 @@
+# Victoria — Docker Sandboxes kit (verified working end-to-end, Phase 1).
+#
+# WHY A PACKED KIT: sbx (v0.35) kits are packed artifacts (spec.yaml + optional
+# files/), NOT a raw YAML. This directory is packed with `sbx kit pack sbx/`.
+#
+# RUN IT:
+#   # 1. Code must live under an org-allowed mount root (~/sandboxes/**):
+#   git clone <this-repo> ~/sandboxes/victoria-ai
+#   # 2. Pack + run (agent name must equal the kit name, "victoria"):
+#   sbx kit pack sbx/ -o /tmp/victoria-kit.zip
+#   sbx run --kit /tmp/victoria-kit.zip --name victoria -d \
+#       victoria ~/sandboxes/victoria-ai ~/Obsidian/AI/AI-Victoria
+#   # 3. Publish the HUD (IPv4 — the service is IPv4-only):
+#   sbx ports victoria --publish 127.0.0.1:8001:8000
+#   open http://127.0.0.1:8001          # use 127.0.0.1, NOT localhost (resolves to ::1)
+#
+# The vault mount needs an org filesystem-allow rule for its path (e.g. ~/Obsidian/**).
+# Paths below are the in-sandbox mount paths (= the host paths passed to `sbx run`,
+# direct-mounted). Adjust the username/paths for your host.
+
+schemaVersion: "1"
+kind: sandbox
+name: victoria
+displayName: Victoria AI
+description: >-
+  Victoria assistant (FastAPI HUD) as a persistent Docker Sandbox service,
+  backed by the host's Docker Model Runner. Phase 1 installs the core
+  dependencies and runs uvicorn as a background startup service.
+
+agentContext: |
+  Victoria's API + HUD run on port 8000 inside this sandbox. Publish to the host:
+    sbx ports <sandbox> --publish 127.0.0.1:8001:8000
+  The local LLM is the host's Docker Model Runner at host.docker.internal:12434.
+
+environment:
+  variables:
+    DEFAULT_LLM: docker
+    # Reach the host Model Runner from inside the sandbox (NOT localhost):
+    MODEL_RUNNER_URL: http://host.docker.internal:12434/engines/llama.cpp/v1
+    MODEL_RUNNER_MODEL: ai/qwen2.5:32k
+    # Obsidian vault mount = the knowledge base (memory + RAG). Adjust to your path.
+    OBSIDIAN_VAULT_PATH: /Users/mark.maxwelldocker.com/Obsidian/AI/AI-Victoria
+    ESCALATION_ENABLED: "true"
+
+commands:
+  install:
+    # Phase 1 = core deps only (the shell-docker image ships Python 3.14, too new
+    # for chromadb/faster-whisper/piper). Semantic memory + voice degrade
+    # gracefully when absent. Phase 2: pin Python 3.11 to install the full set.
+    - command: >-
+        pip3 install --break-system-packages
+        fastapi uvicorn httpx "pydantic>=2" pydantic-settings python-dotenv
+        aiofiles anthropic ddgs python-multipart cryptography
+      description: Install Victoria core dependencies
+  startup:
+    # A long-running service goes in startup/background (NOT entrypoint, which is
+    # the interactive agent process and dies on detach). Bind 0.0.0.0.
+    - command:
+        - sh
+        - -c
+        - cd /Users/mark.maxwelldocker.com/sandboxes/victoria-ai && python3 -m uvicorn victoria.main:app --host 0.0.0.0 --port 8000 > /tmp/victoria.log 2>&1
+      background: true
+      description: Start the Victoria API server on :8000
+
+sandbox:
+  image: docker/sandbox-templates:shell-docker
+  aiFilename: CLAUDE.md
+  entrypoint:
+    run: [bash]
