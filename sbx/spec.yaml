@@ -63,10 +63,14 @@ commands:
     # the interactive agent process and dies on detach). Bind 0.0.0.0; run from
     # the Python 3.11 venv so semantic memory + voice are available.
     #
-    # RACE GUARD: startup can fire before `install` has finished materialising the
-    # uv-managed interpreter, so /home/agent/venv/bin/python is a momentarily
-    # dangling symlink and uvicorn dies with "python: not found". We block until
-    # the interpreter actually runs (bounded to ~5 min) before exec'ing uvicorn.
+    # RACE GUARD: startup can fire before `install` has finished. Two distinct
+    # traps, both fatal to uvicorn:
+    #   1. `uv venv` hasn't run yet → /home/agent/venv/bin/python is a dangling
+    #      symlink → "python: not found".
+    #   2. The interpreter is runnable (uv venv done) but `uv pip install` is still
+    #      running → "No module named uvicorn" (and chromadb/etc. absent).
+    # So we gate on the real precondition for `uvicorn victoria.main:app`: the app
+    # itself importing (which requires the full dependency set). Bounded to ~6 min.
     - command:
         - sh
         - -c
@@ -74,17 +78,21 @@ commands:
           exec > /tmp/victoria.log 2>&1
           VENV=/home/agent/venv/bin/python
           STAGE=/Users/mark.maxwelldocker.com/sandboxes/victoria-ai
-          for i in $(seq 1 150); do
-            "$VENV" -c 'import sys' >/dev/null 2>&1 && break
-            echo "[startup] waiting for venv interpreter to be ready ($i/150)…"
+          cd "$STAGE"
+          for i in $(seq 1 180); do
+            "$VENV" -c 'import uvicorn, victoria.main' >/dev/null 2>&1 && break
+            echo "[startup] waiting for dependencies + app to import ($i/180)…"
             sleep 2
           done
-          "$VENV" -c 'import sys' >/dev/null 2>&1 || { echo "[startup] FATAL: venv interpreter never became runnable"; exit 1; }
-          echo "[startup] venv ready; launching uvicorn"
-          cd "$STAGE"
+          if ! "$VENV" -c 'import uvicorn, victoria.main' >/dev/null 2>&1; then
+            echo "[startup] FATAL: app never became importable — last error:"
+            "$VENV" -c 'import uvicorn, victoria.main'
+            exit 1
+          fi
+          echo "[startup] dependencies ready; launching uvicorn"
           exec "$VENV" -m uvicorn victoria.main:app --host 0.0.0.0 --port 8000
       background: true
-      description: Start the Victoria API server on :8000 (Python 3.11 venv; waits for the interpreter first)
+      description: Start the Victoria API server on :8000 (Python 3.11 venv; waits for the full dep install + app import first)
 
 sandbox:
   image: docker/sandbox-templates:shell-docker
