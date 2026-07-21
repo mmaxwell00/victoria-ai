@@ -111,9 +111,16 @@ mounts are **org-governed and case-sensitive** (`~/sandboxes/**`; the vault rule
 must match the folder case, `~/Obsidian/**`); the sandbox FS is per-instance, so
 deps are baked into the kit.
 
-**Deferred:** Phase 2 — pin **Python 3.11** in the kit for ChromaDB + voice (full
-parity). Phase 3 — tighten `network.allowedDomains` to an allowlist and move
-Victoria's vault secrets to the `sbx secret` engine.
+**Update (Phase 2 done):** the kit now installs the full dependency set on a
+uv-managed **Python 3.11** venv (uv ships in the image; the install steps run as
+`user: "1000"` so the venv is agent-executable). ChromaDB semantic memory is
+**active** and the Whisper/Piper voice deps install. Verified live: `/health`,
+chat, and `Semantic memory initialised at data/chromadb`. Native mic/wake-word
+stays N/A (a headless sandbox has no audio device; `sounddevice` can't init
+PortAudio) — browser voice is the path.
+
+**Deferred (Phase 3):** tighten `network.allowedDomains` to an allowlist (Q2);
+move Victoria's vault secrets to the `sbx secret` credential engine (Q3).
 
 **Supersedes:** the old `kind: sandbox` `sbx-kit.yaml` (invalid for sbx v0.35) —
 removed in this PR.
