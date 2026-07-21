@@ -62,12 +62,37 @@ commands:
     # A long-running service goes in startup/background (NOT entrypoint, which is
     # the interactive agent process and dies on detach). Bind 0.0.0.0; run from
     # the Python 3.11 venv so semantic memory + voice are available.
+    #
+    # RACE GUARD: startup can fire before `install` has finished. Two distinct
+    # traps, both fatal to uvicorn:
+    #   1. `uv venv` hasn't run yet → /home/agent/venv/bin/python is a dangling
+    #      symlink → "python: not found".
+    #   2. The interpreter is runnable (uv venv done) but `uv pip install` is still
+    #      running → "No module named uvicorn" (and chromadb/etc. absent).
+    # So we gate on the real precondition for `uvicorn victoria.main:app`: the app
+    # itself importing (which requires the full dependency set). Bounded to ~6 min.
     - command:
         - sh
         - -c
-        - cd /Users/mark.maxwelldocker.com/sandboxes/victoria-ai && /home/agent/venv/bin/python -m uvicorn victoria.main:app --host 0.0.0.0 --port 8000 > /tmp/victoria.log 2>&1
+        - |
+          exec > /tmp/victoria.log 2>&1
+          VENV=/home/agent/venv/bin/python
+          STAGE=/Users/mark.maxwelldocker.com/sandboxes/victoria-ai
+          cd "$STAGE"
+          for i in $(seq 1 180); do
+            "$VENV" -c 'import uvicorn, victoria.main' >/dev/null 2>&1 && break
+            echo "[startup] waiting for dependencies + app to import ($i/180)…"
+            sleep 2
+          done
+          if ! "$VENV" -c 'import uvicorn, victoria.main' >/dev/null 2>&1; then
+            echo "[startup] FATAL: app never became importable — last error:"
+            "$VENV" -c 'import uvicorn, victoria.main'
+            exit 1
+          fi
+          echo "[startup] dependencies ready; launching uvicorn"
+          exec "$VENV" -m uvicorn victoria.main:app --host 0.0.0.0 --port 8000
       background: true
-      description: Start the Victoria API server on :8000 (Python 3.11 venv)
+      description: Start the Victoria API server on :8000 (Python 3.11 venv; waits for the full dep install + app import first)
 
 sandbox:
   image: docker/sandbox-templates:shell-docker
