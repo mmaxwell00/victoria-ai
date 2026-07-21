@@ -66,6 +66,11 @@ victoria-ai/
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
 ├── tests/                      # 335 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
+├── deploy-sandbox.sh           # Deploy Victoria into an isolated Docker Sandbox (sbx)
+├── sbx/
+│   └── spec.yaml               # Docker Sandbox kit — packed & run by deploy-sandbox.sh
+├── SANDBOX-DEPLOYMENT.md       # Docker Sandbox deployment guide (+ gotchas, roadmap)
+├── SECURITY-AUDIT.md           # Sandbox egress-hardening plan (Phase 3)
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
@@ -471,6 +476,23 @@ This starts:
 - `victoria-telegram` (Telegram bot)
 
 Both containers connect to Docker Model Runner on the host via `model-runner.docker.internal`.
+
+### Docker Sandbox — isolated (sbx)
+
+For hardware-level isolation from the host, run Victoria inside a **Docker
+Sandbox**: an isolated Linux microVM that mounts only approved paths, while the
+heavy local LLM stays on the host's Model Runner. The full dependency set (incl.
+ChromaDB semantic memory) installs on a Python 3.11 venv, and the HUD is
+published to `127.0.0.1:8001`.
+
+```bash
+./deploy-sandbox.sh          # stages code, packs the sbx kit, runs it, publishes the HUD
+open http://127.0.0.1:8001   # use 127.0.0.1 — NOT localhost (resolves to ::1)
+```
+
+See **[SANDBOX-DEPLOYMENT.md](SANDBOX-DEPLOYMENT.md)** for the full guide,
+architecture, gotchas, and the Phase 3 hardening roadmap
+([SECURITY-AUDIT.md](SECURITY-AUDIT.md)).
 
 ---
 
