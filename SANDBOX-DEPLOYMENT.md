@@ -61,6 +61,15 @@ It packs [`sbx/spec.yaml`](sbx/spec.yaml) (`sbx kit pack`), runs it
 - **IPv4-only.** Publish/curl via `127.0.0.1`; `localhost` → `::1` resets the connection.
 - **Mounts are org-governed and case-sensitive.** Code under `~/sandboxes/**`; the vault rule must match the folder's exact case (`~/Obsidian/**`, capital O).
 - **The sandbox filesystem is per-instance** — `sbx rm` + recreate wipes installed deps, so they're baked into the kit's `install`.
+- **`startup` can race `install`.** On first boot the startup service may fire
+  before `uv venv` has finished materialising the interpreter, so
+  `/home/agent/venv/bin/python` is a momentarily dangling symlink and uvicorn dies
+  with `python: not found` (one line in `/tmp/victoria.log`, service down, `/health`
+  connection-reset). The kit's startup command now **blocks until the interpreter
+  actually runs** (bounded ~5 min) before launching uvicorn. If a running sandbox
+  is ever in this state, the venv is already built — relaunch the service from the
+  kit (redeploy) rather than `sbx exec`-ing it (exec-started procs aren't the
+  supervised service).
 
 ## Isolation & credentials
 

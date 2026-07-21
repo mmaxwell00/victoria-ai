@@ -62,12 +62,29 @@ commands:
     # A long-running service goes in startup/background (NOT entrypoint, which is
     # the interactive agent process and dies on detach). Bind 0.0.0.0; run from
     # the Python 3.11 venv so semantic memory + voice are available.
+    #
+    # RACE GUARD: startup can fire before `install` has finished materialising the
+    # uv-managed interpreter, so /home/agent/venv/bin/python is a momentarily
+    # dangling symlink and uvicorn dies with "python: not found". We block until
+    # the interpreter actually runs (bounded to ~5 min) before exec'ing uvicorn.
     - command:
         - sh
         - -c
-        - cd /Users/mark.maxwelldocker.com/sandboxes/victoria-ai && /home/agent/venv/bin/python -m uvicorn victoria.main:app --host 0.0.0.0 --port 8000 > /tmp/victoria.log 2>&1
+        - |
+          exec > /tmp/victoria.log 2>&1
+          VENV=/home/agent/venv/bin/python
+          STAGE=/Users/mark.maxwelldocker.com/sandboxes/victoria-ai
+          for i in $(seq 1 150); do
+            "$VENV" -c 'import sys' >/dev/null 2>&1 && break
+            echo "[startup] waiting for venv interpreter to be ready ($i/150)…"
+            sleep 2
+          done
+          "$VENV" -c 'import sys' >/dev/null 2>&1 || { echo "[startup] FATAL: venv interpreter never became runnable"; exit 1; }
+          echo "[startup] venv ready; launching uvicorn"
+          cd "$STAGE"
+          exec "$VENV" -m uvicorn victoria.main:app --host 0.0.0.0 --port 8000
       background: true
-      description: Start the Victoria API server on :8000 (Python 3.11 venv)
+      description: Start the Victoria API server on :8000 (Python 3.11 venv; waits for the interpreter first)
 
 sandbox:
   image: docker/sandbox-templates:shell-docker
