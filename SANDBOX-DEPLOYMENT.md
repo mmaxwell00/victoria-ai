@@ -1,9 +1,12 @@
 # Victoria in a Docker Sandbox (sbx)
 
 Run Victoria as a **persistent service inside an isolated Docker Sandbox** —
-hardware-isolated from the host filesystem/processes, default-deny egress,
-credentials proxied in — while the heavy local LLM stays on the host's Docker
-Model Runner. **Verified working end-to-end (Phase 1).**
+hardware-isolated from the host filesystem/processes — while the heavy local LLM
+stays on the host's Docker Model Runner. Tightened egress (an allowlist) and
+secret-engine credentials are the **Phase 3** hardening target (see
+[`SECURITY-AUDIT.md`](SECURITY-AUDIT.md)); today the sandbox runs on the org's
+broad network allow. **Verified working end-to-end (Phase 2 — full dependency set
++ ChromaDB semantic memory).**
 
 ![Victoria running inside a Docker Sandbox](docs/screenshots/sbx-hud.png)
 
@@ -40,7 +43,7 @@ It packs [`sbx/spec.yaml`](sbx/spec.yaml) (`sbx kit pack`), runs it
 (`sbx run --kit … victoria <repo> <vault>`), and publishes the port
 (`sbx ports … --publish 127.0.0.1:8001:8000`). The kit header lists the exact commands.
 
-## Verified working (Phase 1)
+## Verified working (Phase 2)
 
 | Capability | Status |
 |---|---|
