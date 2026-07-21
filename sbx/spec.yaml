@@ -24,8 +24,9 @@ name: victoria
 displayName: Victoria AI
 description: >-
   Victoria assistant (FastAPI HUD) as a persistent Docker Sandbox service,
-  backed by the host's Docker Model Runner. Phase 1 installs the core
-  dependencies and runs uvicorn as a background startup service.
+  backed by the host's Docker Model Runner. Installs the FULL dependency set on
+  a uv-managed Python 3.11 venv (semantic memory + voice) and runs uvicorn as a
+  background startup service.
 
 agentContext: |
   Victoria's API + HUD run on port 8000 inside this sandbox. Publish to the host:
@@ -44,23 +45,29 @@ environment:
 
 commands:
   install:
-    # Phase 1 = core deps only (the shell-docker image ships Python 3.14, too new
-    # for chromadb/faster-whisper/piper). Semantic memory + voice degrade
-    # gracefully when absent. Phase 2: pin Python 3.11 to install the full set.
-    - command: >-
-        pip3 install --break-system-packages
-        fastapi uvicorn httpx "pydantic>=2" pydantic-settings python-dotenv
-        aiofiles anthropic ddgs python-multipart cryptography
-      description: Install Victoria core dependencies
+    # System libs: ffmpeg (Whisper STT) + PortAudio (sounddevice). Root user.
+    - command: apt-get update -qq && apt-get install -y -qq ffmpeg libportaudio2
+      user: "0"
+      description: System libraries for voice (Whisper ffmpeg + PortAudio)
+    # The shell-docker image ships Python 3.14 — too new for chromadb / faster-
+    # whisper / piper. uv (preinstalled in the image) manages a Python 3.11 venv
+    # so the FULL dependency set installs → semantic memory (ChromaDB) + voice.
+    - command: uv venv /home/agent/venv --python 3.11
+      user: "1000"
+      description: Create a uv-managed Python 3.11 virtualenv (as the agent user)
+    - command: uv pip install --python /home/agent/venv/bin/python -r /Users/mark.maxwelldocker.com/sandboxes/victoria-ai/requirements.txt
+      user: "1000"
+      description: Install the full Victoria dependency set as the agent (ChromaDB + voice + all)
   startup:
     # A long-running service goes in startup/background (NOT entrypoint, which is
-    # the interactive agent process and dies on detach). Bind 0.0.0.0.
+    # the interactive agent process and dies on detach). Bind 0.0.0.0; run from
+    # the Python 3.11 venv so semantic memory + voice are available.
     - command:
         - sh
         - -c
-        - cd /Users/mark.maxwelldocker.com/sandboxes/victoria-ai && python3 -m uvicorn victoria.main:app --host 0.0.0.0 --port 8000 > /tmp/victoria.log 2>&1
+        - cd /Users/mark.maxwelldocker.com/sandboxes/victoria-ai && /home/agent/venv/bin/python -m uvicorn victoria.main:app --host 0.0.0.0 --port 8000 > /tmp/victoria.log 2>&1
       background: true
-      description: Start the Victoria API server on :8000
+      description: Start the Victoria API server on :8000 (Python 3.11 venv)
 
 sandbox:
   image: docker/sandbox-templates:shell-docker

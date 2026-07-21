@@ -49,7 +49,8 @@ It packs [`sbx/spec.yaml`](sbx/spec.yaml) (`sbx kit pack`), runs it
 | Obsidian **knowledge base** (mounted vault → memory/RAG) | ✅ |
 | Dashboard — weather · markets (stocks + Gold/Silver + S&P/NASDAQ volume) · NBC+Fox | ✅ |
 | Egress for tools/dashboard | ✅ |
-| Semantic memory (ChromaDB) + native voice | ⏳ degrade gracefully; need Python 3.11 (Phase 2) |
+| **Semantic memory (ChromaDB)** | ✅ (Phase 2 — uv-managed Python 3.11 venv) |
+| Voice — browser (Whisper STT + Piper TTS) | ✅ · native mic/wake-word N/A in a headless sandbox (no audio device) |
 
 ## Gotchas (all real, learned the hard way)
 
@@ -70,5 +71,11 @@ It packs [`sbx/spec.yaml`](sbx/spec.yaml) (`sbx kit pack`), runs it
 
 ## Roadmap
 
-- **Phase 2** — pin **Python 3.11** in the kit image so ChromaDB + voice deps install (full feature parity).
-- **Phase 3** — tighten egress to an allowlist; move Victoria's vault secrets to `sbx secret`.
+- **Phase 2 — done.** The kit installs the full dependency set on a **uv-managed
+  Python 3.11 venv** (uv ships in the shell-docker image), so ChromaDB (semantic
+  memory) is active and the Whisper/Piper voice deps install. *Gotcha:* the `uv`
+  install steps must run as the **agent user (`user: "1000"`)** so the venv +
+  interpreter are agent-executable; and `sounddevice`/PortAudio can't initialise
+  in a headless sandbox (native mic is out — browser voice is the path).
+- **Phase 3** — tighten egress to an allowlist (Q2); move Victoria's vault
+  secrets to the `sbx secret` credential engine (Q3).
