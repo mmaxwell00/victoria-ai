@@ -31,24 +31,57 @@ HOST (macOS)                          SANDBOX microVM (Linux, isolated)
   Browser ────────────────────────────▶  the HUD
 ```
 
-## Prerequisites
+## Quickstart — fresh Mac (start to finish)
 
-- **`sbx`** — `brew install docker/tap/sbx` (macOS) / `winget install Docker.sbx` (Windows)
-- **Docker Desktop** + **Model Runner** with host TCP: `docker desktop enable model-runner --tcp=12434`, and a model pulled (`docker model pull ai/qwen2.5`)
-- **Mount policy** (this environment is org-governed): a sandbox may only mount
-  approved roots. Code is staged under **`~/sandboxes/**`** (allowed); the Obsidian
-  vault needs its own filesystem-allow rule for its exact path (e.g. `~/Obsidian/**`).
+**Prerequisites**
 
-## Deploy
+- **Apple Silicon Mac, 16 GB+ RAM recommended** — a local LLM lives in RAM (the
+  default `ai/qwen2.5` is ~4–5 GB), plus a few GB of disk for the image, the
+  Python 3.11 venv, and the voice model.
+- **Homebrew**, **git**, and **Docker Desktop** (a recent version with Model
+  Runner), installed and running.
+
+**Steps**
 
 ```bash
-./deploy-sandbox.sh          # stages code, packs the kit, runs it, publishes the HUD
-open http://127.0.0.1:8001   # use 127.0.0.1 — NOT localhost (resolves to ::1)
+# 1. Tooling (skip any you already have)
+brew install --cask docker            # then launch Docker Desktop once
+brew install docker/tap/sbx
+sbx login                             # sign in (required where sandboxes are org-governed)
+
+# 2. Host Model Runner + a model (pull the tag MODEL_RUNNER_MODEL names in sbx/spec.yaml)
+docker desktop enable model-runner --tcp=12434
+docker model pull ai/qwen2.5:32k
+
+# 3. Clone the repo (this is where you run the deploy from)
+git clone https://github.com/mmaxwell00/victoria-ai.git ~/victoria-ai && cd ~/victoria-ai
+
+# 4. Deploy — stages code + the Piper voice model, packs the kit, runs it, publishes the HUD.
+#    Point it at your Obsidian vault if you have one (optional; omit to run without the KB):
+VAULT_PATH="$HOME/Obsidian/AI/AI-Victoria" ./deploy-sandbox.sh
+
+# 5. Open the HUD — use 127.0.0.1, NOT localhost (localhost resolves to ::1 and resets)
+open http://127.0.0.1:8001
 ```
 
-It packs [`sbx/spec.yaml`](sbx/spec.yaml) (`sbx kit pack`), runs it
-(`sbx run --kit … victoria <repo> <vault>`), and publishes the port
-(`sbx ports … --publish 127.0.0.1:8001:8000`). The kit header lists the exact commands.
+First run is slow (a few minutes — it builds the venv and installs the full
+dependency set). Verify with `curl -4 -sS http://127.0.0.1:8001/health` (expect
+`"status":"ok"`, `"semantic_memory":true`).
+
+**Mount policy.** `deploy-sandbox.sh` mounts `~/sandboxes/victoria-ai` (staged
+code) and your vault path. Where sandboxes are **org-governed** (e.g. Docker's
+`mmaxwelldemoorg`), an admin must allow-list those roots in Docker Home —
+**case-sensitive** (`~/Obsidian/**`, capital O); a denied mount surfaces as
+`403 mount policy denied`. On an un-governed/personal setup, home subfolders are
+generally allowed.
+
+**No per-user edits needed.** sbx mounts a host path at that same absolute path
+inside the sandbox, so the kit's repo/vault paths are host-specific — but
+[`sbx/spec.yaml`](sbx/spec.yaml) keeps them as `__VICTORIA_REPO__` /
+`__VICTORIA_VAULT__` placeholders that the deploy script substitutes at pack time.
+Override any default via env: `SBX_NAME`, `REPO_STAGE`, `VAULT_PATH`, `HOST_PORT`.
+(`sbx login`, escalation via `sbx secret set -g anthropic`, and voice being
+browser-based are covered below and in the gotchas.)
 
 ## Verified working (Phase 2)
 
