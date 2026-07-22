@@ -49,6 +49,12 @@ environment:
     # substituted by deploy-sandbox.sh (VAULT_PATH); host path == in-sandbox path.
     OBSIDIAN_VAULT_PATH: __VICTORIA_VAULT__
     ESCALATION_ENABLED: "true"
+    # Claude escalation auth (subscription). Long-lived token from `claude
+    # setup-token`; injected as CLAUDE_CODE_OAUTH_TOKEN for the `claude -p`
+    # subprocess. NEVER committed — deploy-sandbox.sh substitutes this placeholder
+    # from $CLAUDE_CODE_OAUTH_TOKEN or ~/.victoria/claude-oauth-token (empty if
+    # neither exists → escalation stays off, local model answers).
+    CLAUDE_CLI_OAUTH_TOKEN: "__CLAUDE_OAUTH_TOKEN__"
 
 # ── Egress allowlist (Phase 3 hardening target) ──────────────────────────────
 # IMPORTANT: this bites ONLY under a default-deny network baseline. Per Docker's
@@ -95,6 +101,13 @@ commands:
     - command: apt-get update -qq && apt-get install -y -qq ffmpeg libportaudio2
       user: "0"
       description: System libraries for voice (Whisper ffmpeg + PortAudio)
+    # Claude Code CLI — the "Claude" backend / escalation shells out to `claude`
+    # (subscription auth). Installed globally (node ships in the image) so it's on
+    # PATH for the agent-run uvicorn subprocess. Auth is the CLAUDE_CLI_OAUTH_TOKEN
+    # below; without it, escalation degrades gracefully (local model answers).
+    - command: npm install -g @anthropic-ai/claude-code || echo "[install] claude CLI install failed — escalation unavailable, local model still answers"
+      user: "0"
+      description: Claude Code CLI for the Claude escalation backend (subscription auth; non-fatal)
     # The shell-docker image ships Python 3.14 — too new for chromadb / faster-
     # whisper / piper. uv (preinstalled in the image) manages a Python 3.11 venv
     # so the FULL dependency set installs → semantic memory (ChromaDB) + voice.

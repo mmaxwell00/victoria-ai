@@ -79,11 +79,24 @@ fi
 #    paths are host-specific. The committed spec.yaml keeps them as placeholders
 #    (__VICTORIA_REPO__ / __VICTORIA_VAULT__); fill them into a throwaway build
 #    copy here so the repo stays username-agnostic.
+# Claude escalation token (optional, NEVER committed). Prefer $CLAUDE_CODE_OAUTH_TOKEN,
+# else an untracked local file. Empty → escalation stays off (local model answers).
+CLAUDE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
+if [ -z "$CLAUDE_OAUTH_TOKEN" ] && [ -f "$HOME/.victoria/claude-oauth-token" ]; then
+  CLAUDE_OAUTH_TOKEN="$(tr -d '\r\n' < "$HOME/.victoria/claude-oauth-token")"
+fi
+[ -n "$CLAUDE_OAUTH_TOKEN" ] && say "Claude escalation: enabled (subscription token found)" \
+  || warn "Claude escalation: OFF — no token ($CLAUDE_CODE_OAUTH_TOKEN env or ~/.victoria/claude-oauth-token). Local model still answers."
+
 BUILD_DIR="$(mktemp -d)"; trap 'rm -rf "$BUILD_DIR"' EXIT
 cp -R "$KIT_DIR/." "$BUILD_DIR/"
-sed -e "s#__VICTORIA_REPO__#${REPO_STAGE}#g" -e "s#__VICTORIA_VAULT__#${VAULT_PATH}#g" \
+sed -e "s#__VICTORIA_REPO__#${REPO_STAGE}#g" \
+    -e "s#__VICTORIA_VAULT__#${VAULT_PATH}#g" \
+    -e "s#__CLAUDE_OAUTH_TOKEN__#${CLAUDE_OAUTH_TOKEN}#g" \
   "$KIT_DIR/spec.yaml" > "$BUILD_DIR/spec.yaml"
-if grep -q "__VICTORIA_" "$BUILD_DIR/spec.yaml"; then fail "Placeholder substitution failed in $BUILD_DIR/spec.yaml"; fi
+if grep -qE "__(VICTORIA_REPO|VICTORIA_VAULT|CLAUDE_OAUTH_TOKEN)__" "$BUILD_DIR/spec.yaml"; then
+  fail "Placeholder substitution failed in $BUILD_DIR/spec.yaml"
+fi
 say "Packing kit -> $KIT_ZIP  (repo=$REPO_STAGE)"
 sbx kit pack "$BUILD_DIR" -o "$KIT_ZIP" >/dev/null
 sbx rm "$SBX_NAME" --force >/dev/null 2>&1 || true
