@@ -47,11 +47,12 @@ environment:
 # IMPORTANT: this bites ONLY under a default-deny network baseline. Per Docker's
 # governance model, an ACTIVE org policy overrides kit-defined rules — and this
 # org has a blanket `NetworkAll: allow **` applied to all sandboxes, so the list
-# below is currently INERT (nothing is actually restricted). Activating it needs
-# an org admin to scope that blanket allow off this sandbox (or add a per-sandbox
-# default-deny). See SECURITY-AUDIT.md. Kept here so the hardened target is ready
-# and correct the moment org egress is tightened. `deniedDomains` is unnecessary:
-# the org already enforces its own denies (DPRK, etc.).
+# below is currently INERT (nothing is actually restricted), by deliberate choice.
+# sbx network governance is org/team-scoped (NOT per-sandbox), so activating this
+# means tightening the org-wide `NetworkAll` policy in Docker Home — which affects
+# every sandbox, not just Victoria. See SECURITY-AUDIT.md. Kept here as the ready,
+# correct target so a future org-wide default-deny activates cleanly.
+# `deniedDomains` is unnecessary: the org already enforces its own denies (DPRK, etc.).
 network:
   allowedDomains:
     # -- Local LLM: host Model Runner via the sandbox's host gateway --

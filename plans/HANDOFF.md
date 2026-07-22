@@ -52,14 +52,19 @@ Docker Sandbox deployment: **DONE through Phase 2** (PRs #62, #63 merged).
 - `./deploy-sandbox.sh` reproduces the whole thing.
 
 IN PROGRESS / NOT DONE:
-- **Phase 3 (hardening): PARTIAL (Phase 3 PR).** Q3 (credentials) DONE: `resolve()`
-  falls back to `os.environ`, and the sbx proxy injects the `github` secret as
-  `GH_TOKEN` (resolves transparently). Q2 (egress) is WRITTEN into the kit
-  (`network.allowedDomains`) but **INERT** — the org `NetworkAll` (`allow **`)
-  policy overrides kit rules (verified: `example.com` still returns 200 inside the
-  sandbox). Activating egress needs an **org-admin** change to scope `NetworkAll`
-  off the `victoria` sandbox; and for a tight runtime-only allowlist, deps should
-  be baked into a custom image (build-time egress otherwise breaks creation).
+- **Phase 3 (hardening): Q3 DONE; Q2 intentionally deferred (Phase 3 PR).** Q3
+  (credentials) DONE: `resolve()` falls back to `os.environ`, and the sbx proxy
+  injects the `github` secret as `GH_TOKEN` (resolves transparently). Q2 (egress)
+  is WRITTEN into the kit (`network.allowedDomains`) but **INERT by decision (C)** —
+  the org `NetworkAll` (`allow **`) overrides kit rules (verified: `example.com`
+  still returns 200 inside the sandbox, even in the `sandbox:victoria` context).
+  sbx egress governance is **org/team-scoped, not per-sandbox**, and all sandboxes
+  share Mark's Docker identity, so there is NO way to harden only `victoria`.
+  Activating egress means tightening the org-wide `NetworkAll` in Docker Home
+  (affects every sandbox) — deliberately NOT done; the sandbox's hardware isolation
+  is the security property we wanted. Kit block kept as documented target. For a
+  tight runtime-only allowlist later, bake deps into a custom image (build-time
+  egress otherwise breaks creation).
 - **RAG Phase 1b: NOT started.** ChromaDB is active but only stores conversation
   turns (`semantic_memory.py`); there is no vault-note ingestion/retrieval yet.
 - **AI-vault-as-memory (Phase 2 of knowledge): NOT started.**
@@ -143,15 +148,18 @@ Resume + verify the sandbox (do this first):
 2. Redeploy: `cd ~/victoria-ai && ./deploy-sandbox.sh` (idempotent: stages the clone, packs `sbx/`, runs, publishes `127.0.0.1:8001`).
 3. Verify: `curl -4 -sS http://127.0.0.1:8001/health` (expect 200); `sbx exec victoria -- grep -i "semantic memory" /tmp/victoria.log` (expect "Semantic memory initialised").
 
-Phase 3 hardening (the Phase 3 PR landed the below; egress activation is the open item):
-4. Egress (Q2): DONE-BUT-INERT. The `network.allowedDomains` block is in
-   `sbx/spec.yaml`, but the org `NetworkAll` (`allow **`) overrides it (verified:
-   `example.com` → 200 inside the sandbox). **OPEN — needs org admin:** scope
-   `NetworkAll` off the `victoria` sandbox (or push a per-sandbox default-deny),
-   then verify `sbx exec victoria -- curl … https://example.com` FAILS while chat +
-   dashboard still work. For a tight runtime-only allowlist, first bake deps into a
-   custom base image (build-time egress otherwise breaks sandbox creation). Full
-   activation steps + evidence in `SECURITY-AUDIT.md`.
+Phase 3 hardening (the Phase 3 PR landed the below):
+4. Egress (Q2): WRITTEN-BUT-INERT, deliberately deferred (decision C). The
+   `network.allowedDomains` block is in `sbx/spec.yaml`, but the org `NetworkAll`
+   (`allow **`) overrides it (verified: `example.com` → 200 inside the sandbox).
+   sbx egress governance is **org/team-scoped, not per-sandbox** — and all
+   sandboxes share Mark's Docker identity — so hardening ONLY `victoria` is not
+   supported. The only real lever is tightening the org-wide `NetworkAll` in Docker
+   Home (Governance API), which flips EVERY sandbox to default-deny; not done on
+   purpose (sandbox hardware isolation is the security property we wanted). If ever
+   activated: first bake deps into a custom base image (build-time egress otherwise
+   breaks sandbox creation), then verify `sbx exec victoria -- curl … example.com`
+   FAILS while chat + dashboard still work. Full detail in `SECURITY-AUDIT.md`.
 5. Credentials (Q3): DONE. `victoria/vault/store.py` `resolve()` now falls back to
    `os.environ` (vault wins if both set; missing name still left intact). The sbx
    proxy injects the `github` secret as env `GH_TOKEN` (resolves transparently);

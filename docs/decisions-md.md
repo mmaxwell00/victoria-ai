@@ -88,7 +88,9 @@ Items awaiting decision before implementation can proceed.
 ### 2026-07-22 · Sandbox Phase 3 hardening — egress blocked by org policy; credential env-fallback
 
 **Status:** Q3 (credentials) implemented + verified. Q2 (egress) written into the
-kit but **inert** pending an org-admin change (see below). This PR.
+kit but intentionally **inert** — sbx egress governance is org-wide/team-scoped,
+not per-sandbox, so we chose to leave egress broad (decision C) rather than flip
+all sandboxes to default-deny for one. This PR.
 
 **Context:** Phase 3 aimed to (Q2) restrict the sandbox's outbound egress to an
 allowlist and (Q3) resolve credentials from the sbx secret engine instead of
@@ -99,13 +101,20 @@ top-level `network.allowedDomains` block in `sbx/spec.yaml`. But this environmen
 is governed by org policy `NetworkAll` (`allow ** network`, applies to all
 sandboxes, active), and Docker's model has an **active org rule override
 kit-defined network rules**. Verified empirically: from inside the sandbox a
-non-allowlisted host (`https://example.com`) still returns HTTP 200. So the kit
-allowlist restricts nothing today. **Activation requires an org admin** to scope
-`NetworkAll` off the `victoria` sandbox (or push a per-sandbox default-deny). The
-block is kept in the kit as the ready, correct target. Also noted: the kit does
-build-time installs (apt/pip/uv/HF), so a strict runtime-only allowlist would
-break sandbox creation — the durable fix for a tight posture is to bake deps into
-a custom base image, then trim the allowlist.
+non-allowlisted host (`https://example.com`) still returns HTTP 200 (including in
+the `sandbox:victoria` policy context). So the kit allowlist restricts nothing
+today. Crucially, sbx network governance is scoped **by org / team (user
+membership), not per sandbox**, and all these sandboxes run under one Docker
+identity — so there is **no supported way to harden only Victoria**. Tightening
+egress means editing the org-wide `NetworkAll` policy in Docker Home (affects every
+sandbox) or a team-scoped policy under a separate identity. **Decision (C): leave
+egress broad** — the sandbox already gives the hardware/process isolation we
+wanted, and org-wide default-deny carries a blast radius across all sandboxes for
+one assistant's benefit. The kit block stays as the ready target so a future
+org-wide default-deny activates cleanly. Also noted: the kit does build-time
+installs (apt/pip/uv/HF), so a strict runtime-only allowlist would break sandbox
+creation — the durable fix for a tight posture is to bake deps into a custom base
+image, then trim the allowlist.
 
 **Q3 — credentials (done).** Extended `victoria/vault/store.py` `resolve()` so a
 `${vault:NAME}` not in the encrypted store falls back to `os.environ.get(NAME)`
