@@ -84,6 +84,13 @@ It packs [`sbx/spec.yaml`](sbx/spec.yaml) (`sbx kit pack`), runs it
   If a running sandbox is ever wedged this way the venv is already built — relaunch
   the service from the kit (redeploy) rather than `sbx exec`-ing it (exec-started
   procs aren't the supervised service).
+- **The Piper voice model isn't in the clone.** `models/*.onnx` is large and
+  gitignored, so the staged clone (and thus the sandbox) doesn't get it — and
+  `/v1/tts` then 503s (`Piper model not found`): Victoria hears you (Whisper STT)
+  but can't speak. `deploy-sandbox.sh` now stages `models/en_GB-jenny_dioco-medium.onnx`
+  into `$REPO_STAGE/models` (copy from a native checkout, else download from Hugging
+  Face). It lands in the mounted repo, so it survives `sbx rm` and needs staging only
+  once. Pip won't rebuild it; the fix is purely getting the file in place.
 
 ## Isolation & credentials
 
