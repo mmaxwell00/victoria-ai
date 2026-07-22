@@ -45,11 +45,33 @@ docker model ls >/dev/null 2>&1 && [ "$(docker model ls | tail -n +2 | wc -l | t
 say "Mount policy note: code must be under ~/sandboxes/**; the vault ($VAULT_PATH) needs an org fs-allow rule."
 
 # 4. Stage the code under the allowed root
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ ! -d "$REPO_STAGE" ]; then
   say "Staging code -> $REPO_STAGE"
-  git clone -q "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" "$REPO_STAGE"
+  git clone -q "$HERE" "$REPO_STAGE"
 else
   say "Code already staged at $REPO_STAGE"
+fi
+
+# 4b. Stage the Piper voice model (TTS). It's large + gitignored, so it never
+#     rides along in the clone — without it, /v1/tts 503s ("Piper model not
+#     found") and Victoria can hear you but can't speak. Copy from a native
+#     checkout if present (fast, local), else pull it from Hugging Face.
+PIPER_ONNX="en_GB-jenny_dioco-medium.onnx"
+if [ ! -f "$REPO_STAGE/models/$PIPER_ONNX" ]; then
+  mkdir -p "$REPO_STAGE/models"
+  if [ -f "$HERE/models/$PIPER_ONNX" ]; then
+    say "Staging Piper voice model (copy from $HERE/models)"
+    cp "$HERE/models/$PIPER_ONNX" "$HERE/models/$PIPER_ONNX.json" "$REPO_STAGE/models/"
+  else
+    say "Downloading Piper voice model -> $REPO_STAGE/models (Hugging Face)"
+    PIPER_URL="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/jenny_dioco/medium"
+    curl -fL --progress-bar -o "$REPO_STAGE/models/$PIPER_ONNX"      "$PIPER_URL/$PIPER_ONNX" \
+      && curl -fL --silent   -o "$REPO_STAGE/models/$PIPER_ONNX.json" "$PIPER_URL/$PIPER_ONNX.json" \
+      || warn "Piper model download failed — TTS (spoken replies) will be unavailable until models/$PIPER_ONNX exists."
+  fi
+else
+  say "Piper voice model already staged"
 fi
 
 # 5. Pack + run the kit (agent name must equal the kit name)
