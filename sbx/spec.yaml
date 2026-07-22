@@ -1,22 +1,28 @@
-# Victoria — Docker Sandboxes kit (verified working end-to-end, Phase 1).
+# Victoria — Docker Sandboxes kit (verified working end-to-end).
 #
 # WHY A PACKED KIT: sbx (v0.35) kits are packed artifacts (spec.yaml + optional
-# files/), NOT a raw YAML. This directory is packed with `sbx kit pack sbx/`.
+# files/), NOT a raw YAML.
 #
-# RUN IT:
-#   # 1. Code must live under an org-allowed mount root (~/sandboxes/**):
-#   git clone <this-repo> ~/sandboxes/victoria-ai
-#   # 2. Pack + run (agent name must equal the kit name, "victoria"):
-#   sbx kit pack sbx/ -o /tmp/victoria-kit.zip
-#   sbx run --kit /tmp/victoria-kit.zip --name victoria -d \
-#       victoria ~/sandboxes/victoria-ai ~/Obsidian/AI/AI-Victoria
-#   # 3. Publish the HUD (IPv4 — the service is IPv4-only):
-#   sbx ports victoria --publish 127.0.0.1:8001:8000
-#   open http://127.0.0.1:8001          # use 127.0.0.1, NOT localhost (resolves to ::1)
+# DEPLOY WITH ./deploy-sandbox.sh — it is the supported entry point. sbx mounts a
+# host path at that SAME absolute path inside the sandbox (no remapping), so the
+# repo/vault paths below are host-username-specific. To keep this kit portable,
+# they are written as placeholders that the deploy script substitutes at pack time:
+#   __VICTORIA_REPO__   -> the staged repo   (default: $HOME/sandboxes/victoria-ai)
+#   __VICTORIA_VAULT__  -> the Obsidian vault (default: $HOME/Obsidian/AI/AI-Victoria)
+# Do NOT `sbx kit pack sbx/` directly — you'd ship the literal placeholders. Run
+# ./deploy-sandbox.sh (or replicate its substitute→pack→run→publish steps).
 #
-# The vault mount needs an org filesystem-allow rule for its path (e.g. ~/Obsidian/**).
-# Paths below are the in-sandbox mount paths (= the host paths passed to `sbx run`,
-# direct-mounted). Adjust the username/paths for your host.
+# What the deploy script does, in effect:
+#   1. Stage code under an allowed mount root:  git clone <repo> $HOME/sandboxes/victoria-ai
+#   2. Substitute the placeholders into a spec copy, then pack + run (agent name = kit name):
+#        sbx kit pack <build> -o /tmp/victoria-kit.zip
+#        sbx run --kit /tmp/victoria-kit.zip --name victoria -d victoria <repo> <vault>
+#   3. Publish the HUD (IPv4 — the service is IPv4-only):
+#        sbx ports victoria --publish 127.0.0.1:8001:8000
+#        open http://127.0.0.1:8001        # use 127.0.0.1, NOT localhost (resolves to ::1)
+#
+# The vault mount needs a filesystem-allow rule for its path where sandboxes are
+# org-governed (e.g. ~/Obsidian/**, case-sensitive).
 
 schemaVersion: "1"
 kind: sandbox
@@ -39,8 +45,9 @@ environment:
     # Reach the host Model Runner from inside the sandbox (NOT localhost):
     MODEL_RUNNER_URL: http://host.docker.internal:12434/engines/llama.cpp/v1
     MODEL_RUNNER_MODEL: ai/qwen2.5:32k
-    # Obsidian vault mount = the knowledge base (memory + RAG). Adjust to your path.
-    OBSIDIAN_VAULT_PATH: /Users/mark.maxwelldocker.com/Obsidian/AI/AI-Victoria
+    # Obsidian vault mount = the knowledge base (memory + RAG). Placeholder
+    # substituted by deploy-sandbox.sh (VAULT_PATH); host path == in-sandbox path.
+    OBSIDIAN_VAULT_PATH: __VICTORIA_VAULT__
     ESCALATION_ENABLED: "true"
 
 # ── Egress allowlist (Phase 3 hardening target) ──────────────────────────────
@@ -94,7 +101,7 @@ commands:
     - command: uv venv /home/agent/venv --python 3.11
       user: "1000"
       description: Create a uv-managed Python 3.11 virtualenv (as the agent user)
-    - command: uv pip install --python /home/agent/venv/bin/python -r /Users/mark.maxwelldocker.com/sandboxes/victoria-ai/requirements.txt
+    - command: uv pip install --python /home/agent/venv/bin/python -r __VICTORIA_REPO__/requirements.txt
       user: "1000"
       description: Install the full Victoria dependency set as the agent (ChromaDB + voice + all)
   startup:
@@ -116,7 +123,7 @@ commands:
         - |
           exec > /tmp/victoria.log 2>&1
           VENV=/home/agent/venv/bin/python
-          STAGE=/Users/mark.maxwelldocker.com/sandboxes/victoria-ai
+          STAGE=__VICTORIA_REPO__
           cd "$STAGE"
           for i in $(seq 1 180); do
             "$VENV" -c 'import uvicorn, victoria.main' >/dev/null 2>&1 && break

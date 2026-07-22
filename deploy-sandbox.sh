@@ -74,9 +74,18 @@ else
   say "Piper voice model already staged"
 fi
 
-# 5. Pack + run the kit (agent name must equal the kit name)
-say "Packing kit -> $KIT_ZIP"
-sbx kit pack "$KIT_DIR" -o "$KIT_ZIP" >/dev/null
+# 5. Pack + run the kit (agent name must equal the kit name). sbx mounts a host
+#    path at that same absolute path inside the sandbox, so the kit's repo/vault
+#    paths are host-specific. The committed spec.yaml keeps them as placeholders
+#    (__VICTORIA_REPO__ / __VICTORIA_VAULT__); fill them into a throwaway build
+#    copy here so the repo stays username-agnostic.
+BUILD_DIR="$(mktemp -d)"; trap 'rm -rf "$BUILD_DIR"' EXIT
+cp -R "$KIT_DIR/." "$BUILD_DIR/"
+sed -e "s#__VICTORIA_REPO__#${REPO_STAGE}#g" -e "s#__VICTORIA_VAULT__#${VAULT_PATH}#g" \
+  "$KIT_DIR/spec.yaml" > "$BUILD_DIR/spec.yaml"
+if grep -q "__VICTORIA_" "$BUILD_DIR/spec.yaml"; then fail "Placeholder substitution failed in $BUILD_DIR/spec.yaml"; fi
+say "Packing kit -> $KIT_ZIP  (repo=$REPO_STAGE)"
+sbx kit pack "$BUILD_DIR" -o "$KIT_ZIP" >/dev/null
 sbx rm "$SBX_NAME" --force >/dev/null 2>&1 || true
 say "Launching sandbox '$SBX_NAME' (installs deps, starts uvicorn)…"
 MOUNTS=("$REPO_STAGE"); [ -d "$VAULT_PATH" ] && MOUNTS+=("$VAULT_PATH") || warn "Vault $VAULT_PATH not found — running without the knowledge base."
