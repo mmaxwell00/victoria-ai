@@ -142,12 +142,28 @@ class SecretsVault:
     def resolve(self, value):
         """Recursively replace ${vault:NAME} references in strings / dicts / lists.
 
+        Resolution order for each ${vault:NAME}:
+          1. the encrypted store (a real vault secret), else
+          2. the process environment (``os.environ[NAME]``) — this lets a
+             Docker Sandbox's proxy-injected credentials resolve with no config
+             change, and covers plain env-provided creds, else
+          3. the reference is left intact (so a genuinely-missing name is
+             visible rather than silently blanked).
+
         Used only when handing config to a transport (MCP env/headers). The
         result must never be logged or returned to the model.
         """
         if isinstance(value, str):
             data = self._read()
-            return VAULT_REF_RE.sub(lambda m: data.get(m.group(1), m.group(0)), value)
+
+            def _sub(m):
+                name = m.group(1)
+                if name in data:
+                    return data[name]
+                env = os.environ.get(name)
+                return env if env is not None else m.group(0)
+
+            return VAULT_REF_RE.sub(_sub, value)
         if isinstance(value, dict):
             return {k: self.resolve(v) for k, v in value.items()}
         if isinstance(value, list):

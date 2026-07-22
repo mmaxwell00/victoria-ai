@@ -43,6 +43,44 @@ environment:
     OBSIDIAN_VAULT_PATH: /Users/mark.maxwelldocker.com/Obsidian/AI/AI-Victoria
     ESCALATION_ENABLED: "true"
 
+# ── Egress allowlist (Phase 3 hardening target) ──────────────────────────────
+# IMPORTANT: this bites ONLY under a default-deny network baseline. Per Docker's
+# governance model, an ACTIVE org policy overrides kit-defined rules — and this
+# org has a blanket `NetworkAll: allow **` applied to all sandboxes, so the list
+# below is currently INERT (nothing is actually restricted). Activating it needs
+# an org admin to scope that blanket allow off this sandbox (or add a per-sandbox
+# default-deny). See SECURITY-AUDIT.md. Kept here so the hardened target is ready
+# and correct the moment org egress is tightened. `deniedDomains` is unnecessary:
+# the org already enforces its own denies (DPRK, etc.).
+network:
+  allowedDomains:
+    # -- Local LLM: host Model Runner via the sandbox's host gateway --
+    - host.docker.internal
+    # -- Cloud escalation --
+    - api.anthropic.com
+    # -- Built-in tools --
+    - duckduckgo.com              # web_search (ddgs → html./lite./links.)
+    - "*.duckduckgo.com"
+    - wttr.in                     # weather tool + dashboard weather box
+    # -- Dashboard feeds --
+    - query1.finance.yahoo.com    # markets: stocks / metals / indices
+    - query2.finance.yahoo.com
+    - feeds.nbcnews.com           # headlines: NBC News RSS
+    - moxie.foxnews.com           # headlines: Fox News RSS
+    # -- Skill import + GitHub tools --
+    - github.com
+    - api.github.com
+    - codeload.github.com
+    - raw.githubusercontent.com
+    - objects.githubusercontent.com
+    # -- Build-time: dependency install (uv-managed py3.11 + pip + model pulls) --
+    - pypi.org
+    - files.pythonhosted.org
+    - huggingface.co
+    - "*.huggingface.co"
+    - deb.debian.org              # apt: ffmpeg + libportaudio2
+    - registry.npmjs.org          # optional MCP (node) servers
+
 commands:
   install:
     # System libs: ffmpeg (Whisper STT) + PortAudio (sounddevice). Root user.

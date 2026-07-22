@@ -66,8 +66,25 @@ def test_resolve_substitutes_refs(vault):
     assert out["keep"] == "plain"
 
 
-def test_resolve_unknown_ref_left_intact(vault):
+def test_resolve_unknown_ref_left_intact(vault, monkeypatch):
+    monkeypatch.delenv("NOPE", raising=False)   # ensure no env fallback exists
     assert vault.resolve("${vault:NOPE}") == "${vault:NOPE}"
+
+
+def test_resolve_falls_back_to_env(vault, monkeypatch):
+    # A ref not in the encrypted store resolves from the environment — this is
+    # how a Docker Sandbox's proxy-injected credentials resolve with no config
+    # change.
+    monkeypatch.setenv("GITHUB_TOKEN", "gho_from_env")
+    assert not vault.exists("GITHUB_TOKEN")
+    assert vault.resolve("Bearer ${vault:GITHUB_TOKEN}") == "Bearer gho_from_env"
+
+
+def test_resolve_vault_takes_precedence_over_env(vault, monkeypatch):
+    # A real stored secret must win over an env var of the same name.
+    vault.set("TOK", "from-vault")
+    monkeypatch.setenv("TOK", "from-env")
+    assert vault.resolve("${vault:TOK}") == "from-vault"
 
 
 def test_resolve_handles_lists_and_nesting(vault):

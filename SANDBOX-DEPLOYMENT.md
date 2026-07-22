@@ -80,10 +80,17 @@ It packs [`sbx/spec.yaml`](sbx/spec.yaml) (`sbx kit pack`), runs it
 
 ## Isolation & credentials
 
-- Network is currently broad (org `NetworkAll` allow). **Phase 3 hardening:** tighten
-  `network.allowedDomains` in the kit to just what Victoria uses.
-- Secrets: use the **sbx credential engine** (`sbx secret set`) — the proxy injects
-  them without the value entering the VM. `github`/`anthropic` are typically already set.
+- **Egress (Q2):** the kit now ships an `network.allowedDomains` allowlist, but it is
+  **inert** — the org `NetworkAll` (`allow **`) policy overrides kit rules, so a
+  non-allowlisted host is still reachable (verified). Activating it needs an
+  org-admin policy change; see [`SECURITY-AUDIT.md`](SECURITY-AUDIT.md).
+- **Credentials (Q3):** use the **sbx credential engine** (`sbx secret set`) — the
+  proxy injects creds without the value entering the VM as plaintext-at-rest.
+  Empirically, the `github` service secret lands in the sandbox as env var
+  **`GH_TOKEN`**; Victoria's vault `resolve()` now falls back to `os.environ`, so a
+  `${vault:GH_TOKEN}` reference resolves with no config change. The `anthropic`
+  secret is OAuth/proxy-edge (not a plain env var), so escalation auth is handled
+  at the proxy rather than through this fallback.
 
 ## Roadmap
 
@@ -93,5 +100,8 @@ It packs [`sbx/spec.yaml`](sbx/spec.yaml) (`sbx kit pack`), runs it
   install steps must run as the **agent user (`user: "1000"`)** so the venv +
   interpreter are agent-executable; and `sounddevice`/PortAudio can't initialise
   in a headless sandbox (native mic is out — browser voice is the path).
-- **Phase 3** — tighten egress to an allowlist (Q2); move Victoria's vault
-  secrets to the `sbx secret` credential engine (Q3).
+- **Phase 3 — in progress.** Q2 (egress allowlist) is written into the kit but
+  inert until an org-admin scopes off the blanket `NetworkAll` allow. Q3
+  (credentials) done: `resolve()` falls back to proxy-injected env creds
+  (`GH_TOKEN`). Remaining: the org egress change, and optionally baking deps into
+  a custom image so a tight runtime-only allowlist won't break sandbox creation.

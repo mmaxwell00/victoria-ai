@@ -28,7 +28,7 @@ wants his notes to be Victoria's human-readable, syncable memory.
 ## 2. Current State
 
 Native app (host): runs via `uvicorn victoria.main:app` on `:8000` from `~/victoria-ai`
-on `main`. **335 tests pass.** All recent features merged (PRs #39-#63): weather
+on `main`. **337 tests pass.** All recent features merged (PRs #39-#67): weather
 tool-use reliability, sidebar avatar, HUD dashboard (weather / markets / headlines /
 system), Obsidian knowledge bases, interactive installer, `code-review-repo` skill.
 
@@ -52,8 +52,14 @@ Docker Sandbox deployment: **DONE through Phase 2** (PRs #62, #63 merged).
 - `./deploy-sandbox.sh` reproduces the whole thing.
 
 IN PROGRESS / NOT DONE:
-- **Phase 3 (hardening): NOT started.** Egress is currently the broad org
-  `NetworkAll` allow; secrets not yet moved to the `sbx secret` engine.
+- **Phase 3 (hardening): PARTIAL (Phase 3 PR).** Q3 (credentials) DONE: `resolve()`
+  falls back to `os.environ`, and the sbx proxy injects the `github` secret as
+  `GH_TOKEN` (resolves transparently). Q2 (egress) is WRITTEN into the kit
+  (`network.allowedDomains`) but **INERT** — the org `NetworkAll` (`allow **`)
+  policy overrides kit rules (verified: `example.com` still returns 200 inside the
+  sandbox). Activating egress needs an **org-admin** change to scope `NetworkAll`
+  off the `victoria` sandbox; and for a tight runtime-only allowlist, deps should
+  be baked into a custom image (build-time egress otherwise breaks creation).
 - **RAG Phase 1b: NOT started.** ChromaDB is active but only stores conversation
   turns (`semantic_memory.py`); there is no vault-note ingestion/retrieval yet.
 - **AI-vault-as-memory (Phase 2 of knowledge): NOT started.**
@@ -137,9 +143,20 @@ Resume + verify the sandbox (do this first):
 2. Redeploy: `cd ~/victoria-ai && ./deploy-sandbox.sh` (idempotent: stages the clone, packs `sbx/`, runs, publishes `127.0.0.1:8001`).
 3. Verify: `curl -4 -sS http://127.0.0.1:8001/health` (expect 200); `sbx exec victoria -- grep -i "semantic memory" /tmp/victoria.log` (expect "Semantic memory initialised").
 
-Phase 3 hardening (do on a branch -> PR; ask before merge):
-4. Egress (Q2): add a `network.allowedDomains` block to `sbx/spec.yaml` with the hosts in `SECURITY-AUDIT.md` (`host.docker.internal:12434`, `api.anthropic.com`, `duckduckgo.com` + `*.duckduckgo.com`, `wttr.in`, `query1/2.finance.yahoo.com`, `feeds.nbcnews.com`, `moxie.foxnews.com`, `github.com`, `api.github.com`, `pypi.org`, `files.pythonhosted.org`, `huggingface.co`). FIRST verify whether `allowedDomains` is additive or default-deny by re-running and confirming chat + dashboard still work; if it over-restricts, widen.
-5. Credentials (Q3): provision secrets via `sbx secret set`; extend `victoria/vault/store.py` `resolve()` so a `${vault:NAME}` not in the encrypted store falls back to `os.environ.get(NAME)` (~3 lines) so SBX proxy-injected env creds resolve with no `mcp.json` change. `github` + `anthropic` service secrets already exist in the engine.
+Phase 3 hardening (the Phase 3 PR landed the below; egress activation is the open item):
+4. Egress (Q2): DONE-BUT-INERT. The `network.allowedDomains` block is in
+   `sbx/spec.yaml`, but the org `NetworkAll` (`allow **`) overrides it (verified:
+   `example.com` → 200 inside the sandbox). **OPEN — needs org admin:** scope
+   `NetworkAll` off the `victoria` sandbox (or push a per-sandbox default-deny),
+   then verify `sbx exec victoria -- curl … https://example.com` FAILS while chat +
+   dashboard still work. For a tight runtime-only allowlist, first bake deps into a
+   custom base image (build-time egress otherwise breaks sandbox creation). Full
+   activation steps + evidence in `SECURITY-AUDIT.md`.
+5. Credentials (Q3): DONE. `victoria/vault/store.py` `resolve()` now falls back to
+   `os.environ` (vault wins if both set; missing name still left intact). The sbx
+   proxy injects the `github` secret as env `GH_TOKEN` (resolves transparently);
+   `anthropic` is OAuth/proxy-edge, so escalation auth is handled at the proxy.
+   +2 tests.
 
 RAG Phase 1b (queued, not started; branch -> PR):
 6. Add a SEPARATE ChromaDB collection for vault docs (distinct from the `conversations` collection in `semantic_memory.py`). Ingest the Obsidian vault markdown, chunked by heading, storing note-path metadata for citations. Embedding model: local `sentence-transformers/all-MiniLM-L6-v2` (see `docs/decisions-md.md` Open Q4; confirm with Mark). Re-index on startup + on `write_note` + a `reindex` tool.
