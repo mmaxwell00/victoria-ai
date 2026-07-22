@@ -85,6 +85,55 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-07-22 · Sandbox Phase 3 hardening — egress blocked by org policy; credential env-fallback
+
+**Status:** Q3 (credentials) implemented + verified. Q2 (egress) written into the
+kit but intentionally **inert** — sbx egress governance is org-wide/team-scoped,
+not per-sandbox, so we chose to leave egress broad (decision C) rather than flip
+all sandboxes to default-deny for one. This PR.
+
+**Context:** Phase 3 aimed to (Q2) restrict the sandbox's outbound egress to an
+allowlist and (Q3) resolve credentials from the sbx secret engine instead of
+mounting an `.env`.
+
+**Q2 — egress (blocked at the org tier).** Added the target allowlist as a
+top-level `network.allowedDomains` block in `sbx/spec.yaml`. But this environment
+is governed by org policy `NetworkAll` (`allow ** network`, applies to all
+sandboxes, active), and Docker's model has an **active org rule override
+kit-defined network rules**. Verified empirically: from inside the sandbox a
+non-allowlisted host (`https://example.com`) still returns HTTP 200 (including in
+the `sandbox:victoria` policy context). So the kit allowlist restricts nothing
+today. Crucially, sbx network governance is scoped **by org / team (user
+membership), not per sandbox**, and all these sandboxes run under one Docker
+identity — so there is **no supported way to harden only Victoria**. Tightening
+egress means editing the org-wide `NetworkAll` policy in Docker Home (affects every
+sandbox) or a team-scoped policy under a separate identity. **Decision (C): leave
+egress broad** — the sandbox already gives the hardware/process isolation we
+wanted, and org-wide default-deny carries a blast radius across all sandboxes for
+one assistant's benefit. The kit block stays as the ready target so a future
+org-wide default-deny activates cleanly. Also noted: the kit does build-time
+installs (apt/pip/uv/HF), so a strict runtime-only allowlist would break sandbox
+creation — the durable fix for a tight posture is to bake deps into a custom base
+image, then trim the allowlist.
+
+**Q3 — credentials (done).** Extended `victoria/vault/store.py` `resolve()` so a
+`${vault:NAME}` not in the encrypted store falls back to `os.environ.get(NAME)`
+(vault still wins if both exist; a truly-missing name is still left intact).
+Verified: the sbx proxy injects the `github` service secret as env var
+`GH_TOKEN`, which now resolves through the fallback with no `mcp.json` change. The
+`anthropic` secret is OAuth/proxy-edge (not a plain env var), so escalation auth is
+handled at the proxy. +2 tests (337 total).
+
+**Why:** keep the hardened config version-controlled and correct even though the
+governing org must flip the switch; make proxy-injected creds resolve transparently
+without weakening the vault's "values never returned to the model" rule (`resolve`
+is transport-edge only).
+
+**Trade-offs / deferred:** true egress lockdown depends on an org policy change
+(out of repo scope) and, for a tight posture, a custom prebuilt image.
+
+---
+
 ### 2026-07-20 · Docker Sandbox (sbx) deployment — verified Phase 1
 
 **Status:** Phase 1 verified working end-to-end. Kit + docs land in this PR.

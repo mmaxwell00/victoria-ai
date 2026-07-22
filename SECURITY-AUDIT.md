@@ -1,10 +1,57 @@
 ## Victoria Sandbox — Network Security Audit
 
-> **Status:** this describes the *target* egress hardening (Phase 3). The
-> **verified working** deployment is in [SANDBOX-DEPLOYMENT.md](SANDBOX-DEPLOYMENT.md)
-> and currently relies on the **org-managed** network policy (broad allow), with
-> the host Model Runner reached at `host.docker.internal:12434`. The allowlist
-> below is the goal for tightening egress in the kit's `network` block.
+> **Status (Phase 3 — verified 2026-07-22; decision: leave egress broad for now).**
+> The kit ships the egress allowlist below as a top-level `network.allowedDomains`
+> block in [`sbx/spec.yaml`](sbx/spec.yaml), but **it is currently INERT — and that
+> is a deliberate choice, not an oversight.** This environment is governed by the
+> org policy `NetworkAll` (`allow ** network`, applies to *all* sandboxes, active);
+> per Docker's model an active org rule **overrides kit-defined network rules**.
+> Confirmed empirically: from inside the sandbox a *non-allowlisted* host
+> (`https://example.com`) still returns **HTTP 200**, including in the
+> `sandbox:victoria` policy context (`sbx policy check`). The allowlist is kept
+> here as the ready **target** config. The security property Victoria actually
+> relies on is **hardware / process / filesystem isolation** from the host, which
+> the sandbox already provides; egress lockdown is a further, optional step. The
+> host Model Runner is reached at `host.docker.internal:12434` (not `localhost`).
+
+## Activation — an org-wide policy change (no per-sandbox option)
+
+sbx network governance is scoped **by org or by team (user membership) — not per
+sandbox.** All of these sandboxes run under one Docker identity, so there is **no
+supported way to harden only `victoria`** while other sandboxes stay broad. Egress
+can only be tightened in **Docker Home** (or the Governance API), not the local
+`sbx` CLI. Realistic paths (both affect more than just Victoria):
+
+1. **Tighten `NetworkAll` org-wide** — replace its `allow **` with a granular
+   allowlist. This enforces default-deny + allowlist for **every** sandbox in the
+   org, so each one then needs its own hosts allow-listed (via its kit or org
+   policy) or it loses egress. Choose this only if org-wide default-deny is the goal.
+2. **Team-scoped hardened policy** — only isolates `victoria` if it runs under a
+   **separate identity/team**; that's extra identity setup, not in place today.
+
+**Current decision (C): leave egress broad.** For a personal, always-on assistant
+on your own machine, the isolation win we wanted is already delivered by the
+sandbox; org-wide default-deny would carry a blast radius across every other
+sandbox for the benefit of one. The kit allowlist stays as documented intent so a
+future org-wide default-deny (path 1) activates cleanly.
+
+Verify IF/when egress is tightened (from the host):
+
+```bash
+# non-allowlisted host should then FAIL (today it returns 200):
+sbx exec victoria -- curl -sS -m 6 -o /dev/null -w '%{http_code}\n' https://example.com
+# allowlisted paths should still work — chat + dashboard:
+curl -4 -sS http://127.0.0.1:8001/health
+```
+
+**Build-time egress caveat.** The kit installs its full dependency set at
+sandbox-create time (apt → ffmpeg/PortAudio; `uv` → a managed CPython 3.11 from
+GitHub; pip → PyPI; model/tooling pulls → Hugging Face). A strict *runtime*
+allowlist that omits those build hosts would break creation, so the list below
+includes them (`pypi.org`, `files.pythonhosted.org`, `deb.debian.org`,
+`objects.githubusercontent.com`, `huggingface.co`, …). For a tighter runtime-only
+posture, **bake the dependencies into a custom base image** so the running
+sandbox needs zero build-time egress, then trim the allowlist to runtime hosts.
 
 ### Problems Found & Fixed
 
@@ -18,10 +65,12 @@
    - Correct: `duckduckgo.com` + `*.duckduckgo.com` (the `ddgs` library hits html./lite./links.)
    - Victoria's `web_search` tool queries the API endpoint
 
-3. **Model Runner Access Incomplete** ✓ FIXED
-   - Kit allows `localhost:12434`
-   - **BUT** requires a host-level policy rule to work
-   - Deploy script now creates this automatically
+3. **Model Runner host** ✓ CORRECTED
+   - The sandbox reaches the host Model Runner at **`host.docker.internal:12434`**,
+     NOT `localhost:12434` (localhost is the sandbox itself).
+   - The allowlist entry is therefore `host.docker.internal`. No separate
+     `sbx policy allow` step is needed while the org `NetworkAll` allow is active
+     (it already permits everything); the deploy script does not create policy rules.
 
 4. **MCP Path References** ✓ FIXED
    - Old mcp.json had a hardcoded host path (e.g. `<your-home>/victoria-mcp-demo`)
@@ -36,7 +85,7 @@
 
 | Endpoint | Allowed | Reason | When Needed |
 |----------|---------|--------|------------|
-| `localhost:12434` | ✓ | Docker Model Runner (local, essential) | Always — requires `sbx policy allow` rule |
+| `host.docker.internal` | ✓ | Docker Model Runner on the host (essential) | Always |
 | `api.anthropic.com` | ✓ | Claude escalation | When you click "yes" to escalate (optional) |
 | `duckduckgo.com` + `*.duckduckgo.com` | ✓ | Web search (built-in, ddgs) | `html.`/`lite.`/`links.` — NOT api.duckduckgo.com |
 | `wttr.in` | ✓ | Weather tool + dashboard weather box | When asking about weather / dashboard on |
