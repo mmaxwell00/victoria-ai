@@ -16,10 +16,17 @@ dashboard (weather · markets incl. metals/volume · NBC+Fox headlines).*
 
 ## What runs where
 
+<p align="center">
+  <img src="docs/sbx-architecture.svg" width="760"
+       alt="Victoria in a Docker Sandbox — three zones (cloud/external, the isolated sandbox microVM running the whole Victoria app + ChromaDB memory, and the macOS host) with each boundary crossing labeled: published HUD port, host Model Runner gateway, approved-only mounts, proxy-injected credentials, and org-governed egress">
+</p>
+
+The quick text version:
+
 ```
 HOST (macOS)                          SANDBOX microVM (Linux, isolated)
   Docker Model Runner  ◀──:12434───     Victoria (uvicorn :8000) ──published──▶ 127.0.0.1:8001
-    (host.docker.internal)  allowlisted   knowledge base · tools · dashboard
+    (host.docker.internal)  host gateway  knowledge base · tools · dashboard
   ~/Obsidian/**  (mounted, per policy) ▶  memory / RAG substrate
   Browser ────────────────────────────▶  the HUD
 ```
