@@ -112,9 +112,10 @@ say "Publishing HUD -> http://127.0.0.1:${HOST_PORT}"
 sbx ports "$SBX_NAME" --publish "127.0.0.1:${HOST_PORT}:8000" >/dev/null 2>&1 || true
 
 # 7. Wait for readiness. First boot installs the FULL dependency set (torch,
-#    faster-whisper, chromadb, …) and the startup service then waits for the app
-#    to import before launching uvicorn, so allow generous headroom (~7.5 min).
-for _ in $(seq 1 90); do
+#    faster-whisper, chromadb, …) plus the Claude CLI, and the startup service
+#    then waits for the app to import before launching uvicorn — allow generous
+#    headroom (~9 min, matching the kit's ~8-min import gate).
+for _ in $(seq 1 108); do
   curl -4 -fsS -m 3 "http://127.0.0.1:${HOST_PORT}/health" >/dev/null 2>&1 && break || sleep 5
 done
 if curl -4 -fsS -m 4 "http://127.0.0.1:${HOST_PORT}/health" >/dev/null 2>&1; then

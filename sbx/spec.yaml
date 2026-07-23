@@ -101,22 +101,25 @@ commands:
     - command: apt-get update -qq && apt-get install -y -qq ffmpeg libportaudio2
       user: "0"
       description: System libraries for voice (Whisper ffmpeg + PortAudio)
-    # Claude Code CLI — the "Claude" backend / escalation shells out to `claude`
-    # (subscription auth). Installed globally (node ships in the image) so it's on
-    # PATH for the agent-run uvicorn subprocess. Auth is the CLAUDE_CLI_OAUTH_TOKEN
-    # below; without it, escalation degrades gracefully (local model answers).
-    - command: npm install -g @anthropic-ai/claude-code || echo "[install] claude CLI install failed — escalation unavailable, local model still answers"
-      user: "0"
-      description: Claude Code CLI for the Claude escalation backend (subscription auth; non-fatal)
     # The shell-docker image ships Python 3.14 — too new for chromadb / faster-
     # whisper / piper. uv (preinstalled in the image) manages a Python 3.11 venv
     # so the FULL dependency set installs → semantic memory (ChromaDB) + voice.
+    # The app's own deps install FIRST so uvicorn is ready fast (the startup gate
+    # waits on `import uvicorn`); the optional CLI below must not delay/starve them.
     - command: uv venv /home/agent/venv --python 3.11
       user: "1000"
       description: Create a uv-managed Python 3.11 virtualenv (as the agent user)
     - command: uv pip install --python /home/agent/venv/bin/python -r __VICTORIA_REPO__/requirements.txt
       user: "1000"
       description: Install the full Victoria dependency set as the agent (ChromaDB + voice + all)
+    # Claude Code CLI — the "Claude" backend / escalation shells out to `claude`
+    # (subscription auth). Installed LAST + non-fatal so a slow/large download never
+    # delays or starves the venv install above; node ships in the image and puts it
+    # on PATH for the uvicorn subprocess. Auth is CLAUDE_CLI_OAUTH_TOKEN above;
+    # without it, escalation degrades gracefully (local model answers).
+    - command: npm install -g @anthropic-ai/claude-code || echo "[install] claude CLI install failed — escalation unavailable, local model still answers"
+      user: "0"
+      description: Claude Code CLI for the Claude escalation backend (subscription auth; last + non-fatal)
   startup:
     # A long-running service goes in startup/background (NOT entrypoint, which is
     # the interactive agent process and dies on detach). Bind 0.0.0.0; run from
@@ -129,7 +132,7 @@ commands:
     #   2. The interpreter is runnable (uv venv done) but `uv pip install` is still
     #      running → "No module named uvicorn" (and chromadb/etc. absent).
     # So we gate on the real precondition for `uvicorn victoria.main:app`: the app
-    # itself importing (which requires the full dependency set). Bounded to ~6 min.
+    # itself importing (which requires the full dependency set). Bounded to ~8 min.
     - command:
         - sh
         - -c
@@ -138,9 +141,9 @@ commands:
           VENV=/home/agent/venv/bin/python
           STAGE=__VICTORIA_REPO__
           cd "$STAGE"
-          for i in $(seq 1 180); do
+          for i in $(seq 1 240); do
             "$VENV" -c 'import uvicorn, victoria.main' >/dev/null 2>&1 && break
-            echo "[startup] waiting for dependencies + app to import ($i/180)…"
+            echo "[startup] waiting for dependencies + app to import ($i/240)…"
             sleep 2
           done
           if ! "$VENV" -c 'import uvicorn, victoria.main' >/dev/null 2>&1; then
