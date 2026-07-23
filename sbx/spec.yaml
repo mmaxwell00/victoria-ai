@@ -152,6 +152,12 @@ commands:
             exit 1
           fi
           echo "[startup] dependencies ready; launching uvicorn"
+          # Put the npm global bin on PATH so the Claude Code CLI (`claude`) is
+          # found by the escalation subprocess. It installs under npm's global
+          # prefix (…/npm-global/bin), which is on interactive-shell PATH via a
+          # profile script but NOT on this startup subprocess's leaner PATH.
+          NPM_BIN="$(npm prefix -g 2>/dev/null)/bin"
+          [ -d "$NPM_BIN" ] && export PATH="$NPM_BIN:$PATH" && echo "[startup] PATH += $NPM_BIN"
           exec "$VENV" -m uvicorn victoria.main:app --host 0.0.0.0 --port 8000
       background: true
       description: Start the Victoria API server on :8000 (Python 3.11 venv; waits for the full dep install + app import first)
