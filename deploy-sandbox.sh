@@ -79,11 +79,27 @@ fi
 #    paths are host-specific. The committed spec.yaml keeps them as placeholders
 #    (__VICTORIA_REPO__ / __VICTORIA_VAULT__); fill them into a throwaway build
 #    copy here so the repo stays username-agnostic.
+# Claude escalation token (optional, NEVER committed). Prefer $CLAUDE_CODE_OAUTH_TOKEN,
+# else an untracked local file. Empty → escalation stays off (local model answers).
+CLAUDE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
+if [ -z "$CLAUDE_OAUTH_TOKEN" ] && [ -f "$HOME/.victoria/claude-oauth-token" ]; then
+  CLAUDE_OAUTH_TOKEN="$(tr -d '\r\n' < "$HOME/.victoria/claude-oauth-token")"
+fi
+if [ -n "$CLAUDE_OAUTH_TOKEN" ]; then
+  say "Claude escalation: enabled (subscription token found)"
+else
+  warn 'Claude escalation: OFF — no token ($CLAUDE_CODE_OAUTH_TOKEN env or ~/.victoria/claude-oauth-token). Local model still answers.'
+fi
+
 BUILD_DIR="$(mktemp -d)"; trap 'rm -rf "$BUILD_DIR"' EXIT
 cp -R "$KIT_DIR/." "$BUILD_DIR/"
-sed -e "s#__VICTORIA_REPO__#${REPO_STAGE}#g" -e "s#__VICTORIA_VAULT__#${VAULT_PATH}#g" \
+sed -e "s#__VICTORIA_REPO__#${REPO_STAGE}#g" \
+    -e "s#__VICTORIA_VAULT__#${VAULT_PATH}#g" \
+    -e "s#__CLAUDE_OAUTH_TOKEN__#${CLAUDE_OAUTH_TOKEN}#g" \
   "$KIT_DIR/spec.yaml" > "$BUILD_DIR/spec.yaml"
-if grep -q "__VICTORIA_" "$BUILD_DIR/spec.yaml"; then fail "Placeholder substitution failed in $BUILD_DIR/spec.yaml"; fi
+if grep -qE "__(VICTORIA_REPO|VICTORIA_VAULT|CLAUDE_OAUTH_TOKEN)__" "$BUILD_DIR/spec.yaml"; then
+  fail "Placeholder substitution failed in $BUILD_DIR/spec.yaml"
+fi
 say "Packing kit -> $KIT_ZIP  (repo=$REPO_STAGE)"
 sbx kit pack "$BUILD_DIR" -o "$KIT_ZIP" >/dev/null
 sbx rm "$SBX_NAME" --force >/dev/null 2>&1 || true
@@ -95,10 +111,13 @@ sbx run --kit "$KIT_ZIP" --name "$SBX_NAME" -d "$SBX_NAME" "${MOUNTS[@]}"
 say "Publishing HUD -> http://127.0.0.1:${HOST_PORT}"
 sbx ports "$SBX_NAME" --publish "127.0.0.1:${HOST_PORT}:8000" >/dev/null 2>&1 || true
 
-# 7. Wait for readiness. First boot installs the FULL dependency set (torch,
-#    faster-whisper, chromadb, …) and the startup service then waits for the app
-#    to import before launching uvicorn, so allow generous headroom (~7.5 min).
-for _ in $(seq 1 90); do
+# 7. Wait for readiness. A cold first boot installs the FULL dependency set
+#    (torch, faster-whisper, chromadb, …) with no wheel cache, then the startup
+#    service waits for the app to import before launching uvicorn — which can run
+#    well past 8 min on a slow/loaded host. Allow generous headroom (~20 min,
+#    matching the kit's ~20-min import gate); the loop breaks as soon as /health
+#    answers, so a fast machine isn't penalised.
+for _ in $(seq 1 240); do
   curl -4 -fsS -m 3 "http://127.0.0.1:${HOST_PORT}/health" >/dev/null 2>&1 && break || sleep 5
 done
 if curl -4 -fsS -m 4 "http://127.0.0.1:${HOST_PORT}/health" >/dev/null 2>&1; then

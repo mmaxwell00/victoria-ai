@@ -49,6 +49,16 @@ environment:
     # substituted by deploy-sandbox.sh (VAULT_PATH); host path == in-sandbox path.
     OBSIDIAN_VAULT_PATH: __VICTORIA_VAULT__
     ESCALATION_ENABLED: "true"
+    # Claude escalation auth (subscription). Long-lived token from `claude
+    # setup-token`; injected as CLAUDE_CODE_OAUTH_TOKEN for the `claude -p`
+    # subprocess. NEVER committed — deploy-sandbox.sh substitutes this placeholder
+    # from $CLAUDE_CODE_OAUTH_TOKEN or ~/.victoria/claude-oauth-token (empty if
+    # neither exists → escalation stays off, local model answers).
+    CLAUDE_CLI_OAUTH_TOKEN: "__CLAUDE_OAUTH_TOKEN__"
+    # Absolute path to the CLI so escalation execs it directly, independent of the
+    # uvicorn subprocess's PATH (npm's global bin is on interactive-shell PATH but
+    # not the leaner service PATH). This is the shell-docker image's npm prefix/bin.
+    CLAUDE_CLI_COMMAND: /usr/local/share/npm-global/bin/claude
 
 # ── Egress allowlist (Phase 3 hardening target) ──────────────────────────────
 # IMPORTANT: this bites ONLY under a default-deny network baseline. Per Docker's
@@ -98,12 +108,22 @@ commands:
     # The shell-docker image ships Python 3.14 — too new for chromadb / faster-
     # whisper / piper. uv (preinstalled in the image) manages a Python 3.11 venv
     # so the FULL dependency set installs → semantic memory (ChromaDB) + voice.
+    # The app's own deps install FIRST so uvicorn is ready fast (the startup gate
+    # waits on `import uvicorn`); the optional CLI below must not delay/starve them.
     - command: uv venv /home/agent/venv --python 3.11
       user: "1000"
       description: Create a uv-managed Python 3.11 virtualenv (as the agent user)
     - command: uv pip install --python /home/agent/venv/bin/python -r __VICTORIA_REPO__/requirements.txt
       user: "1000"
       description: Install the full Victoria dependency set as the agent (ChromaDB + voice + all)
+    # Claude Code CLI — the "Claude" backend / escalation shells out to `claude`
+    # (subscription auth). Installed LAST + non-fatal so a slow/large download never
+    # delays or starves the venv install above; node ships in the image and puts it
+    # on PATH for the uvicorn subprocess. Auth is CLAUDE_CLI_OAUTH_TOKEN above;
+    # without it, escalation degrades gracefully (local model answers).
+    - command: npm install -g @anthropic-ai/claude-code || echo "[install] claude CLI install failed — escalation unavailable, local model still answers"
+      user: "0"
+      description: Claude Code CLI for the Claude escalation backend (subscription auth; last + non-fatal)
   startup:
     # A long-running service goes in startup/background (NOT entrypoint, which is
     # the interactive agent process and dies on detach). Bind 0.0.0.0; run from
@@ -116,7 +136,11 @@ commands:
     #   2. The interpreter is runnable (uv venv done) but `uv pip install` is still
     #      running → "No module named uvicorn" (and chromadb/etc. absent).
     # So we gate on the real precondition for `uvicorn victoria.main:app`: the app
-    # itself importing (which requires the full dependency set). Bounded to ~6 min.
+    # itself importing (which requires the full dependency set). Bounded to ~20 min
+    # — a cold rebuild re-downloads the full wheel set (torch, faster-whisper,
+    # chromadb, …) with no cache, which can run well past 8 min on a slow/loaded
+    # host/network. The loop breaks the instant the import succeeds, so the high
+    # ceiling only ever costs time on a genuinely-slow install.
     - command:
         - sh
         - -c
@@ -125,9 +149,9 @@ commands:
           VENV=/home/agent/venv/bin/python
           STAGE=__VICTORIA_REPO__
           cd "$STAGE"
-          for i in $(seq 1 180); do
+          for i in $(seq 1 600); do
             "$VENV" -c 'import uvicorn, victoria.main' >/dev/null 2>&1 && break
-            echo "[startup] waiting for dependencies + app to import ($i/180)…"
+            echo "[startup] waiting for dependencies + app to import ($i/600)…"
             sleep 2
           done
           if ! "$VENV" -c 'import uvicorn, victoria.main' >/dev/null 2>&1; then
@@ -136,6 +160,12 @@ commands:
             exit 1
           fi
           echo "[startup] dependencies ready; launching uvicorn"
+          # Put the npm global bin on PATH so the Claude Code CLI (`claude`) is
+          # found by the escalation subprocess. It installs under npm's global
+          # prefix (…/npm-global/bin), which is on interactive-shell PATH via a
+          # profile script but NOT on this startup subprocess's leaner PATH.
+          NPM_BIN="$(npm prefix -g 2>/dev/null)/bin"
+          [ -d "$NPM_BIN" ] && export PATH="$NPM_BIN:$PATH" && echo "[startup] PATH += $NPM_BIN"
           exec "$VENV" -m uvicorn victoria.main:app --host 0.0.0.0 --port 8000
       background: true
       description: Start the Victoria API server on :8000 (Python 3.11 venv; waits for the full dep install + app import first)

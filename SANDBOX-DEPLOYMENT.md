@@ -139,9 +139,24 @@ browser-based are covered below and in the gotchas.)
   proxy injects creds without the value entering the VM as plaintext-at-rest.
   Empirically, the `github` service secret lands in the sandbox as env var
   **`GH_TOKEN`**; Victoria's vault `resolve()` now falls back to `os.environ`, so a
-  `${vault:GH_TOKEN}` reference resolves with no config change. The `anthropic`
-  secret is OAuth/proxy-edge (not a plain env var), so escalation auth is handled
-  at the proxy rather than through this fallback.
+  `${vault:GH_TOKEN}` reference resolves with no config change. (The sbx `anthropic`
+  service secret is scoped to sbx's own `claude` agent — it is **not** injected into
+  the `victoria` sandbox, so it does not authenticate Victoria's escalation; see next.)
+- **Claude escalation (the "Claude" backend):** Victoria escalates by shelling out
+  to the **Claude Code CLI** (`claude -p`, subscription auth — not the API). The kit
+  installs the CLI (`npm i -g @anthropic-ai/claude-code`); auth is a long-lived token
+  you generate once on the host:
+
+  ```bash
+  claude setup-token                                   # prints a token
+  mkdir -p ~/.victoria && pbpaste > ~/.victoria/claude-oauth-token   # or paste it in
+  ./deploy-sandbox.sh                                  # picks it up, injects it (never committed)
+  ```
+
+  The deploy script reads `$CLAUDE_CODE_OAUTH_TOKEN` (or `~/.victoria/claude-oauth-token`)
+  and substitutes it into the packed kit as `CLAUDE_CLI_OAUTH_TOKEN`, which Victoria
+  injects as `CLAUDE_CODE_OAUTH_TOKEN` for the `claude` subprocess. No token → the
+  "Claude" backend is unavailable and the local model answers (no hard error).
 
 ## Roadmap
 
