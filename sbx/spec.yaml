@@ -136,7 +136,11 @@ commands:
     #   2. The interpreter is runnable (uv venv done) but `uv pip install` is still
     #      running → "No module named uvicorn" (and chromadb/etc. absent).
     # So we gate on the real precondition for `uvicorn victoria.main:app`: the app
-    # itself importing (which requires the full dependency set). Bounded to ~8 min.
+    # itself importing (which requires the full dependency set). Bounded to ~20 min
+    # — a cold rebuild re-downloads the full wheel set (torch, faster-whisper,
+    # chromadb, …) with no cache, which can run well past 8 min on a slow/loaded
+    # host/network. The loop breaks the instant the import succeeds, so the high
+    # ceiling only ever costs time on a genuinely-slow install.
     - command:
         - sh
         - -c
@@ -145,9 +149,9 @@ commands:
           VENV=/home/agent/venv/bin/python
           STAGE=__VICTORIA_REPO__
           cd "$STAGE"
-          for i in $(seq 1 240); do
+          for i in $(seq 1 600); do
             "$VENV" -c 'import uvicorn, victoria.main' >/dev/null 2>&1 && break
-            echo "[startup] waiting for dependencies + app to import ($i/240)…"
+            echo "[startup] waiting for dependencies + app to import ($i/600)…"
             sleep 2
           done
           if ! "$VENV" -c 'import uvicorn, victoria.main' >/dev/null 2>&1; then

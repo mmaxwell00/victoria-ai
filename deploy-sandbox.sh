@@ -111,11 +111,13 @@ sbx run --kit "$KIT_ZIP" --name "$SBX_NAME" -d "$SBX_NAME" "${MOUNTS[@]}"
 say "Publishing HUD -> http://127.0.0.1:${HOST_PORT}"
 sbx ports "$SBX_NAME" --publish "127.0.0.1:${HOST_PORT}:8000" >/dev/null 2>&1 || true
 
-# 7. Wait for readiness. First boot installs the FULL dependency set (torch,
-#    faster-whisper, chromadb, …) plus the Claude CLI, and the startup service
-#    then waits for the app to import before launching uvicorn — allow generous
-#    headroom (~9 min, matching the kit's ~8-min import gate).
-for _ in $(seq 1 108); do
+# 7. Wait for readiness. A cold first boot installs the FULL dependency set
+#    (torch, faster-whisper, chromadb, …) with no wheel cache, then the startup
+#    service waits for the app to import before launching uvicorn — which can run
+#    well past 8 min on a slow/loaded host. Allow generous headroom (~20 min,
+#    matching the kit's ~20-min import gate); the loop breaks as soon as /health
+#    answers, so a fast machine isn't penalised.
+for _ in $(seq 1 240); do
   curl -4 -fsS -m 3 "http://127.0.0.1:${HOST_PORT}/health" >/dev/null 2>&1 && break || sleep 5
 done
 if curl -4 -fsS -m 4 "http://127.0.0.1:${HOST_PORT}/health" >/dev/null 2>&1; then
