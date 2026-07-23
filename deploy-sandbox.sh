@@ -85,8 +85,11 @@ CLAUDE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
 if [ -z "$CLAUDE_OAUTH_TOKEN" ] && [ -f "$HOME/.victoria/claude-oauth-token" ]; then
   CLAUDE_OAUTH_TOKEN="$(tr -d '\r\n' < "$HOME/.victoria/claude-oauth-token")"
 fi
-[ -n "$CLAUDE_OAUTH_TOKEN" ] && say "Claude escalation: enabled (subscription token found)" \
-  || warn "Claude escalation: OFF — no token ($CLAUDE_CODE_OAUTH_TOKEN env or ~/.victoria/claude-oauth-token). Local model still answers."
+if [ -n "$CLAUDE_OAUTH_TOKEN" ]; then
+  say "Claude escalation: enabled (subscription token found)"
+else
+  warn 'Claude escalation: OFF — no token ($CLAUDE_CODE_OAUTH_TOKEN env or ~/.victoria/claude-oauth-token). Local model still answers.'
+fi
 
 BUILD_DIR="$(mktemp -d)"; trap 'rm -rf "$BUILD_DIR"' EXIT
 cp -R "$KIT_DIR/." "$BUILD_DIR/"
