@@ -55,6 +55,10 @@ environment:
     # from $CLAUDE_CODE_OAUTH_TOKEN or ~/.victoria/claude-oauth-token (empty if
     # neither exists → escalation stays off, local model answers).
     CLAUDE_CLI_OAUTH_TOKEN: "__CLAUDE_OAUTH_TOKEN__"
+    # Absolute path to the CLI so escalation execs it directly, independent of the
+    # uvicorn subprocess's PATH (npm's global bin is on interactive-shell PATH but
+    # not the leaner service PATH). This is the shell-docker image's npm prefix/bin.
+    CLAUDE_CLI_COMMAND: /usr/local/share/npm-global/bin/claude
 
 # ── Egress allowlist (Phase 3 hardening target) ──────────────────────────────
 # IMPORTANT: this bites ONLY under a default-deny network baseline. Per Docker's
