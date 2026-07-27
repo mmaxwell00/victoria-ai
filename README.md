@@ -62,9 +62,10 @@ victoria-ai/
 │   ├── start.sh                # Native launcher — self-heals the Model Runner, Claude-auth preflight, then starts the server
 │   ├── update.sh               # One-command native updater
 │   ├── ensure-model-runner.sh  # Re-bind the Docker Model Runner host-TCP port if it drops
-│   └── claude-login.sh         # Authenticate Claude escalation (subscription login or token)
+│   ├── claude-login.sh         # Authenticate Claude escalation (subscription login or token)
+│   └── claude-bridge.py        # Host bridge — Victoria → governed claude-agent sandbox (mTLS/SSH)
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
-├── tests/                      # 337 pytest tests
+├── tests/                      # 341 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
 ├── deploy-sandbox.sh           # Deploy Victoria into an isolated Docker Sandbox (sbx)
 ├── sbx/
@@ -729,4 +730,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-337 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.
+341 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.

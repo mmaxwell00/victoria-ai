@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     # comma separated). WebSearch/WebFetch let it answer real-time questions;
     # nothing else is pre-approved, so it can't run shell or edit files.
     claude_cli_allowed_tools: str = "WebSearch WebFetch"
+    # Claude host-bridge (governed-sandbox escalation). When claude_bridge_url is
+    # set, escalation POSTs the prompt to a host bridge over mTLS instead of
+    # running `claude -p` locally — so the Claude credential never enters this VM
+    # (see docs/claude-bridge-architecture.svg). Blank = local CLI (default).
+    claude_bridge_url: str = ""                  # e.g. https://host.docker.internal:8787/ask
+    claude_bridge_client_cert: str = ""          # mTLS client cert (PEM) presented to the bridge
+    claude_bridge_client_key: str = ""           # mTLS client key (PEM)
+    claude_bridge_ca_cert: str = ""              # CA that signed the bridge's server cert
 
     # Memory
     db_path: str = "data/victoria.db"
