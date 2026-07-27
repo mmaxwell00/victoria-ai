@@ -79,16 +79,46 @@ fi
 #    paths are host-specific. The committed spec.yaml keeps them as placeholders
 #    (__VICTORIA_REPO__ / __VICTORIA_VAULT__); fill them into a throwaway build
 #    copy here so the repo stays username-agnostic.
-# Claude escalation token (optional, NEVER committed). Prefer $CLAUDE_CODE_OAUTH_TOKEN,
-# else an untracked local file. Empty → escalation stays off (local model answers).
-CLAUDE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
-if [ -z "$CLAUDE_OAUTH_TOKEN" ] && [ -f "$HOME/.victoria/claude-oauth-token" ]; then
-  CLAUDE_OAUTH_TOKEN="$(tr -d '\r\n' < "$HOME/.victoria/claude-oauth-token")"
-fi
-if [ -n "$CLAUDE_OAUTH_TOKEN" ]; then
-  say "Claude escalation: enabled (subscription token found)"
+# ── Claude escalation wiring ─────────────────────────────────────────────────
+# Two mutually-exclusive paths, in priority order:
+#   A) HOST BRIDGE (preferred; credential-containing). If ./scripts/setup-bridge.sh
+#      has been run it wrote ~/.victoria/bridge-env (URL + cert dir). We stage the
+#      mTLS CLIENT identity under the repo mount so Victoria can read it in-sandbox,
+#      and bake NO Claude token into the VM — the subscription credential stays
+#      host-side (escalation runs `claude` only in the governed claude sandbox).
+#   B) LOCAL CLI (fallback). No bridge → optionally bake a subscription OAuth token
+#      so the in-VM `claude` authenticates. Empty → escalation off (local answers).
+CLAUDE_OAUTH_TOKEN=""
+CLAUDE_BRIDGE_URL=""; CLAUDE_BRIDGE_CLIENT_CERT=""; CLAUDE_BRIDGE_CLIENT_KEY=""; CLAUDE_BRIDGE_CA_CERT=""
+BRIDGE_ENV="$HOME/.victoria/bridge-env"
+[ -f "$BRIDGE_ENV" ] && . "$BRIDGE_ENV"      # sets CLAUDE_BRIDGE_URL + CLAUDE_BRIDGE_CERT_DIR
+if [ -n "${CLAUDE_BRIDGE_URL:-}" ] && [ -n "${CLAUDE_BRIDGE_CERT_DIR:-}" ] \
+   && [ -f "${CLAUDE_BRIDGE_CERT_DIR}/client.crt" ]; then
+  BRIDGE_STAGE="$REPO_STAGE/.bridge"          # under the repo mount → same abs path in-sandbox
+  mkdir -p "$BRIDGE_STAGE"
+  cp "$CLAUDE_BRIDGE_CERT_DIR/client.crt" "$CLAUDE_BRIDGE_CERT_DIR/client.key" \
+     "$CLAUDE_BRIDGE_CERT_DIR/ca.crt" "$BRIDGE_STAGE/"
+  # The sandbox process is uid 1000 but these files are owned by the host user;
+  # bind mounts don't remap ownership, so they must be world-readable for Victoria
+  # to read them in-sandbox (same reason the git-cloned repo is readable). This is
+  # only the mTLS CLIENT identity (authenticates Victoria to the bridge) — NOT the
+  # Claude token, which never leaves the host — so VM-readable is acceptable.
+  chmod 755 "$BRIDGE_STAGE"
+  chmod 644 "$BRIDGE_STAGE/client.crt" "$BRIDGE_STAGE/client.key" "$BRIDGE_STAGE/ca.crt"
+  CLAUDE_BRIDGE_CLIENT_CERT="$BRIDGE_STAGE/client.crt"
+  CLAUDE_BRIDGE_CLIENT_KEY="$BRIDGE_STAGE/client.key"
+  CLAUDE_BRIDGE_CA_CERT="$BRIDGE_STAGE/ca.crt"
+  say "Claude escalation: HOST BRIDGE ($CLAUDE_BRIDGE_URL) — credential stays host-side (no token in the VM)"
 else
-  warn 'Claude escalation: OFF — no token ($CLAUDE_CODE_OAUTH_TOKEN env or ~/.victoria/claude-oauth-token). Local model still answers.'
+  CLAUDE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
+  if [ -z "$CLAUDE_OAUTH_TOKEN" ] && [ -f "$HOME/.victoria/claude-oauth-token" ]; then
+    CLAUDE_OAUTH_TOKEN="$(tr -d '\r\n' < "$HOME/.victoria/claude-oauth-token")"
+  fi
+  if [ -n "$CLAUDE_OAUTH_TOKEN" ]; then
+    say "Claude escalation: LOCAL CLI (subscription token found; runs in-VM). Tip: ./scripts/setup-bridge.sh keeps the credential host-side."
+  else
+    warn 'Claude escalation: OFF — no bridge, no token. Run ./scripts/setup-bridge.sh (preferred) or set $CLAUDE_CODE_OAUTH_TOKEN. Local model still answers.'
+  fi
 fi
 
 BUILD_DIR="$(mktemp -d)"; trap 'rm -rf "$BUILD_DIR"' EXIT
@@ -96,8 +126,12 @@ cp -R "$KIT_DIR/." "$BUILD_DIR/"
 sed -e "s#__VICTORIA_REPO__#${REPO_STAGE}#g" \
     -e "s#__VICTORIA_VAULT__#${VAULT_PATH}#g" \
     -e "s#__CLAUDE_OAUTH_TOKEN__#${CLAUDE_OAUTH_TOKEN}#g" \
+    -e "s#__CLAUDE_BRIDGE_URL__#${CLAUDE_BRIDGE_URL}#g" \
+    -e "s#__CLAUDE_BRIDGE_CLIENT_CERT__#${CLAUDE_BRIDGE_CLIENT_CERT}#g" \
+    -e "s#__CLAUDE_BRIDGE_CLIENT_KEY__#${CLAUDE_BRIDGE_CLIENT_KEY}#g" \
+    -e "s#__CLAUDE_BRIDGE_CA_CERT__#${CLAUDE_BRIDGE_CA_CERT}#g" \
   "$KIT_DIR/spec.yaml" > "$BUILD_DIR/spec.yaml"
-if grep -qE "__(VICTORIA_REPO|VICTORIA_VAULT|CLAUDE_OAUTH_TOKEN)__" "$BUILD_DIR/spec.yaml"; then
+if grep -qE "__(VICTORIA_REPO|VICTORIA_VAULT|CLAUDE_OAUTH_TOKEN|CLAUDE_BRIDGE_URL|CLAUDE_BRIDGE_CLIENT_CERT|CLAUDE_BRIDGE_CLIENT_KEY|CLAUDE_BRIDGE_CA_CERT)__" "$BUILD_DIR/spec.yaml"; then
   fail "Placeholder substitution failed in $BUILD_DIR/spec.yaml"
 fi
 say "Packing kit -> $KIT_ZIP  (repo=$REPO_STAGE)"

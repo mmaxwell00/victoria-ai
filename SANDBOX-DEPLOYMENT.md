@@ -161,24 +161,38 @@ browser-based are covered below and in the gotchas.)
 - **Claude escalation via the host bridge (preferred — the credential never enters the VM):**
   the file-token path above works but puts the real token *inside* Victoria's VM. The
   governed alternative keeps it entirely host-side: Victoria POSTs the prompt over
-  **mTLS** to a host bridge (`scripts/claude-bridge.py`) which **SSHes into a built-in
-  `claude`-agent sandbox** where the sbx proxy authenticates — so the real subscription
-  token stays on the host (Keychain + proxy) and **neither sandbox ever holds it**.
-  Level-1 consent still applies: Victoria only escalates on your explicit yes. Full
-  design + review notes in [`docs/claude-bridge-architecture.svg`](docs/claude-bridge-architecture.svg).
+  **mTLS** to a host bridge (`scripts/claude-bridge.py`) which runs `claude -p` in a
+  **built-in `claude`-agent sandbox** where the sbx proxy authenticates — so the real
+  subscription token stays on the host (Keychain + proxy) and **neither sandbox ever
+  holds it**. Level-1 consent still applies: Victoria only escalates on your explicit
+  yes. Full design + review notes in [`docs/claude-bridge-architecture.svg`](docs/claude-bridge-architecture.svg).
+
+  **One-command setup (do this once):**
 
   ```bash
-  # host: one-time mTLS certs, a persistent governed claude sandbox, then run the bridge
-  python3 scripts/claude-bridge.py --gen-certs ~/.victoria/bridge-certs
-  sbx create --name victoria-claude claude .                 # needs nightly sbx (SSH feature)
-  CLAUDE_SANDBOX=victoria-claude python3 scripts/claude-bridge.py --certs ~/.victoria/bridge-certs
+  ./scripts/setup-bridge.sh        # certs + governed sandbox + launchd auto-start
+  sbx run claude                   # one-time: complete the browser login, then Ctrl-C
+  ./deploy-sandbox.sh              # auto-wires Victoria to the bridge (reads ~/.victoria/bridge-env)
   ```
 
-  Point Victoria at it via the kit env / `.env`:
-  `CLAUDE_BRIDGE_URL=https://host.docker.internal:8787/ask` plus the
-  `CLAUDE_BRIDGE_CLIENT_CERT` / `CLAUDE_BRIDGE_CLIENT_KEY` / `CLAUDE_BRIDGE_CA_CERT` the
-  gen-certs step printed. When `CLAUDE_BRIDGE_URL` is set, escalation uses the bridge;
-  blank → the local CLI path above. The SSH hop requires the **nightly `sbx`**.
+  `setup-bridge.sh` is idempotent and:
+  1. generates the mTLS certs (CA + server + client) in `~/.victoria/bridge-certs`;
+  2. creates the persistent governed `victoria-claude` sandbox (`sbx create`);
+  3. installs the bridge as a **launchd** agent (`com.victoria.claude-bridge`) that
+     auto-starts on login and self-restarts if it ever exits;
+  4. writes `~/.victoria/bridge-env`, which `deploy-sandbox.sh` reads to stage the
+     client cert under the repo mount and set `CLAUDE_BRIDGE_URL` + `CLAUDE_BRIDGE_*`.
+     When the bridge is configured the deploy bakes **no** Claude token into the VM.
+
+  **Transport modes** (`BRIDGE_MODE` env for `setup-bridge.sh`, default `exec`):
+  - `exec` — the bridge reaches the sandbox via `sbx exec -i victoria-claude` (prompt
+    on stdin). Works on the **stable `sbx`** — no nightly needed. This is the default.
+  - `ssh` — the bridge SSHes into `victoria-claude.sbx` instead. More robust under load
+    but requires the **nightly `sbx`** (SSH feature).
+
+  Manage the bridge: `launchctl unload/load -w ~/Library/LaunchAgents/com.victoria.claude-bridge.plist`;
+  logs at `~/Library/Logs/victoria-claude-bridge.log`. When `CLAUDE_BRIDGE_URL` is set,
+  escalation uses the bridge; blank → the local CLI path above.
 
 ## Roadmap
 

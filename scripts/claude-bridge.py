@@ -29,8 +29,9 @@ Usage:
 Environment (serve mode):
   BRIDGE_BIND        interface to bind      (default 0.0.0.0 — mTLS is the gate)
   BRIDGE_PORT        port                   (default 8787)
+  CLAUDE_BRIDGE_MODE exec | ssh            (default exec — stable sbx, no nightly)
   CLAUDE_SANDBOX     sbx sandbox name       (default victoria-claude)
-  CLAUDE_SSH_HOST    ssh target             (default $CLAUDE_SANDBOX.sbx)
+  CLAUDE_SSH_HOST    ssh target (ssh mode)  (default $CLAUDE_SANDBOX.sbx)
   CLAUDE_BIN         remote claude binary   (default claude)
   CLAUDE_TIMEOUT     per-call seconds       (default 120)
 """
@@ -66,11 +67,21 @@ def _run_claude(prompt: str, system_prompt: str, model: str, allowed_tools: str)
     tools = [t for t in (allowed_tools or "").replace(",", " ").split() if _TOOL_RE.match(t)]
     if tools:
         remote += ["--allowedTools", *tools]
-    # `ssh host -- <argv>` : ssh joins the remote argv with spaces and the remote
-    # shell re-parses it. We only place validated tokens (model, fixed flags,
-    # regex-checked tool names, and Victoria's own system prompt) in the argv; the
-    # untrusted user prompt is fed on stdin, so it can never become a remote arg.
-    argv = ["ssh", "-o", "BatchMode=yes", _ssh_host(), "--", *remote]
+    # Reach the governed claude sandbox. Two transports:
+    #   exec (default) — `sbx exec <sandbox> -- claude -p` : works on STABLE sbx, no
+    #                    SSH/nightly. Simplest "create once" path.
+    #   ssh            — `ssh <host>.sbx -- claude -p` : needs the sbx SSH feature
+    #                    (nightly). More stable under load.
+    # Either way the remote argv holds only validated tokens (model, fixed flags,
+    # regex-checked tool names, Victoria's own system prompt); the untrusted user
+    # prompt is fed on stdin, so it can never become a remote arg.
+    sandbox = os.environ.get("CLAUDE_SANDBOX", "victoria-claude")
+    if os.environ.get("CLAUDE_BRIDGE_MODE", "exec").lower() == "ssh":
+        argv = ["ssh", "-o", "BatchMode=yes", _ssh_host(), "--", *remote]
+    else:
+        # `-i` forwards our stdin (docker-exec semantics) so the prompt reaches
+        # `claude -p` on stdin; without it stdin is closed and the prompt is lost.
+        argv = ["sbx", "exec", "-i", sandbox, "--", *remote]
     timeout = int(os.environ.get("CLAUDE_TIMEOUT", "120"))
     proc = subprocess.run(argv, input=prompt[:_MAX_PROMPT], capture_output=True,
                           text=True, timeout=timeout)
@@ -128,7 +139,9 @@ def _serve(certs_dir: str) -> None:
     port = int(os.environ.get("BRIDGE_PORT", "8787"))
     httpd = ThreadingHTTPServer((bind, port), Handler)
     httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
-    sys.stderr.write(f"[bridge] mTLS listening on https://{bind}:{port}/ask → ssh {_ssh_host()} claude -p\n")
+    mode = os.environ.get("CLAUDE_BRIDGE_MODE", "exec").lower()
+    target = _ssh_host() if mode == "ssh" else os.environ.get("CLAUDE_SANDBOX", "victoria-claude")
+    sys.stderr.write(f"[bridge] mTLS listening on https://{bind}:{port}/ask → {mode} {target} claude -p\n")
     httpd.serve_forever()
 
 

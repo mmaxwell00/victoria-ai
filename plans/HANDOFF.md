@@ -15,7 +15,8 @@
 > 5. `git commit -m "…"` with backticks corrupts the message (shell command-subst).
 >    Use `git commit -F -` with a quoted `<<'MSG'` heredoc, or `--body-file` for PRs.
 
-Last updated: 2026-07-24. `main` at `dbaf16c`. **341 tests pass.** No open PRs.
+Last updated: 2026-07-27. `main` at `fd2548f`. **345 tests pass.** Open PR:
+`feat/claude-bridge-setup` — the one-command Claude-bridge setup (see §5).
 
 ## 1. Who / Goal
 
@@ -29,8 +30,12 @@ the-loop), layered memory, a web HUD, tools, MCP, an encrypted vault, and an
 Obsidian-backed knowledge base.
 
 **Where the work is right now (newest first):**
-- **Claude escalation via a host bridge — DESIGNED + BUILT, activation pending.**
-  This was the whole focus of the last session. See §2 and §5.
+- **Claude escalation via a host bridge — BUILT + one-command setup, activation pending.**
+  The bridge (`scripts/claude-bridge.py`) now has `exec` mode (works on **stable
+  `sbx`**, no nightly) and `./scripts/setup-bridge.sh` does the whole "create once"
+  in one command (certs + governed sandbox + launchd auto-start). `deploy-sandbox.sh`
+  auto-wires Victoria from `~/.victoria/bridge-env`. Activation = Mark runs
+  `setup-bridge.sh` + a one-time `sbx run claude` login. See §5.
 - **Docker Sandbox (`sbx`) deployment — mature.** Victoria runs in an isolated
   microVM, self-healing, with a portable kit. See §2.
 - **RAG Phase 1b — queued, not started.** Semantic recall over the vault's notes.
@@ -38,8 +43,9 @@ Obsidian-backed knowledge base.
 
 ## 2. Current State (what exists now)
 
-**Test suite: 341 pass** (`python -m pytest -q`, use `.venv/bin/python`).
-All PRs #39–#75 merged. This session merged **#66–#75** (see §4/§5 for the story).
+**Test suite: 345 pass** (`python -m pytest -q`, use `.venv/bin/python`).
+All PRs #39–#77 merged. The current branch `feat/claude-bridge-setup` adds the
+one-command bridge setup (open PR, not yet merged — see §5).
 
 **Sandbox deployment (the primary run mode):**
 - Kit at `sbx/spec.yaml` (`kind: sandbox`, image `docker/sandbox-templates:shell-docker`).
@@ -76,13 +82,22 @@ sandbox (`:8001`) is the live deployment.
   instead of running `claude -p` locally. Backward-compatible (blank URL → local CLI).
 - **The bridge** = `scripts/claude-bridge.py` (stdlib-only, runs on the HOST). mTLS
   server (client cert required) that runs `claude -p` in a governed built-in
-  `claude`-agent sandbox over **SSH** (prompt on stdin, never a shell arg). `--gen-certs`
-  makes CA + server + client certs.
+  `claude`-agent sandbox (prompt on stdin, never a shell arg). `--gen-certs` makes
+  CA + server + client certs. **Two transports** (`CLAUDE_BRIDGE_MODE`, default `exec`):
+  `exec` → `sbx exec -i victoria-claude` (works on the **stable `sbx`**, no nightly);
+  `ssh` → `ssh victoria-claude.sbx` (nightly `sbx`, sturdier under load).
+- **One-command setup (built this branch):** `./scripts/setup-bridge.sh` (idempotent) —
+  certs → `sbx create --name victoria-claude claude` → launchd agent
+  (`com.victoria.claude-bridge`, auto-start + self-restart) → writes `~/.victoria/bridge-env`.
+  `deploy-sandbox.sh` reads that file, stages the mTLS **client** identity under the repo
+  mount (`$REPO_STAGE/.bridge/`, readable in-sandbox) and sets `CLAUDE_BRIDGE_*`; when the
+  bridge is configured it bakes **no** Claude token into the VM.
 - **Credential containment (the point):** the real subscription token stays ONLY in
   sbx's host subsystem (Keychain + proxy); the claude sandbox sees a `proxy-managed`
-  sentinel; Victoria sees only prompt/response. No credential in any sandbox.
-- **NOT YET ACTIVATED** — needs the nightly `sbx` (SSH feature) + a persistent
-  `sbx create --name victoria-claude claude .` + pointing Victoria at the bridge. See §5.
+  sentinel; Victoria sees only prompt/response + holds only the mTLS *client* identity
+  (not the Claude token). No Claude credential in any sandbox.
+- **NOT YET ACTIVATED** — Mark runs `./scripts/setup-bridge.sh`, a one-time
+  `sbx run claude` login, then `./deploy-sandbox.sh`. See §5.
 - Diagrams: `docs/claude-bridge-architecture.svg` (approved design + review notes),
   `docs/claude-escalation-host-bridge.svg`, `docs/claude-escalation-path2-keychain.svg`.
 
@@ -153,20 +168,19 @@ tools `search_notes` / `read_note` / `list_notes` / `write_note`.
 
 ## 5. What to Do Next
 
-**A) Activate the Claude bridge (the immediate open item).** Everything is built (#75);
-it needs setup Mark must drive (his subscription + the nightly `sbx`):
-1. Install the **nightly `sbx`** (`brew install docker/tap/sbx@nightly`) — required for
-   the SSH feature (`sbx setup ssh`, `feature.ssh`).
-2. Generate mTLS certs: `python3 scripts/claude-bridge.py --gen-certs ~/.victoria/bridge-certs`.
-3. Persistent governed claude sandbox: `sbx create --name victoria-claude claude .`
-   (ensure its anthropic OAuth is fresh — `sbx run claude` + `/login` if idle-stale).
-4. Run the bridge: `CLAUDE_SANDBOX=victoria-claude python3 scripts/claude-bridge.py --certs ~/.victoria/bridge-certs`.
-5. Point Victoria at it (kit env / `.env`): `CLAUDE_BRIDGE_URL=https://host.docker.internal:8787/ask`
-   + `CLAUDE_BRIDGE_CLIENT_CERT/KEY/CA_CERT` (paths gen-certs printed), redeploy, and test
-   escalation end-to-end (ask something → "yes" → real Claude answer in the HUD).
+**A) Activate the Claude bridge (the immediate open item).** The one-command setup is
+built (branch `feat/claude-bridge-setup`) and works on the **stable `sbx`** (exec mode —
+no nightly). Once that PR merges, Mark drives activation (his subscription):
+1. `./scripts/setup-bridge.sh` — generates certs, creates the `victoria-claude` governed
+   sandbox, installs the launchd bridge (auto-start), writes `~/.victoria/bridge-env`.
+2. `sbx run claude` once → complete the browser login (subscription OAuth), then Ctrl-C.
+   (Refresh the same way if escalation later fails with "OAuth session expired".)
+3. `./deploy-sandbox.sh` — auto-wires Victoria to the bridge from `~/.victoria/bridge-env`.
+4. Test end-to-end: ask something hard → "yes" → real Claude answer in the HUD. If it
+   errors, `tail -f ~/Library/Logs/victoria-claude-bridge.log`.
    Full steps in `SANDBOX-DEPLOYMENT.md` → "Claude escalation via the host bridge".
-   Optional hardening we spec'd but haven't built: harden hop-1 further, and consider
-   whether the bridge should validate/limit which sandbox it SSHes to.
+   Optional, not built: switch to `ssh` mode once on the nightly `sbx` (sturdier under
+   load, `BRIDGE_MODE=ssh ./scripts/setup-bridge.sh`); harden hop-1 further.
 
 **B) RAG Phase 1b (queued, branch → PR):**
 6. Add a SEPARATE ChromaDB collection for vault docs (distinct from the `conversations`
@@ -188,13 +202,15 @@ victoria/core/conversation.py        # orchestrator; Level-1 escalation consent 
 victoria/config.py                   # settings incl. CLAUDE_BRIDGE_* (mTLS), CLAUDE_CLI_*, OBSIDIAN_VAULT_PATH, MODEL_RUNNER_URL
 victoria/core/semantic_memory.py     # ChromaDB layer (conversation turns); RAG-over-vault extends THIS
 victoria/vault/store.py              # Fernet vault; resolve() falls back to os.environ (Q3)
-scripts/claude-bridge.py             # HOST bridge — mTLS in, `ssh <sandbox>.sbx claude -p` out; --gen-certs
-tests/test_claude_bridge.py          # Victoria's bridge path tests (mocked)
-sbx/spec.yaml                        # THE kit — placeholders, ~20-min import gate, supervisor loop, Claude CLI install, egress block (inert)
-deploy-sandbox.sh                    # stage(code+Piper model)->substitute->pack->run->publish->poll; reads bridge/oauth tokens off-repo
+scripts/claude-bridge.py             # HOST bridge — mTLS in, `sbx exec -i` (default) or `ssh` out to claude -p; --gen-certs
+scripts/setup-bridge.sh              # ONE-COMMAND setup: certs + `sbx create` governed sandbox + launchd auto-start + writes ~/.victoria/bridge-env
+scripts/com.victoria.claude-bridge.plist.template  # launchd template setup-bridge.sh substitutes + installs
+tests/test_claude_bridge.py          # bridge tests — Victoria's router path (mocked) + the script's exec/ssh transport (8 tests)
+sbx/spec.yaml                        # THE kit — placeholders (incl. CLAUDE_BRIDGE_*), ~20-min import gate, supervisor loop, Claude CLI install, egress block (inert)
+deploy-sandbox.sh                    # stage(code+Piper+bridge certs)->substitute->pack->run->publish->poll; auto-wires bridge from ~/.victoria/bridge-env
 SANDBOX-DEPLOYMENT.md                # sbx guide: quickstart, gotchas, isolation & credentials (bridge + file-token), roadmap
 SECURITY-AUDIT.md                    # egress decision-C writeup + org-activation steps
-docs/decisions-md.md                 # ADRs (newest at top of "## Decided"); host-bridge ADR 2026-07-24
+docs/decisions-md.md                 # ADRs (newest at top of "## Decided"); bridge one-command+exec ADR 2026-07-27, host-bridge design 2026-07-24
 docs/claude-bridge-architecture.svg  # approved escalation design (+ 2 companion diagrams)
 docs/build-ai-assistant/references/victoria-reference.md  # keep counts in sync (repo + ~/.claude copy)
 ~/sandboxes/victoria-ai              # staged clone the sandbox mounts (MUST be under ~/sandboxes/**)

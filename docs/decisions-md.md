@@ -85,6 +85,43 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-07-27 · Claude bridge — one-command setup + `exec` transport (no nightly)
+
+**Status:** Built. `scripts/setup-bridge.sh`, `scripts/com.victoria.claude-bridge.plist.template`,
+bridge `exec` mode, deploy wiring, tests. Implements the 2026-07-24 design below.
+
+**Context:** The approved host-bridge design assumed hop 2 (bridge → claude sandbox)
+used **SSH**, which needs the **nightly `sbx`**. Mark wanted a "create once, minimal
+ongoing effort" activation that works on the **stable `sbx`** he already runs.
+
+**Decision:**
+- **Add an `exec` transport to the bridge** (`CLAUDE_BRIDGE_MODE=exec|ssh`, default
+  `exec`). Exec mode reaches the governed sandbox via `sbx exec -i victoria-claude --
+  claude -p` (prompt on stdin, `-i` for docker-exec stdin semantics). No SSH, no
+  nightly. `ssh` mode is retained for when the nightly is available (more robust under
+  load). Security invariants are unchanged in both modes: only validated tokens
+  (model/flags/regex-checked tools/Victoria's own system prompt) are argv; the
+  untrusted prompt is fed on **stdin**, never as a shell arg.
+- **One-command setup** — `./scripts/setup-bridge.sh` (idempotent): generates the mTLS
+  certs, creates the persistent governed `victoria-claude` sandbox, installs the bridge
+  as a **launchd** agent (`com.victoria.claude-bridge`, `RunAtLoad`+`KeepAlive` →
+  auto-start on login, self-restart on exit), and writes `~/.victoria/bridge-env`.
+- **Deploy auto-wiring** — `deploy-sandbox.sh` reads `~/.victoria/bridge-env`, stages
+  the mTLS **client** identity under the repo mount (`$REPO_STAGE/.bridge/`, readable
+  in-sandbox at the same abs path), and substitutes `CLAUDE_BRIDGE_*` into the kit.
+  When the bridge is configured it bakes **no** Claude token into the VM.
+
+**Why:** honours credential containment (only the mTLS *client* identity — not the
+Claude token — ever enters Victoria's VM) while removing the nightly-`sbx` dependency
+and reducing activation to one command + a one-time `sbx run claude` login.
+
+**Trade-offs:** `exec` mode leans on `sbx exec` per escalation (historically wedge-prone
+when an exec is *interrupted* — a single launchd-managed call per escalation is the low-risk
+case; `ssh` mode remains the sturdier option under heavy/concurrent load). The staged
+client cert/key sit on disk under `~/sandboxes/**` (gitignored via `.bridge/`).
+
+---
+
 ### 2026-07-24 · Claude escalation in the sandbox — host-bridge design (approved)
 
 **Status:** Design approved; build starting. Diagrams in `docs/`.

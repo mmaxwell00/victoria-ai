@@ -96,3 +96,86 @@ async def test_no_bridge_url_takes_local_cli_path(monkeypatch):
     with pytest.raises(RuntimeError, match="not found on"):
         await LLMRouter().claude_cli("x")
     assert bridge_called["hit"] is False                # bridge was never used
+
+
+# ── Host-bridge SCRIPT side (scripts/claude-bridge.py `_run_claude`) ─────────
+# The bridge runs on the host and reaches the governed claude sandbox over either
+# `sbx exec` (default) or `ssh`. These tests cover the transport argv + the
+# security invariants (prompt on stdin, validated tokens only) without invoking
+# sbx/ssh/claude.
+import importlib.util
+import pathlib
+import types
+
+_BRIDGE_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude-bridge.py"
+
+
+def _load_bridge():
+    spec = importlib.util.spec_from_file_location("claude_bridge", _BRIDGE_PATH)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)                         # stdlib-only; no side effects on import
+    return mod
+
+
+@pytest.fixture
+def bridge(monkeypatch):
+    """The loaded bridge module with subprocess.run stubbed to capture the argv
+    and stdin instead of executing anything. `cap` holds the last call."""
+    mod = _load_bridge()
+    cap = {}
+
+    def _fake_run(argv, input=None, capture_output=None, text=None, timeout=None):
+        cap["argv"] = argv
+        cap["input"] = input
+        return types.SimpleNamespace(returncode=cap.get("rc", 0),
+                                     stdout=cap.get("stdout", "  hi  "),
+                                     stderr=cap.get("stderr", ""))
+
+    monkeypatch.setattr(mod.subprocess, "run", _fake_run)
+    mod._cap = cap
+    return mod
+
+
+def test_bridge_exec_mode_argv_and_prompt_on_stdin(bridge, monkeypatch):
+    monkeypatch.delenv("CLAUDE_BRIDGE_MODE", raising=False)   # default = exec
+    monkeypatch.setenv("CLAUDE_SANDBOX", "victoria-claude")
+    out = bridge._run_claude("SECRET-PROMPT", "be terse", "sonnet", "WebSearch,Bogus;rm")
+    argv = bridge._cap["argv"]
+    assert argv[:6] == ["sbx", "exec", "-i", "victoria-claude", "--", "claude"]
+    assert argv[6:9] == ["-p", "--model", "sonnet"]
+    assert "--append-system-prompt" in argv and "be terse" in argv
+    assert "--allowedTools" in argv and "WebSearch" in argv
+    assert "Bogus" not in argv and "Bogus;rm" not in argv    # invalid tool filtered
+    # SECURITY: the untrusted prompt is fed on stdin, never as an argv token.
+    assert bridge._cap["input"] == "SECRET-PROMPT"
+    assert "SECRET-PROMPT" not in " ".join(argv)
+    assert out == "hi"                                        # stdout trimmed
+
+
+def test_bridge_ssh_mode_argv(bridge, monkeypatch):
+    monkeypatch.setenv("CLAUDE_BRIDGE_MODE", "ssh")
+    monkeypatch.setenv("CLAUDE_SANDBOX", "victoria-claude")
+    monkeypatch.delenv("CLAUDE_SSH_HOST", raising=False)
+    bridge._run_claude("hello", "", "sonnet", "")
+    argv = bridge._cap["argv"]
+    assert argv[0] == "ssh"
+    assert "victoria-claude.sbx" in argv                      # default ssh host
+    assert argv[-4:] == ["claude", "-p", "--model", "sonnet"] # remote command tail
+    assert "sbx" not in argv                                  # ssh mode, not exec
+    assert bridge._cap["input"] == "hello"                    # prompt still on stdin
+
+
+def test_bridge_rejects_bad_model_falls_back_to_sonnet(bridge, monkeypatch):
+    monkeypatch.delenv("CLAUDE_BRIDGE_MODE", raising=False)
+    bridge._run_claude("x", "", "bad model!;rm -rf", "")      # invalid → sonnet
+    argv = bridge._cap["argv"]
+    assert "sonnet" in argv
+    assert "bad model!;rm -rf" not in " ".join(argv)
+
+
+def test_bridge_nonzero_exit_raises(bridge, monkeypatch):
+    monkeypatch.delenv("CLAUDE_BRIDGE_MODE", raising=False)
+    bridge._cap["rc"] = 1
+    bridge._cap["stderr"] = "Invalid API key"
+    with pytest.raises(RuntimeError, match="claude exited 1"):
+        bridge._run_claude("x", "", "sonnet", "")

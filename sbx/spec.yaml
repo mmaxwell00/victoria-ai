@@ -59,6 +59,17 @@ environment:
     # uvicorn subprocess's PATH (npm's global bin is on interactive-shell PATH but
     # not the leaner service PATH). This is the shell-docker image's npm prefix/bin.
     CLAUDE_CLI_COMMAND: /usr/local/share/npm-global/bin/claude
+    # Claude HOST-BRIDGE escalation (preferred; credential-containing). When set,
+    # escalation POSTs the prompt to the host bridge over mTLS instead of running
+    # `claude` in THIS VM — so the subscription credential never enters the sandbox
+    # (see docs/claude-bridge-architecture.svg). All four are empty unless the host
+    # bridge is set up: scripts/setup-bridge.sh writes ~/.victoria/bridge-env and
+    # deploy-sandbox.sh substitutes these + stages the client certs under the repo
+    # mount (readable in-sandbox). Empty → escalation falls back to the local CLI.
+    CLAUDE_BRIDGE_URL: "__CLAUDE_BRIDGE_URL__"
+    CLAUDE_BRIDGE_CLIENT_CERT: "__CLAUDE_BRIDGE_CLIENT_CERT__"
+    CLAUDE_BRIDGE_CLIENT_KEY: "__CLAUDE_BRIDGE_CLIENT_KEY__"
+    CLAUDE_BRIDGE_CA_CERT: "__CLAUDE_BRIDGE_CA_CERT__"
 
 # ── Egress allowlist (Phase 3 hardening target) ──────────────────────────────
 # IMPORTANT: this bites ONLY under a default-deny network baseline. Per Docker's

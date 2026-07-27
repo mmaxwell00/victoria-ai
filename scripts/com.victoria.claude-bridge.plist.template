@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Victoria Claude host-bridge launchd agent.
+     TEMPLATE — do not load this file directly. scripts/setup-bridge.sh substitutes
+     the placeholder tokens (host-specific absolute paths) and installs the result to
+     ~/Library/LaunchAgents/com.victoria.claude-bridge.plist. KeepAlive+RunAtLoad
+     make the bridge auto-start on login and self-restart if it ever exits. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.victoria.claude-bridge</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PYTHON__</string>
+        <string>__BRIDGE_SCRIPT__</string>
+        <string>--certs</string>
+        <string>__CERT_DIR__</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- launchd starts agents with a minimal PATH; the bridge shells out to
+             `sbx` (exec mode), so its dir must be here. -->
+        <key>PATH</key>
+        <string>__PATH__</string>
+        <key>CLAUDE_BRIDGE_MODE</key>
+        <string>__CLAUDE_BRIDGE_MODE__</string>
+        <key>CLAUDE_SANDBOX</key>
+        <string>__CLAUDE_SANDBOX__</string>
+        <key>BRIDGE_PORT</key>
+        <string>__BRIDGE_PORT__</string>
+        <key>CLAUDE_TIMEOUT</key>
+        <string>__CLAUDE_TIMEOUT__</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__LOG_FILE__</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG_FILE__</string>
+</dict>
+</plist>
