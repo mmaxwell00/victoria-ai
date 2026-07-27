@@ -119,9 +119,9 @@ exposed to Victoria's VM — the strongest containment available given the proxy
 limitation.
 
 **Diagrams (this PR):**
-- `docs/claude-bridge-architecture.svg` — the approved end-to-end design + review notes.
-- `docs/claude-escalation-host-bridge.svg` — bridge credential flow.
-- `docs/claude-escalation-path2-keychain.svg` — the rejected Path-2 (token-in-VM) for contrast.
+- [`docs/claude-bridge-architecture.svg`](claude-bridge-architecture.svg) — the approved end-to-end design + review notes.
+- [`docs/claude-escalation-host-bridge.svg`](claude-escalation-host-bridge.svg) — bridge credential flow.
+- [`docs/claude-escalation-path2-keychain.svg`](claude-escalation-path2-keychain.svg) — the rejected Path-2 (token-in-VM) for contrast.
 
 **Build scope (next PR):** host bridge (~50–100 LOC) + Victoria `CLAUDE_BRIDGE_URL`
 path in `llm_router.claude_cli()` (backward-compatible) + a persistent claude-agent

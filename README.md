@@ -223,6 +223,8 @@ How the local model signals it's stuck: local backends are given an *escalation 
 
 > Requires the [Claude Code CLI](https://claude.com/claude-code) installed and logged in (`claude` on your PATH). Adding ChatGPT as an alternative is a planned follow-up.
 
+> **In the Docker Sandbox**, escalation instead routes through a governed **host bridge** so the Claude credential never enters the sandbox: Victoria sends only the prompt over mTLS to `scripts/claude-bridge.py`, which runs `claude -p` in a governed `claude`-agent sandbox and returns the answer. Configure with `CLAUDE_BRIDGE_URL` + `CLAUDE_BRIDGE_*` (blank → the local CLI above). See [SANDBOX-DEPLOYMENT.md](SANDBOX-DEPLOYMENT.md) and the design diagram [`docs/claude-bridge-architecture.svg`](docs/claude-bridge-architecture.svg).
+
 ### Reliable tool use (no phantom "I can't access that")
 
 Small local models are stochastic about tool-calling — they occasionally reply *"I'm unable to fetch real-time data"* even with the tools right there. Three guardrails keep that from reaching you:
