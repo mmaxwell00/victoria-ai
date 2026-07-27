@@ -95,10 +95,16 @@ BRIDGE_ENV="$HOME/.victoria/bridge-env"
 if [ -n "${CLAUDE_BRIDGE_URL:-}" ] && [ -n "${CLAUDE_BRIDGE_CERT_DIR:-}" ] \
    && [ -f "${CLAUDE_BRIDGE_CERT_DIR}/client.crt" ]; then
   BRIDGE_STAGE="$REPO_STAGE/.bridge"          # under the repo mount → same abs path in-sandbox
-  mkdir -p "$BRIDGE_STAGE"; chmod 700 "$BRIDGE_STAGE"
+  mkdir -p "$BRIDGE_STAGE"
   cp "$CLAUDE_BRIDGE_CERT_DIR/client.crt" "$CLAUDE_BRIDGE_CERT_DIR/client.key" \
      "$CLAUDE_BRIDGE_CERT_DIR/ca.crt" "$BRIDGE_STAGE/"
-  chmod 600 "$BRIDGE_STAGE/client.key"
+  # The sandbox process is uid 1000 but these files are owned by the host user;
+  # bind mounts don't remap ownership, so they must be world-readable for Victoria
+  # to read them in-sandbox (same reason the git-cloned repo is readable). This is
+  # only the mTLS CLIENT identity (authenticates Victoria to the bridge) — NOT the
+  # Claude token, which never leaves the host — so VM-readable is acceptable.
+  chmod 755 "$BRIDGE_STAGE"
+  chmod 644 "$BRIDGE_STAGE/client.crt" "$BRIDGE_STAGE/client.key" "$BRIDGE_STAGE/ca.crt"
   CLAUDE_BRIDGE_CLIENT_CERT="$BRIDGE_STAGE/client.crt"
   CLAUDE_BRIDGE_CLIENT_KEY="$BRIDGE_STAGE/client.key"
   CLAUDE_BRIDGE_CA_CERT="$BRIDGE_STAGE/ca.crt"
