@@ -85,6 +85,53 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-07-24 · Claude escalation in the sandbox — host-bridge design (approved)
+
+**Status:** Design approved; build starting. Diagrams in `docs/`.
+
+**Context:** Victoria's "Claude" backend shells out to the Claude Code CLI
+(subscription auth). Inside the sandbox that fails — and we established why across
+a long investigation:
+- The sbx **proxy OAuth** (sentinel-swap) that authenticates Claude Code is wired
+  to the **built-in `claude` agent only**. A custom kit that declares the full
+  `oauth:` block gets the credential *file seeded* but the proxy never swaps the
+  sentinel for a custom agent — verified empirically (both OAuth-file and API-key
+  paths fail: "OAuth session expired" / "Invalid API key"). So the pure
+  proxy/secret-engine path is **not achievable for Victoria's custom agent**.
+- A `claude setup-token` **injected into the VM** (Path 2) works and is subscription
+  auth, but the real token then **lives inside Victoria's sandbox** — Victoria can
+  read it. Rejected on credential-containment grounds.
+
+**Decision — host bridge.** Victoria delegates escalation to a governed **built-in
+`claude`-agent sandbox** (where proxy auth works), reached via a small **host
+bridge**:
+- **Control (Level 1, already built):** Victoria's local model *suggests* escalation
+  and only calls Claude on the user's explicit **yes** — no auto-calls.
+- **Hop 1** (Victoria → bridge): **mTLS**, prompt only — no credentials cross.
+- **Hop 2** (bridge → claude sandbox): **SSH** (`sbx` SSH feature — nightly build).
+- **Credential containment:** the real subscription token stays **only** in sbx's
+  host subsystem (macOS Keychain + proxy), refreshed on use; **neither sandbox ever
+  holds it** (the claude sandbox sees a `proxy-managed` sentinel; Victoria sees
+  nothing but prompt/response).
+
+**Why:** subscription auth (not API billing), and the real credential is never
+exposed to Victoria's VM — the strongest containment available given the proxy
+limitation.
+
+**Diagrams (this PR):**
+- `docs/claude-bridge-architecture.svg` — the approved end-to-end design + review notes.
+- `docs/claude-escalation-host-bridge.svg` — bridge credential flow.
+- `docs/claude-escalation-path2-keychain.svg` — the rejected Path-2 (token-in-VM) for contrast.
+
+**Build scope (next PR):** host bridge (~50–100 LOC) + Victoria `CLAUDE_BRIDGE_URL`
+path in `llm_router.claude_cli()` (backward-compatible) + a persistent claude-agent
+sandbox. SSH/proxy wiring activates once the nightly `sbx` + claude sandbox are set up.
+
+**Trade-offs:** more moving parts than Path 2; hop 2 depends on the nightly `sbx`
+SSH feature; a long idle gap needs `sbx run claude` to refresh the stored OAuth.
+
+---
+
 ### 2026-07-22 · Sandbox Phase 3 hardening — egress blocked by org policy; credential env-fallback
 
 **Status:** Q3 (credentials) implemented + verified. Q2 (egress) written into the
