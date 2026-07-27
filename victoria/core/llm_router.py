@@ -396,7 +396,15 @@ class LLMRouter:
         it doesn't pick up the current project's CLAUDE.md context, and with a
         scrubbed environment (see _claude_cli_env) so a session/gateway context
         inherited from the launch shell can't hijack authentication.
+
+        Host-bridge mode: when settings.claude_bridge_url is set, escalation is
+        delegated to a governed claude-agent sandbox via the host bridge (mTLS)
+        instead of running the CLI locally — so the Claude credential never enters
+        this VM. See _claude_via_bridge and docs/claude-bridge-architecture.svg.
         """
+        if settings.claude_bridge_url:
+            return await self._claude_via_bridge(prompt, system_prompt)
+
         args = [
             settings.claude_cli_command,
             "-p", prompt,
@@ -449,6 +457,46 @@ class LLMRouter:
             raise RuntimeError(f"Claude Code CLI failed (exit {proc.returncode}): {detail}{hint}")
 
         return stdout.decode(errors="replace").strip()
+
+    async def _claude_via_bridge(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+        """Delegate escalation to the host bridge (a governed claude-agent sandbox).
+
+        POSTs the prompt over mutual-TLS; the bridge runs `claude -p` in the
+        governed sandbox and returns the answer. The Claude subscription
+        credential stays on the host (sbx proxy) and never enters this VM — only
+        the prompt leaves, only the answer returns.
+        """
+        payload = {
+            "prompt": prompt,
+            "system_prompt": system_prompt or "",
+            "model": settings.claude_cli_model,
+            "allowed_tools": settings.claude_cli_allowed_tools,
+        }
+        # mTLS: present our client cert; verify the bridge's server cert against
+        # the pinned CA (falls back to system trust only if no CA is configured).
+        cert = None
+        if settings.claude_bridge_client_cert and settings.claude_bridge_client_key:
+            cert = (settings.claude_bridge_client_cert, settings.claude_bridge_client_key)
+        verify = settings.claude_bridge_ca_cert or True
+        try:
+            async with httpx.AsyncClient(cert=cert, verify=verify,
+                                         timeout=settings.claude_cli_timeout) as client:
+                resp = await client.post(settings.claude_bridge_url, json=payload)
+        except httpx.HTTPError as exc:
+            raise RuntimeError(
+                f"Claude bridge unreachable at {settings.claude_bridge_url}: {exc}"
+            ) from exc
+        if resp.status_code != 200:
+            detail = (resp.text or "").strip()[:400] or f"HTTP {resp.status_code}"
+            raise RuntimeError(f"Claude bridge error (HTTP {resp.status_code}): {detail}")
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise RuntimeError(f"Claude bridge returned non-JSON: {resp.text[:200]}") from exc
+        answer = (data.get("answer") or "").strip()
+        if not answer:
+            raise RuntimeError(f"Claude bridge returned no answer: {str(data)[:200]}")
+        return answer
 
     # ------------------------------------------------------------------ #
     # Docker Model Runner (OpenAI-compatible API)                         #

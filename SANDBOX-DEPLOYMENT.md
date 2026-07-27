@@ -158,6 +158,28 @@ browser-based are covered below and in the gotchas.)
   injects as `CLAUDE_CODE_OAUTH_TOKEN` for the `claude` subprocess. No token → the
   "Claude" backend is unavailable and the local model answers (no hard error).
 
+- **Claude escalation via the host bridge (preferred — the credential never enters the VM):**
+  the file-token path above works but puts the real token *inside* Victoria's VM. The
+  governed alternative keeps it entirely host-side: Victoria POSTs the prompt over
+  **mTLS** to a host bridge (`scripts/claude-bridge.py`) which **SSHes into a built-in
+  `claude`-agent sandbox** where the sbx proxy authenticates — so the real subscription
+  token stays on the host (Keychain + proxy) and **neither sandbox ever holds it**.
+  Level-1 consent still applies: Victoria only escalates on your explicit yes. Full
+  design + review notes in [`docs/claude-bridge-architecture.svg`](docs/claude-bridge-architecture.svg).
+
+  ```bash
+  # host: one-time mTLS certs, a persistent governed claude sandbox, then run the bridge
+  python3 scripts/claude-bridge.py --gen-certs ~/.victoria/bridge-certs
+  sbx create --name victoria-claude claude .                 # needs nightly sbx (SSH feature)
+  CLAUDE_SANDBOX=victoria-claude python3 scripts/claude-bridge.py --certs ~/.victoria/bridge-certs
+  ```
+
+  Point Victoria at it via the kit env / `.env`:
+  `CLAUDE_BRIDGE_URL=https://host.docker.internal:8787/ask` plus the
+  `CLAUDE_BRIDGE_CLIENT_CERT` / `CLAUDE_BRIDGE_CLIENT_KEY` / `CLAUDE_BRIDGE_CA_CERT` the
+  gen-certs step printed. When `CLAUDE_BRIDGE_URL` is set, escalation uses the bridge;
+  blank → the local CLI path above. The SSH hop requires the **nightly `sbx`**.
+
 ## Roadmap
 
 - **Phase 2 — done.** The kit installs the full dependency set on a **uv-managed
