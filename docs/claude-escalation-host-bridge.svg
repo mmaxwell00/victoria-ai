@@ -1,0 +1,52 @@
+<svg viewBox="0 0 760 560" xmlns="http://www.w3.org/2000/svg" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title>Claude escalation — host-bridge design: Victoria never sees the credential</title>
+<desc>Credential flow for the host-bridge approach. Victoria's sandbox sends only a prompt over mTLS to a host bridge, which SSHes into a governed claude-agent sandbox. That sandbox sees only a proxy-managed sentinel; the sbx proxy swaps in the real token from the host Keychain at egress. The real subscription token never enters either sandbox.</desc>
+<defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<!-- ===== CLOUD ===== -->
+<rect x="20" y="20" width="720" height="72" rx="20" fill="#6E2A1A"/>
+<text x="44" y="46" fill="#F0997B" font-size="16" font-weight="600">Cloud / external</text>
+<rect x="440" y="46" width="180" height="38" rx="10" fill="#3A3A37" stroke="#57574F"/><text x="530" y="65" fill="#ECEBE7" font-size="13.5" font-weight="600" text-anchor="middle">Anthropic API</text><text x="530" y="79" fill="#B2B0A6" font-size="10.5" text-anchor="middle">Claude · your subscription</text>
+
+<!-- ===== HOST ===== -->
+<rect x="20" y="108" width="720" height="150" rx="20" fill="#123E72"/>
+<text x="44" y="134" fill="#85B7EB" font-size="16" font-weight="600">Host — macOS · all real credentials stay here</text>
+<rect x="40" y="150" width="205" height="46" rx="10" fill="#3A3A37" stroke="#57574F"/><text x="142" y="171" fill="#ECEBE7" font-size="13.5" font-weight="600" text-anchor="middle">claude bridge</text><text x="142" y="188" fill="#B2B0A6" font-size="11" text-anchor="middle">mTLS in · SSH out</text>
+<rect x="300" y="150" width="210" height="46" rx="10" fill="#5A4326" stroke="#D9A441" stroke-width="1.5"/><text x="405" y="171" fill="#F0C674" font-size="13" font-weight="600" text-anchor="middle">sbx proxy</text><text x="405" y="188" fill="#E7C58C" font-size="11" text-anchor="middle">swaps sentinel → REAL token</text>
+<rect x="530" y="150" width="190" height="46" rx="10" fill="#5A4326" stroke="#D9A441" stroke-width="1.5"/><text x="625" y="171" fill="#F0C674" font-size="13" font-weight="600" text-anchor="middle">macOS Keychain</text><text x="625" y="188" fill="#E7C58C" font-size="11" text-anchor="middle">REAL token (host-only)</text>
+<rect x="40" y="206" width="680" height="40" rx="10" fill="#16305C" stroke="#85B7EB"/><text x="380" y="231" fill="#CDE3FB" font-size="11.5" text-anchor="middle">Real subscription token never leaves the host — the proxy swaps the sentinel for it at egress.</text>
+
+<!-- ===== GOVERNED CLAUDE-AGENT SANDBOX ===== -->
+<rect x="20" y="274" width="720" height="104" rx="20" fill="#0F5E48"/>
+<text x="44" y="300" fill="#5DCAA5" font-size="15.5" font-weight="600">Governed claude-agent sandbox — built-in agent (proxy auth works)</text>
+<rect x="300" y="316" width="200" height="46" rx="10" fill="#3A3A37" stroke="#57574F"/><text x="400" y="337" fill="#ECEBE7" font-size="14" font-weight="600" text-anchor="middle">claude -p</text><text x="400" y="354" fill="#B2B0A6" font-size="11" text-anchor="middle">runs the prompt</text>
+<rect x="520" y="316" width="200" height="46" rx="10" fill="#3A3A37" stroke="#8E8E88" stroke-width="1" stroke-dasharray="5 3"/><text x="620" y="337" fill="#CDEFE1" font-size="12.5" font-weight="600" text-anchor="middle">creds = sentinel only</text><text x="620" y="354" fill="#8FCBB4" font-size="10.5" text-anchor="middle">sk-ant-…-proxy-managed</text>
+
+<!-- ===== VICTORIA SANDBOX ===== -->
+<rect x="20" y="394" width="720" height="112" rx="20" fill="#0F5E48"/>
+<text x="44" y="420" fill="#5DCAA5" font-size="16" font-weight="600">Victoria's sandbox — isolated microVM</text>
+<rect x="40" y="436" width="240" height="46" rx="10" fill="#3A3A37" stroke="#57574F"/><text x="160" y="457" fill="#ECEBE7" font-size="14" font-weight="600" text-anchor="middle">Victoria</text><text x="160" y="474" fill="#B2B0A6" font-size="11" text-anchor="middle">local LLM · HUD · escalation</text>
+<rect x="300" y="436" width="420" height="46" rx="10" fill="#124F3D" stroke="#5DCAA5" stroke-width="1.5"/><text x="510" y="457" fill="#CDEFE1" font-size="13" font-weight="600" text-anchor="middle">✓ Zero Claude credentials here</text><text x="510" y="474" fill="#8FCBB4" font-size="11" text-anchor="middle">Victoria only sends a prompt and gets an answer back</text>
+
+<!-- ===== FLOW ===== -->
+<!-- (1) Victoria -> bridge : mTLS prompt (left margin, over zone bg, avoids boxes) -->
+<polyline points="60,436 60,196" fill="none" stroke="#8E8E88" stroke-width="1.8" marker-end="url(#ah)"/>
+<text x="66" y="330" fill="#8E8E88" font-size="12" font-weight="600">① mTLS</text>
+<text x="66" y="346" fill="#8E8E88" font-size="12">prompt only</text>
+<!-- (2) bridge -> claude -p : SSH -->
+<line x1="200" y1="196" x2="330" y2="316" stroke="#8E8E88" stroke-width="1.8" marker-end="url(#ah)"/>
+<text x="120" y="262" fill="#8E8E88" font-size="12">② SSH · run claude -p</text>
+<!-- (3) claude -p -> proxy : sentinel egress -->
+<line x1="430" y1="316" x2="420" y2="196" stroke="#8E8E88" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#ah)"/>
+<text x="436" y="262" fill="#8E8E88" font-size="12">③ sentinel</text>
+<!-- (4) proxy -> Anthropic : real token -->
+<line x1="450" y1="150" x2="500" y2="92" stroke="#D9A441" stroke-width="2" marker-end="url(#ah)"/>
+<text x="360" y="120" fill="#D9A441" font-size="12" font-weight="600">④ real token → Anthropic</text>
+
+<!-- ===== LEGEND ===== -->
+<rect x="536" y="274" width="14" height="14" rx="3" fill="#5A4326" stroke="#D9A441"/><text x="556" y="285" fill="#B2B0A6" font-size="11">real credential (host-only)</text>
+</svg>

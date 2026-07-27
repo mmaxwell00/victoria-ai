@@ -1,0 +1,70 @@
+<svg viewBox="0 0 900 848" xmlns="http://www.w3.org/2000/svg" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title>Victoria → Claude via the governed host bridge — final review diagram</title>
+<desc>End-to-end design: you ask Victoria; her local model suggests escalation and waits for your explicit yes (Level 1); on approval she sends only a prompt over mTLS to a host bridge, which SSHes into a governed claude-agent sandbox; that sandbox holds only a sentinel while the sbx proxy swaps in the real subscription token from the host Keychain at egress; the answer returns to Victoria's HUD. The real credential never enters either sandbox. Includes a review-notes panel of items to confirm before build.</desc>
+<defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<!-- ===== CLOUD ===== -->
+<rect x="20" y="20" width="860" height="66" rx="18" fill="#6E2A1A"/>
+<text x="44" y="47" fill="#F0997B" font-size="15" font-weight="600">Cloud / external</text>
+<rect x="560" y="42" width="200" height="38" rx="10" fill="#3A3A37" stroke="#57574F"/><text x="660" y="61" fill="#ECEBE7" font-size="13.5" font-weight="600" text-anchor="middle">Anthropic API</text><text x="660" y="75" fill="#B2B0A6" font-size="10.5" text-anchor="middle">Claude · your subscription</text>
+
+<!-- ===== GOVERNED CLAUDE-AGENT SANDBOX ===== -->
+<rect x="20" y="102" width="860" height="94" rx="18" fill="#0F5E48"/>
+<text x="44" y="129" fill="#5DCAA5" font-size="14.5" font-weight="600">Governed claude-agent sandbox — built-in agent (proxy auth works)</text>
+<rect x="380" y="142" width="210" height="44" rx="10" fill="#3A3A37" stroke="#57574F"/><text x="485" y="163" fill="#ECEBE7" font-size="14" font-weight="600" text-anchor="middle">claude -p</text><text x="485" y="179" fill="#B2B0A6" font-size="10.5" text-anchor="middle">one-shot · tools / MCP gateway</text>
+<rect x="610" y="142" width="235" height="44" rx="10" fill="#3A3A37" stroke="#8E8E88" stroke-dasharray="5 3"/><text x="727" y="163" fill="#CDEFE1" font-size="12.5" font-weight="600" text-anchor="middle">creds = sentinel only</text><text x="727" y="179" fill="#8FCBB4" font-size="10.5" text-anchor="middle">sk-ant-…-proxy-managed</text>
+
+<!-- ===== HOST ===== -->
+<rect x="20" y="212" width="860" height="158" rx="18" fill="#123E72"/>
+<text x="44" y="239" fill="#85B7EB" font-size="15" font-weight="600">Host — macOS</text>
+<rect x="40" y="254" width="215" height="46" rx="10" fill="#3A3A37" stroke="#57574F"/><text x="147" y="275" fill="#ECEBE7" font-size="13.5" font-weight="600" text-anchor="middle">claude bridge</text><text x="147" y="292" fill="#B2B0A6" font-size="10.5" text-anchor="middle">mTLS in · SSH out</text>
+<rect x="300" y="254" width="250" height="46" rx="10" fill="#5A4326" stroke="#D9A441" stroke-width="1.5"/><text x="425" y="275" fill="#F0C674" font-size="13" font-weight="600" text-anchor="middle">sbx proxy</text><text x="425" y="292" fill="#E7C58C" font-size="10.5" text-anchor="middle">swaps sentinel → REAL · refreshes on use</text>
+<rect x="595" y="254" width="250" height="46" rx="10" fill="#5A4326" stroke="#D9A441" stroke-width="1.5"/><text x="720" y="275" fill="#F0C674" font-size="13" font-weight="600" text-anchor="middle">macOS Keychain</text><text x="720" y="292" fill="#E7C58C" font-size="10.5" text-anchor="middle">REAL subscription token · host-only</text>
+<rect x="40" y="312" width="215" height="42" rx="10" fill="#3A3A37" stroke="#57574F"/><text x="147" y="332" fill="#ECEBE7" font-size="12.5" font-weight="600" text-anchor="middle">Docker Model Runner</text><text x="147" y="348" fill="#B2B0A6" font-size="10.5" text-anchor="middle">:12434 · Victoria's local LLM</text>
+<rect x="300" y="312" width="545" height="42" rx="10" fill="#16305C" stroke="#85B7EB"/><text x="572" y="338" fill="#CDE3FB" font-size="11.5" text-anchor="middle">Real token never leaves the host — neither sandbox ever holds it.</text>
+
+<!-- ===== VICTORIA SANDBOX ===== -->
+<rect x="20" y="386" width="860" height="158" rx="18" fill="#0F5E48"/>
+<text x="44" y="413" fill="#5DCAA5" font-size="15" font-weight="600">Victoria's sandbox</text>
+<rect x="40" y="428" width="150" height="46" rx="10" fill="#3A3A37" stroke="#57574F"/><text x="115" y="449" fill="#ECEBE7" font-size="13" font-weight="600" text-anchor="middle">You · the HUD</text><text x="115" y="466" fill="#B2B0A6" font-size="10.5" text-anchor="middle">ask in the browser</text>
+<rect x="212" y="428" width="190" height="46" rx="10" fill="#3A3A37" stroke="#57574F"/><text x="307" y="449" fill="#ECEBE7" font-size="13.5" font-weight="600" text-anchor="middle">Victoria</text><text x="307" y="466" fill="#B2B0A6" font-size="10.5" text-anchor="middle">local model · memory</text>
+<rect x="424" y="428" width="416" height="46" rx="10" fill="#14332A" stroke="#5DCAA5" stroke-width="1.5"/><text x="632" y="449" fill="#CDEFE1" font-size="12.5" font-weight="600" text-anchor="middle">Level 1 gate — “Shall I put it to Claude? (yes / no)”</text><text x="632" y="466" fill="#8FCBB4" font-size="10.5" text-anchor="middle">suggests only · never calls Claude without YOUR yes</text>
+<rect x="40" y="486" width="362" height="40" rx="10" fill="#124F3D" stroke="#5DCAA5" stroke-width="1.5"/><text x="221" y="511" fill="#CDEFE1" font-size="12" font-weight="600" text-anchor="middle">✓ Zero Claude credentials in Victoria</text>
+<rect x="424" y="486" width="416" height="40" rx="10" fill="#2B2B28" stroke="#57574F"/><text x="632" y="511" fill="#B2B0A6" font-size="11.5" text-anchor="middle">Claude's answer returns the same path → shown in the HUD</text>
+
+<!-- ===== FLOW EDGES ===== -->
+<!-- local LLM (default path): Victoria <-> Model Runner -->
+<line x1="150" y1="428" x2="150" y2="354" stroke="#8E8E88" stroke-width="1.6" stroke-dasharray="4 3" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<text x="60" y="378" fill="#8E8E88" font-size="10.5">local LLM (default)</text>
+<!-- (1) ask + consent: You <-> Victoria -->
+<line x1="190" y1="451" x2="212" y2="451" stroke="#8E8E88" stroke-width="1.6" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<text x="60" y="540" fill="#5DCAA5" font-size="11" font-weight="600">① you ask → she suggests → you approve</text>
+<!-- (2) Victoria -> bridge : mTLS prompt only -->
+<polyline points="277,428 277,277 255,277" fill="none" stroke="#8E8E88" stroke-width="1.8" marker-end="url(#ah)"/>
+<text x="250" y="420" fill="#8E8E88" font-size="11" font-weight="600">② mTLS · prompt only</text>
+<!-- (3) bridge -> claude -p : SSH -->
+<line x1="220" y1="254" x2="410" y2="186" stroke="#8E8E88" stroke-width="1.8" marker-end="url(#ah)"/>
+<text x="64" y="182" fill="#8E8E88" font-size="11" font-weight="600">③ SSH · run claude -p</text>
+<!-- (4) claude -p -> proxy : sentinel (egress) -->
+<line x1="470" y1="186" x2="440" y2="254" stroke="#8E8E88" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#ah)"/>
+<text x="476" y="228" fill="#8E8E88" font-size="11">④ sentinel</text>
+<!-- (5) proxy -> Anthropic : REAL token, right-margin route -->
+<polyline points="550,270 866,270 866,50 760,50" fill="none" stroke="#D9A441" stroke-width="2" marker-end="url(#ah)"/>
+<text x="612" y="240" fill="#D9A441" font-size="11.5" font-weight="600">⑤ REAL token → Anthropic (swapped at the proxy)</text>
+
+<!-- ===== REVIEW NOTES PANEL ===== -->
+<rect x="20" y="562" width="860" height="270" rx="14" fill="#2A2620" stroke="#D9A441" stroke-width="2"/>
+<text x="40" y="592" fill="#F0C674" font-size="15" font-weight="700">⚑ REVIEW NOTES — confirm before we build</text>
+<text x="40" y="622" font-size="12.5"><tspan fill="#F0C674" font-weight="700">N1  </tspan><tspan fill="#D8CFC0">Control = Level 1: Victoria suggests, you give the final yes. Already built (default) — no change. ✓</tspan></text>
+<text x="40" y="650" font-size="12.5"><tspan fill="#F0C674" font-weight="700">N2  </tspan><tspan fill="#D8CFC0">Hop 1 (Victoria → bridge): mTLS, client-cert, prompt only — no credentials cross into/out of Victoria.  [confirm]</tspan></text>
+<text x="40" y="678" font-size="12.5"><tspan fill="#F0C674" font-weight="700">N3  </tspan><tspan fill="#D8CFC0">Hop 2 (bridge → claude sandbox): SSH — requires the sbx SSH feature (nightly build, per the demo guide).  [prereq]</tspan></text>
+<text x="40" y="706" font-size="12.5"><tspan fill="#F0C674" font-weight="700">N4  </tspan><tspan fill="#D8CFC0">Real token lives ONLY in sbx's host subsystem (Keychain + proxy), refreshed on use; both sandboxes see a sentinel.  [security]</tspan></text>
+<text x="40" y="734" font-size="12.5"><tspan fill="#F0C674" font-weight="700">N5  </tspan><tspan fill="#D8CFC0">Governed claude sandbox is persistent + long-lived; claude -p is one-shot (prompt→answer); MCP gateway optional (nightly).  [confirm]</tspan></text>
+<text x="40" y="762" font-size="12.5"><tspan fill="#F0C674" font-weight="700">N6  </tspan><tspan fill="#D8CFC0">To build: host bridge (~50 LOC) · Victoria CLAUDE_BRIDGE_URL path (backward-compatible) · a persistent claude-agent sandbox.  [scope]</tspan></text>
+<text x="40" y="790" font-size="12.5"><tspan fill="#F0C674" font-weight="700">N7  </tspan><tspan fill="#D8CFC0">OAuth freshness: after a long idle gap, re-run `sbx run claude` to re-seed the stored token; steady use keeps it fresh.  [ops]</tspan></text>
+<text x="40" y="818" font-size="11.5" fill="#8FCBB4">Legend:  amber = real credential (host-only)  ·  green = your control / zero-cred zones  ·  dashed = sentinel / default path</text>
+</svg>
