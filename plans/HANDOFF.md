@@ -35,7 +35,7 @@ Obsidian-backed knowledge base.
   `sbx`**, no nightly) and `./scripts/setup-bridge.sh` does the whole "create once"
   in one command (certs + governed sandbox + launchd auto-start). `deploy-sandbox.sh`
   auto-wires Victoria from `~/.victoria/bridge-env`. Activation = Mark runs
-  `setup-bridge.sh` + a one-time `sbx run claude` login. See §5.
+  `setup-bridge.sh` + a one-time `sbx run --name victoria-claude` login. See §5.
 - **Docker Sandbox (`sbx`) deployment — mature.** Victoria runs in an isolated
   microVM, self-healing, with a portable kit. See §2.
 - **RAG Phase 1b — queued, not started.** Semantic recall over the vault's notes.
@@ -97,7 +97,7 @@ sandbox (`:8001`) is the live deployment.
   sentinel; Victoria sees only prompt/response + holds only the mTLS *client* identity
   (not the Claude token). No Claude credential in any sandbox.
 - **NOT YET ACTIVATED** — Mark runs `./scripts/setup-bridge.sh`, a one-time
-  `sbx run claude` login, then `./deploy-sandbox.sh`. See §5.
+  `sbx run --name victoria-claude` login, then `./deploy-sandbox.sh`. See §5.
 - Diagrams: `docs/claude-bridge-architecture.svg` (approved design + review notes),
   `docs/claude-escalation-host-bridge.svg`, `docs/claude-escalation-path2-keychain.svg`.
 
@@ -133,7 +133,7 @@ tools `search_notes` / `read_note` / `list_notes` / `write_note`.
   never swaps for a custom agent. Verified both ways: OAuth-file path → "OAuth session
   expired… could not be refreshed"; ambient API-key path → "Invalid API key". This is
   why the design delegates to a built-in claude agent via the bridge. (`sbx secret set
-  --oauth` is openai-only; anthropic OAuth is (re)seeded by running `sbx run claude`.)
+  --oauth` is openai-only; anthropic OAuth is (re)seeded by running `sbx run --name victoria-claude`.)
 - **Injecting the token into the VM (Path 2).** Works, but the real token then lives in
   Victoria's env — she can read it. Rejected on containment grounds (kept as the merged
   #72 file-token FALLBACK only; `CLAUDE_CLI_OAUTH_TOKEN` via `~/.victoria/claude-oauth-token`).
@@ -173,8 +173,11 @@ built (branch `feat/claude-bridge-setup`) and works on the **stable `sbx`** (exe
 no nightly). Once that PR merges, Mark drives activation (his subscription):
 1. `./scripts/setup-bridge.sh` — generates certs, creates the `victoria-claude` governed
    sandbox, installs the launchd bridge (auto-start), writes `~/.victoria/bridge-env`.
-2. `sbx run claude` once → complete the browser login (subscription OAuth), then Ctrl-C.
-   (Refresh the same way if escalation later fails with "OAuth session expired".)
+2. Auth: the claude-agent OAuth may be **global** (`sbx secret ls` → `(global) service
+   anthropic (oauth configured)` shared by all sandboxes) — if so, `victoria-claude`
+   already inherits it and this step is a no-op. Otherwise/if it's expired, sign the
+   sandbox in **by name**: `sbx run --name victoria-claude` (then `/login`), Ctrl-C when
+   done. NOT bare `sbx run claude` — that opens a *different* sandbox.
 3. `./deploy-sandbox.sh` — auto-wires Victoria to the bridge from `~/.victoria/bridge-env`.
 4. Test end-to-end: ask something hard → "yes" → real Claude answer in the HUD. If it
    errors, `tail -f ~/Library/Logs/victoria-claude-bridge.log`.

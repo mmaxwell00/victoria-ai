@@ -127,11 +127,13 @@ $(say "Claude bridge setup complete.")
   Certs            : $CERT_DIR
   Log              : $LOG_FILE
 
-ONE-TIME AUTH (if you haven't signed the claude agent in yet): the built-in
-claude agent authenticates via your subscription. Run this once and complete the
-browser login, then Ctrl-C:
+ONE-TIME AUTH: the built-in claude agent uses your Claude subscription. If a
+GLOBAL anthropic OAuth is already configured (check: sbx secret ls → "(global)
+service anthropic (oauth configured)"), this sandbox already inherits it — skip
+straight to the deploy. Otherwise, or if escalation later fails with an auth
+error, sign in to THIS sandbox (then /login if prompted), and Ctrl-C when done:
 
-    sbx run claude
+    sbx run --name $CLAUDE_SANDBOX
 
 NEXT: deploy Victoria — she'll auto-wire to the bridge from $ENV_FILE:
 
