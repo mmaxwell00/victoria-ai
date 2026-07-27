@@ -63,9 +63,11 @@ victoria-ai/
 │   ├── update.sh               # One-command native updater
 │   ├── ensure-model-runner.sh  # Re-bind the Docker Model Runner host-TCP port if it drops
 │   ├── claude-login.sh         # Authenticate Claude escalation (subscription login or token)
-│   └── claude-bridge.py        # Host bridge — Victoria → governed claude-agent sandbox (mTLS/SSH)
+│   ├── claude-bridge.py        # Host bridge — Victoria → governed claude-agent sandbox (mTLS; exec/ssh)
+│   ├── setup-bridge.sh         # One-command bridge setup (certs + governed sandbox + launchd auto-start)
+│   └── com.victoria.claude-bridge.plist.template  # launchd template installed by setup-bridge.sh
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
-├── tests/                      # 341 pytest tests
+├── tests/                      # 345 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
 ├── deploy-sandbox.sh           # Deploy Victoria into an isolated Docker Sandbox (sbx)
 ├── sbx/
@@ -223,14 +225,14 @@ How the local model signals it's stuck: local backends are given an *escalation 
 
 > Requires the [Claude Code CLI](https://claude.com/claude-code) installed and logged in (`claude` on your PATH). Adding ChatGPT as an alternative is a planned follow-up.
 
-> **In the Docker Sandbox**, escalation instead routes through a governed **host bridge** so the Claude credential never enters the sandbox: Victoria sends only the prompt over mTLS to `scripts/claude-bridge.py`, which runs `claude -p` in a governed `claude`-agent sandbox and returns the answer. Configure with `CLAUDE_BRIDGE_URL` + `CLAUDE_BRIDGE_*` (blank → the local CLI above). Full guide in [SANDBOX-DEPLOYMENT.md](SANDBOX-DEPLOYMENT.md).
+> **In the Docker Sandbox**, escalation instead routes through a governed **host bridge** so the Claude credential never enters the sandbox: Victoria sends only the prompt over mTLS to `scripts/claude-bridge.py`, which runs `claude -p` in a governed `claude`-agent sandbox and returns the answer. Set it up **once** with `./scripts/setup-bridge.sh` (generates the mTLS certs, creates the governed sandbox, installs the bridge as an auto-starting launchd service); the next `./deploy-sandbox.sh` wires Victoria to it automatically. Full guide in [SANDBOX-DEPLOYMENT.md](SANDBOX-DEPLOYMENT.md).
 
 <p align="center">
   <img src="docs/claude-bridge-architecture.svg" width="820"
-       alt="Claude escalation via the governed host bridge: you approve (Level 1), Victoria sends only the prompt over mTLS to a host bridge, which SSHes into a governed claude-agent sandbox; the sbx proxy swaps the sentinel for the real subscription token at egress, so the credential never enters either sandbox">
+       alt="Claude escalation via the governed host bridge: you approve (Level 1), Victoria sends only the prompt over mTLS to a host bridge, which reaches a governed claude-agent sandbox; the sbx proxy swaps the sentinel for the real subscription token at egress, so the credential never enters either sandbox">
 </p>
 
-*Claude escalation via the governed host bridge — the credential never enters Victoria's VM.*
+*Claude escalation via the governed host bridge — the credential never enters Victoria's VM. Set up in one command with `./scripts/setup-bridge.sh`. (The diagram shows the SSH transport; the default on stable `sbx` is `sbx exec`, same topology.)*
 
 ### Reliable tool use (no phantom "I can't access that")
 
@@ -746,4 +748,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-341 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.
+345 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.

@@ -16,6 +16,10 @@ env/
 .env
 *.env
 
+# Claude bridge mTLS certs (client identity staged into the sandbox at deploy time;
+# also the setup script's default cert dir if run against a source checkout)
+.bridge/
+
 # Data & models (large, local only)
 data/
 models/
