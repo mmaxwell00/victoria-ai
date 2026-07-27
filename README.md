@@ -223,7 +223,14 @@ How the local model signals it's stuck: local backends are given an *escalation 
 
 > Requires the [Claude Code CLI](https://claude.com/claude-code) installed and logged in (`claude` on your PATH). Adding ChatGPT as an alternative is a planned follow-up.
 
-> **In the Docker Sandbox**, escalation instead routes through a governed **host bridge** so the Claude credential never enters the sandbox: Victoria sends only the prompt over mTLS to `scripts/claude-bridge.py`, which runs `claude -p` in a governed `claude`-agent sandbox and returns the answer. Configure with `CLAUDE_BRIDGE_URL` + `CLAUDE_BRIDGE_*` (blank → the local CLI above). See [SANDBOX-DEPLOYMENT.md](SANDBOX-DEPLOYMENT.md) and the design diagram [`docs/claude-bridge-architecture.svg`](docs/claude-bridge-architecture.svg).
+> **In the Docker Sandbox**, escalation instead routes through a governed **host bridge** so the Claude credential never enters the sandbox: Victoria sends only the prompt over mTLS to `scripts/claude-bridge.py`, which runs `claude -p` in a governed `claude`-agent sandbox and returns the answer. Configure with `CLAUDE_BRIDGE_URL` + `CLAUDE_BRIDGE_*` (blank → the local CLI above). Full guide in [SANDBOX-DEPLOYMENT.md](SANDBOX-DEPLOYMENT.md).
+
+<p align="center">
+  <img src="docs/claude-bridge-architecture.svg" width="820"
+       alt="Claude escalation via the governed host bridge: you approve (Level 1), Victoria sends only the prompt over mTLS to a host bridge, which SSHes into a governed claude-agent sandbox; the sbx proxy swaps the sentinel for the real subscription token at egress, so the credential never enters either sandbox">
+</p>
+
+*Claude escalation via the governed host bridge — the credential never enters Victoria's VM.*
 
 ### Reliable tool use (no phantom "I can't access that")
 
@@ -487,6 +494,13 @@ Sandbox**: an isolated Linux microVM that mounts only approved paths, while the
 heavy local LLM stays on the host's Model Runner. The full dependency set (incl.
 ChromaDB semantic memory) installs on a Python 3.11 venv, and the HUD is
 published to `127.0.0.1:8001`.
+
+<p align="center">
+  <img src="docs/sbx-architecture.svg" width="820"
+       alt="Victoria in a Docker Sandbox — what lives inside the isolated microVM (the whole app + ChromaDB memory) vs on the host (Model Runner, mounts, sbx proxy) vs the cloud, with each boundary crossing labeled">
+</p>
+
+*What runs inside the sandbox microVM vs on the host vs in the cloud.*
 
 ```bash
 ./deploy-sandbox.sh          # stages code, packs the sbx kit, runs it, publishes the HUD
