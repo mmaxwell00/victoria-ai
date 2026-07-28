@@ -198,6 +198,43 @@ curl wttr.in/London
 sbx logs <sandbox-id> | grep -i "blocked\|denied\|connection refused"
 ```
 
+### Dependency vulnerabilities (SCA) — tracked
+
+> **Scan:** `trivy fs --scanners vuln` over the resolved dependency tree, 2026-07-28.
+> Victoria's installed packages returned **one** finding; everything else clean.
+
+#### CVE-2026-45829 · `chromadb` — CRITICAL — TRACKED (no fix available)
+
+- **Package:** `chromadb==1.5.9` (semantic memory). Advisory:
+  <https://avd.aquasec.com/nvd/cve-2026-45829> — arbitrary code execution via
+  **pre-authentication** code injection. Status: *affected*; **no patched version
+  published** as of this scan, so there is nothing to bump to yet.
+- **Not exploitable in Victoria today — and why:** the vulnerable surface is the
+  ChromaDB **server** (`chroma run` — its HTTP API + auth layer). Victoria uses
+  chromadb **embedded**: an in-process `PersistentClient` over `data/chromadb`.
+  **No chroma server is started, bound, or published**, so the pre-auth network
+  path does not exist. In the sandbox the process is hardware-isolated and only the
+  HUD (`:8000` → `127.0.0.1:8001`) is published — no chroma port at all.
+- **Invariant to keep (the mitigation):** embedded `PersistentClient` **only** —
+  never `chroma run`, `chromadb.HttpClient`, or `Settings(chroma_server_*)`, and
+  never publish a chroma port. If any of those change, this CVE becomes live.
+- **Exit condition:** watch chromadb releases; the moment a fixed version ships,
+  bump `chromadb` in `requirements.txt` and re-run the scan (below).
+
+**Headroom evaluation (same scan).** Surfaced while vetting `headroomlabs-ai/headroom`
+for adoption. Its *full* lock flags 11 (1 CRITICAL `chromadb` via an optional extra +
+10 HIGH — stale-lock `gitpython`/`json-repair`, already fixed upstream); Rust `Cargo.lock`
+was clean. A **real core-only `pip install headroom-ai`** (56 packages) rescanned at
+**0 vulns** — so core-only adoption introduces **no new CVE exposure**; only its optional
+extras pull the flagged packages.
+
+**Re-run the SCA scan** (host + Docker):
+
+```bash
+mkdir -p /tmp/victoria-sca && .venv/bin/pip freeze > /tmp/victoria-sca/requirements.txt
+docker run --rm -v /tmp/victoria-sca:/src aquasec/trivy:latest fs --scanners vuln /src
+```
+
 ### Audit Checklist
 
 - [ ] Kit uses `allowedDomains` / `deniedDomains` (not `allow` / `deny`)
@@ -209,6 +246,7 @@ sbx logs <sandbox-id> | grep -i "blocked\|denied\|connection refused"
 - [ ] Credentials are injected, not mounted in .env
 - [ ] Network logs are monitored for blocked connections
 - [ ] Test connectivity before deploying to production
+- [ ] SCA scan of dependencies run (`trivy fs`); any unpatched CVEs tracked in "Dependency vulnerabilities (SCA)" above
 
 ### Next Steps
 
