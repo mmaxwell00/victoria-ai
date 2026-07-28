@@ -153,7 +153,7 @@ and **Whisper** (STT), any **stdio MCP servers** (spawned in-container via `npx`
 the **bundled Claude Code CLI**. No GPU, nothing photoreal.
 
 **Crosses the boundary but stays on your Mac (local, no cloud):**
-- **Browser → `127.0.0.1:8000`** — HTTP/SSE. Bound to loopback only; the API has no auth, so it's never exposed to the LAN.
+- **Browser → `127.0.0.1:8000`** — HTTP/SSE. Bound to loopback only; the API has no auth, so it's never exposed to the LAN. *(**Docker Sandbox:** the app still listens on `:8000` **inside** the VM, but it's published to the host at `127.0.0.1:8001` — so there you open `:8001`, not `:8000`. See the [Docker Sandbox section](#docker-sandbox--isolated-sbx).)*
 - **Container → Docker Model Runner** at `model-runner.docker.internal` (host Docker Desktop, `:12434`) — your local LLM. The primary dependency; never leaves the machine.
 - **Container → Ollama** `host.docker.internal:11434` — optional alternate local LLM.
 - **macOS Keychain → container** — the vault master key is injected as `VICTORIA_VAULT_KEY` at launch (never written to `.env`); the vault's plaintext secrets never cross back out.
