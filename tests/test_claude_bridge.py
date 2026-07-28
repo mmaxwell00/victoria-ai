@@ -104,6 +104,7 @@ async def test_no_bridge_url_takes_local_cli_path(monkeypatch):
 # security invariants (prompt on stdin, validated tokens only) without invoking
 # sbx/ssh/claude.
 import importlib.util
+import os
 import pathlib
 import types
 
@@ -179,3 +180,25 @@ def test_bridge_nonzero_exit_raises(bridge, monkeypatch):
     bridge._cap["stderr"] = "Invalid API key"
     with pytest.raises(RuntimeError, match="claude exited 1"):
         bridge._run_claude("x", "", "sonnet", "")
+
+
+def test_gen_certs_pass_strict_openssl_verify(tmp_path):
+    """Generated certs must pass STRICT path validation. Regression: a CA without
+    basicConstraints=CA:TRUE + keyUsage=keyCertSign is accepted by lenient clients
+    (curl) but rejected by Python's ssl / OpenSSL 3.x — which broke Victoria's mTLS
+    to the bridge (handshake reset / "CA cert does not include key usage extension").
+    """
+    import shutil
+    import subprocess
+    if not shutil.which("openssl"):
+        pytest.skip("openssl not available")
+    mod = _load_bridge()
+    d = str(tmp_path / "certs")
+    mod._gen_certs(d)
+    ca = os.path.join(d, "ca.crt")
+    for leaf in ("server.crt", "client.crt"):
+        r = subprocess.run(
+            ["openssl", "verify", "-x509_strict", "-CAfile", ca, os.path.join(d, leaf)],
+            capture_output=True, text=True,
+        )
+        assert r.returncode == 0, f"{leaf} failed strict verify: {r.stdout}{r.stderr}"
