@@ -170,10 +170,17 @@ browser-based are covered below and in the gotchas.)
   **One-command setup (do this once):**
 
   ```bash
-  ./scripts/setup-bridge.sh        # certs + governed sandbox + launchd auto-start
-  sbx run claude                   # one-time: complete the browser login, then Ctrl-C
-  ./deploy-sandbox.sh              # auto-wires Victoria to the bridge (reads ~/.victoria/bridge-env)
+  ./scripts/setup-bridge.sh              # certs + governed sandbox + launchd auto-start
+  sbx run --name victoria-claude         # sign the sandbox in (skip if a GLOBAL anthropic OAuth already exists), Ctrl-C when done
+  ./deploy-sandbox.sh                    # auto-wires Victoria to the bridge (reads ~/.victoria/bridge-env)
   ```
+
+  > **Auth note:** the built-in `claude` agent's subscription OAuth can be **global**
+  > (shared by every sandbox) or per-sandbox — check with `sbx secret ls`. If you
+  > already see `(global) service anthropic (oauth configured)`, `victoria-claude`
+  > inherits it and you can skip the middle step. Authenticate the sandbox **by name**
+  > (`sbx run --name victoria-claude`) — bare `sbx run claude` opens a *different*
+  > sandbox. Re-run it to refresh if escalation ever fails with an auth error.
 
   `setup-bridge.sh` is idempotent and:
   1. generates the mTLS certs (CA + server + client) in `~/.victoria/bridge-certs`;

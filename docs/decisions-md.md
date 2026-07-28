@@ -113,7 +113,7 @@ ongoing effort" activation that works on the **stable `sbx`** he already runs.
 
 **Why:** honours credential containment (only the mTLS *client* identity — not the
 Claude token — ever enters Victoria's VM) while removing the nightly-`sbx` dependency
-and reducing activation to one command + a one-time `sbx run claude` login.
+and reducing activation to one command + a one-time `sbx run --name victoria-claude` login.
 
 **Trade-offs:** `exec` mode leans on `sbx exec` per escalation (historically wedge-prone
 when an exec is *interrupted* — a single launchd-managed call per escalation is the low-risk
@@ -165,7 +165,7 @@ path in `llm_router.claude_cli()` (backward-compatible) + a persistent claude-ag
 sandbox. SSH/proxy wiring activates once the nightly `sbx` + claude sandbox are set up.
 
 **Trade-offs:** more moving parts than Path 2; hop 2 depends on the nightly `sbx`
-SSH feature; a long idle gap needs `sbx run claude` to refresh the stored OAuth.
+SSH feature; a long idle gap needs `sbx run --name victoria-claude` to refresh the stored OAuth.
 
 ---
 
