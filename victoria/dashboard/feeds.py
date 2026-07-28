@@ -80,14 +80,18 @@ async def _one_stock(client: httpx.AsyncClient, symbol: str) -> dict:
         return {"symbol": symbol, "name": symbol, "price": None}
 
 
-async def fetch_stocks(symbols: list[str], top: int = 5) -> list[dict]:
-    """Top `top` tracked stocks by share price (unpriced ones sink to the end)."""
+async def fetch_stocks(symbols: list[str]) -> list[dict]:
+    """The operator's tracked stocks, in the order they added them — so a stock they
+    just asked Victoria to add actually shows up. Failed/unpriced fetches sink to the
+    end. The whole watchlist is returned (the MARKETS box scrolls); we deliberately do
+    NOT slice to a top-N-by-price, which silently hid any stock outside the priciest
+    few and made "add a stock" look like it did nothing."""
     if not symbols:
         return []
     async with httpx.AsyncClient(timeout=8.0, headers=_UA) as client:
         quotes = list(await asyncio.gather(*[_one_stock(client, s) for s in symbols]))
-    quotes.sort(key=lambda q: (q["price"] is not None, q["price"] or 0), reverse=True)
-    return quotes[:top]
+    quotes.sort(key=lambda q: q["price"] is None)  # stable: keep tracked order; unpriced last
+    return quotes
 
 
 # ── Metals + index volume (fixed MARKETS extras) ─────────────────────────
