@@ -110,16 +110,40 @@ victoria-ai/
 2. **Semantic memory** — ChromaDB vector search across all past sessions; relevant context surfaces automatically
 3. **User profile** — persistent preferences, style, and explicit memories injected into every system prompt
 
-### Deployment topology — inside vs outside the container
+### Deployment topology — two ways to run
 
-The diagram below is the **containerised** (docker-compose) layout. Running natively
-(uvicorn in a venv) is identical externally — "the container" is just the Python
-process instead; the connection points are the same.
+Victoria runs in one of two shapes. Both keep the heavy local LLM on the **host**
+(Docker Model Runner) and cross the same cloud edges; they differ in *where the app
+itself lives*.
+
+**1 · Native install** — the app runs **directly on your Mac**: `uvicorn` in a Python
+venv (`scripts/start.sh` / `victoria start`), or the externally-identical
+**docker-compose** container. "The container" is just the Python process; the
+connection points are the same.
 
 <p align="center">
   <img src="docs/architecture.svg" width="760"
-       alt="Victoria deployment topology — three zones (host macOS, the container, cloud/external) with every boundary-crossing connection labeled by protocol and port">
+       alt="Victoria native / docker-compose topology — three zones (cloud/external, the Victoria app, the macOS host) with every boundary-crossing connection labeled by protocol and port">
 </p>
+
+<p align="center"><em>Native / docker-compose — the app runs on the host.</em></p>
+
+**2 · Docker Sandbox (`sbx`) install** — the **whole app runs inside an isolated,
+hardware-isolated microVM** (`./deploy-sandbox.sh`), reaching the host Model Runner
+through the sandbox gateway and mounting only approved folders; credentials and egress
+are governed by org policy. Full walkthrough in the
+[Docker Sandbox section](#docker-sandbox--isolated-sbx) below.
+
+<p align="center">
+  <img src="docs/sbx-architecture.svg" width="760"
+       alt="Victoria in a Docker Sandbox — three zones (cloud/external reached via the sandbox's egress, the isolated sandbox microVM running the whole app + ChromaDB memory, and the macOS host) with each boundary crossing labeled: published HUD port, host Model Runner gateway, approved-only mounts, proxy-injected credentials, org-governed egress">
+</p>
+
+<p align="center"><em>Docker Sandbox — the app runs inside an isolated microVM.</em></p>
+
+The breakdown below details the **native / docker-compose** shape; the sandbox differs
+only at the boundary (isolated microVM, approved-only mounts, org-governed egress) — see
+the Docker Sandbox section for its specifics.
 
 **Inside the container** — the whole app ships in one image (two services off it:
 `victoria-api` on `:8000` and the optional `victoria-telegram`). Everything needed to
