@@ -67,7 +67,7 @@ victoria-ai/
 │   ├── setup-bridge.sh         # One-command bridge setup (certs + governed sandbox + launchd auto-start)
 │   └── com.victoria.claude-bridge.plist.template  # launchd template installed by setup-bridge.sh
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
-├── tests/                      # 345 pytest tests
+├── tests/                      # 346 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
 ├── deploy-sandbox.sh           # Deploy Victoria into an isolated Docker Sandbox (sbx)
 ├── sbx/
@@ -748,4 +748,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-345 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.
+346 tests across memory & semantic recall, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.

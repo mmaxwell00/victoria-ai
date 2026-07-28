@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import re
+import ssl
 import tempfile
 
 import httpx
@@ -472,14 +473,19 @@ class LLMRouter:
             "model": settings.claude_cli_model,
             "allowed_tools": settings.claude_cli_allowed_tools,
         }
-        # mTLS: present our client cert; verify the bridge's server cert against
-        # the pinned CA (falls back to system trust only if no CA is configured).
-        cert = None
+        # mTLS via an explicit SSLContext: present our client cert and verify the
+        # bridge's server cert against the pinned CA (system trust if none set).
+        # NB: build the context ourselves — httpx 0.28's cert=/verify=<path> combo
+        # does NOT reliably present the client cert (the TLS handshake completes but
+        # no client cert is sent, so the bridge resets → httpx ReadError). An
+        # ssl.SSLContext with load_cert_chain works.
+        ca = settings.claude_bridge_ca_cert
+        ssl_ctx = ssl.create_default_context(cafile=ca) if ca else ssl.create_default_context()
         if settings.claude_bridge_client_cert and settings.claude_bridge_client_key:
-            cert = (settings.claude_bridge_client_cert, settings.claude_bridge_client_key)
-        verify = settings.claude_bridge_ca_cert or True
+            ssl_ctx.load_cert_chain(settings.claude_bridge_client_cert,
+                                    settings.claude_bridge_client_key)
         try:
-            async with httpx.AsyncClient(cert=cert, verify=verify,
+            async with httpx.AsyncClient(verify=ssl_ctx,
                                          timeout=settings.claude_cli_timeout) as client:
                 resp = await client.post(settings.claude_bridge_url, json=payload)
         except httpx.HTTPError as exc:

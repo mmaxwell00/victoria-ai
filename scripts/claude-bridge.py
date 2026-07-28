@@ -152,16 +152,28 @@ def _gen_certs(certs_dir: str) -> None:
     def sh(*a):
         subprocess.run(a, check=True)
     sh("openssl", "genrsa", "-out", j("ca.key"), "2048")
+    # The CA MUST carry basicConstraints=CA:TRUE + keyUsage=keyCertSign, or strict
+    # path validation (Python's ssl / OpenSSL 3.x) rejects certs it signs with
+    # "CA cert does not include key usage extension" — even though lenient clients
+    # (curl/LibreSSL) accept them. Add them via -addext (OpenSSL 1.1.1+).
     sh("openssl", "req", "-x509", "-new", "-nodes", "-key", j("ca.key"), "-sha256",
-       "-days", "3650", "-subj", "/CN=victoria-bridge-ca", "-out", j("ca.crt"))
+       "-days", "3650", "-subj", "/CN=victoria-bridge-ca",
+       "-addext", "basicConstraints=critical,CA:TRUE",
+       "-addext", "keyUsage=critical,keyCertSign,cRLSign",
+       "-out", j("ca.crt"))
     for who, cn, san in (("server", "host.docker.internal", "DNS:host.docker.internal,DNS:localhost,IP:127.0.0.1"),
                          ("client", "victoria", "DNS:victoria")):
         sh("openssl", "genrsa", "-out", j(f"{who}.key"), "2048")
         sh("openssl", "req", "-new", "-key", j(f"{who}.key"), "-subj", f"/CN={cn}", "-out", j(f"{who}.csr"))
-        # SAN via a tiny ext file (portable across openssl versions)
+        # Leaf extensions via a tiny ext file (portable across openssl versions):
+        # SAN + a leaf basicConstraints + keyUsage, and the matching EKU so strict
+        # validators accept the cert for its role (serverAuth / clientAuth).
         ext = j(f"{who}.ext")
         with open(ext, "w") as fh:
             fh.write(f"subjectAltName={san}\n")
+            fh.write("basicConstraints=critical,CA:FALSE\n")
+            fh.write("keyUsage=critical,digitalSignature,keyEncipherment\n")
+            fh.write("extendedKeyUsage=" + ("serverAuth" if who == "server" else "clientAuth") + "\n")
         sh("openssl", "x509", "-req", "-in", j(f"{who}.csr"), "-CA", j("ca.crt"), "-CAkey", j("ca.key"),
            "-CAcreateserial", "-days", "825", "-sha256", "-extfile", ext, "-out", j(f"{who}.crt"))
         os.remove(j(f"{who}.csr")); os.remove(ext)
