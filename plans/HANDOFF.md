@@ -107,7 +107,7 @@ sandbox (`:8001`) is the live deployment.
 - Diagrams: `docs/claude-bridge-architecture.svg` (approved design + review notes),
   `docs/claude-escalation-host-bridge.svg`, `docs/claude-escalation-path2-keychain.svg`.
 
-**Dashboard:** MARKETS = top-5 stocks + Gold `GC=F` / Silver `SI=F` + volume S&P `^GSPC`
+**Dashboard:** MARKETS = your tracked stocks (tracked order) + Gold `GC=F` / Silver `SI=F` + volume S&P `^GSPC`
 / NASDAQ `^IXIC` (Yahoo v8). NEWS = NBC + Fox (CNN dropped, dead RSS).
 
 **Knowledge base:** single-vault via `OBSIDIAN_VAULT_PATH` (`~/Obsidian/AI/AI-Victoria`);

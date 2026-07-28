@@ -77,15 +77,19 @@ def test_parse_rss():
     ]
 
 
-async def test_fetch_stocks_sorts_by_price_and_caps(monkeypatch):
+async def test_fetch_stocks_keeps_tracked_order_and_shows_all(monkeypatch):
+    # Regression: the box used to sort by price and cap at 5, silently hiding any
+    # stock the operator added outside the priciest few. Now it shows the WHOLE
+    # watchlist in tracked order, with only failed/unpriced fetches sinking last.
     prices = {"A": 10, "B": 500, "C": 250, "D": None, "E": 90, "F": 300}
 
     async def fake_one(client, sym):
         return {"symbol": sym, "name": sym, "price": prices[sym]}
 
     monkeypatch.setattr(feeds, "_one_stock", fake_one)
-    out = await feeds.fetch_stocks(list(prices), top=5)
-    assert [q["symbol"] for q in out] == ["B", "F", "C", "E", "A"]  # desc, None dropped, top 5
+    out = await feeds.fetch_stocks(list(prices))
+    assert [q["symbol"] for q in out] == ["A", "B", "C", "E", "F", "D"]  # tracked order; D (None) last
+    assert len(out) == 6  # nothing dropped — a cheap/6th stock is no longer hidden
 
 
 async def test_fetch_metals_maps_labels(monkeypatch):
