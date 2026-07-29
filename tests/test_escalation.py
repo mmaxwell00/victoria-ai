@@ -188,6 +188,20 @@ async def test_local_backend_gets_escalation_instruction():
     assert captured["force_backend"] in ("docker", "ollama")
 
 
+def test_answering_protocol_owns_the_knowledge_base():
+    """Regression: search_notes/read_note/list_notes/write_note are wired to the
+    operator's Obsidian vault, but the local model used to answer "I don't have
+    access to your filesystem" when asked about it — a capability-denying reply for
+    a tool it actually has. The ANSWERING PROTOCOL must name the knowledge base and
+    search_notes so Victoria owns it, and the base prompt must advertise it as a
+    standing capability."""
+    from victoria.config import VICTORIA_SYSTEM_PROMPT
+    proto = ESCALATION_INSTRUCTION.lower()
+    assert "search_notes" in proto, "protocol must tell her to call search_notes"
+    assert "knowledge base" in proto, "protocol must frame the vault as her knowledge base"
+    assert "knowledge base" in VICTORIA_SYSTEM_PROMPT.lower(), "base prompt must advertise it"
+
+
 # ---------------------------------------------------------------------------
 # Reply classification
 # ---------------------------------------------------------------------------
