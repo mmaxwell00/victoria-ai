@@ -27,7 +27,11 @@
 # is far too heavy to trigger unattended from a background agent — we log it
 # loudly instead.
 # ─────────────────────────────────────────────────────────────────────
-set -uo pipefail   # NOTE: no -e; a watchdog must never exit on a transient failure
+# NOTE: `-u` only. Deliberately NO `-e` (a watchdog must never exit on a transient
+# failure) and NO `pipefail`: with pipefail, a `cmd | grep -q` pipeline reports failure
+# when grep exits on its first match and cmd then takes SIGPIPE — which made a liveness
+# check claim the sandbox was missing and skip the repair entirely.
+set -u
 
 SBX_NAME="${SBX_NAME:-victoria}"
 HOST_PORT="${HOST_PORT:-8001}"
@@ -50,9 +54,68 @@ rotate_log_if_big() {
 
 healthy() { curl -4 -fsS -m 5 -o /dev/null "http://127.0.0.1:${HOST_PORT}/health" 2>/dev/null; }
 
-docker_ready() { docker info >/dev/null 2>&1; }
+# Every `sbx`/`docker` call goes through this. The sbx CLI can wedge indefinitely
+# (observed: an `sbx ls` and an `sbx exec` still stuck after >24h), and a watchdog that
+# blocks in a CLI call silently stops watching — the worst failure mode available to it.
+# macOS ships neither `timeout` nor `gtimeout`, hence the hand-rolled version; stdout
+# goes to a file because the command has to run in the background to be killable.
+# Returns 124 on timeout, like GNU timeout.
+#
+# Depth-first tree kill: `pkill -P` only reaps DIRECT children, which orphaned the
+# grandchildren (verified) — and a watchdog that leaks a hung `sbx` every 30s would
+# manufacture the very CLI wedge it exists to survive. Killing the process *group* is
+# not an option: a non-interactive shell's background jobs share the parent's pgid, so
+# that would take out the watchdog itself.
+kill_tree() {
+  local p="$1" c
+  for c in $(pgrep -P "$p" 2>/dev/null); do kill_tree "$c"; done
+  kill -9 "$p" 2>/dev/null
+}
 
-sandbox_exists() { sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$SBX_NAME"; }
+run_timeout() {                     # run_timeout <secs> <outfile> <cmd> [args...]
+  local secs="$1" out="$2"; shift 2
+  : > "$out"
+  ( "$@" >"$out" 2>/dev/null ) & local pid=$!
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$waited" -ge "$secs" ]; then
+      kill_tree "$pid"
+      wait "$pid" 2>/dev/null
+      return 124
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "$pid" 2>/dev/null
+}
+
+SCRATCH="${TMPDIR:-/tmp}/victoria-watchdog.$$"
+
+# Convenience wrapper: run, capture stdout in $SBX_OUT, warn loudly on a wedge.
+# NOTE the rc is captured straight after the call, NOT inside an `if` — after a false
+# condition with no `else`, bash resets `$?` to 0, which silently disabled the timeout
+# branch in the first version of this script.
+sbx_t() {                           # sbx_t <secs> <args...>  -> stdout in $SBX_OUT
+  local secs="$1"; shift
+  SBX_OUT=""
+  run_timeout "$secs" "$SCRATCH" sbx "$@"
+  local rc=$?
+  SBX_OUT="$(cat "$SCRATCH" 2>/dev/null)"
+  if [ "$rc" = "124" ]; then
+    log "  WARN: 'sbx $*' timed out after ${secs}s — sbx CLI may be wedged"
+    log "        (check: ps -eo pid,etime,args | grep sbx  →  kill -9 any long-running ones)"
+  fi
+  return "$rc"
+}
+
+docker_ready() { run_timeout 20 "$SCRATCH.docker" docker info; }
+
+# Capture-then-match rather than piping into `grep -q`: no early-exit SIGPIPE, and a
+# hung/empty `sbx ls` reads as "unknown" instead of a confident "missing".
+sandbox_exists() {
+  sbx_t 30 ls || return 2            # 2 = couldn't tell (wedged), NOT "missing"
+  printf '%s\n' "$SBX_OUT" | awk 'NR>1 {print $1}' | grep -qx "$SBX_NAME"
+}
 
 # The in-VM supervisor. Written into the repo mount (so it's visible inside the
 # sandbox at the same absolute path) rather than baked into the kit, so the
@@ -81,9 +144,11 @@ EOF
 # matching `pkill -f` makes that shell SIGTERM ITSELF — killing the very process
 # that was about to start the supervisor. Where a pattern is unavoidable below we
 # use the bracket trick (`uvicorn[ ]victoria.main`), which cannot self-match.
+# A cold sandbox start can be slow, so allow more than the `ls` budget here.
 in_sandbox_health() {
-  sbx exec "$SBX_NAME" -- sh -lc \
-    'curl -s -o /dev/null -w "%{http_code}" -m 5 http://127.0.0.1:8000/health' 2>/dev/null | tail -1
+  sbx_t 90 exec "$SBX_NAME" -- sh -lc \
+    'curl -s -o /dev/null -w "%{http_code}" -m 5 http://127.0.0.1:8000/health' || return 1
+  printf '%s\n' "$SBX_OUT" | tail -1
 }
 
 repair() {
@@ -93,9 +158,15 @@ repair() {
     log "  Docker not ready yet (still booting?) — will retry"
     return 1
   fi
-  if ! sandbox_exists; then
+  # 0 = exists, 1 = genuinely missing, 2 = couldn't tell (wedged CLI). Only 1 is a
+  # "give up and tell the human" case; 2 must retry, never claim the sandbox is gone.
+  sandbox_exists; local ex=$?
+  if [ "$ex" = "1" ]; then
     log "  ERROR: sandbox '$SBX_NAME' does not exist. A watchdog will not rebuild it"
     log "         (needs a kit pack + mounts). Run: ./deploy-sandbox.sh"
+    return 1
+  elif [ "$ex" = "2" ]; then
+    log "  could not list sandboxes (sbx wedged?) — will retry next cycle"
     return 1
   fi
   ensure_runner || return 1
@@ -110,13 +181,20 @@ repair() {
     # The app is fine; only the host-side mapping is broken (a container recycle
     # drops it). Re-publishing alone fixes this — do NOT touch the running app.
     log "  app is healthy inside — republishing the host port mapping"
-    sbx ports "$SBX_NAME" --unpublish "127.0.0.1:${HOST_PORT}:8000" >/dev/null 2>&1
-    sbx ports "$SBX_NAME" --publish   "127.0.0.1:${HOST_PORT}:8000" >/dev/null 2>&1
+    sbx_t 45 ports "$SBX_NAME" --unpublish "127.0.0.1:${HOST_PORT}:8000"
+    sbx_t 45 ports "$SBX_NAME" --publish   "127.0.0.1:${HOST_PORT}:8000"
   else
     # Verify deps survived. If the venv is gone the sandbox was rebuilt from
     # scratch and only a full deploy can fix it — say so rather than thrash.
-    if ! sbx exec "$SBX_NAME" -- sh -lc '/home/agent/venv/bin/python -c "import uvicorn, victoria.main"' >/dev/null 2>&1; then
-      log "  ERROR: py3.11 venv/deps missing inside the sandbox — run ./deploy-sandbox.sh"
+    # Distinguish "import failed" from "couldn't run the check at all" (rc 124).
+    sbx_t 90 exec "$SBX_NAME" -- sh -lc '/home/agent/venv/bin/python -c "import uvicorn, victoria.main"'
+    local vrc=$?
+    if [ "$vrc" != "0" ]; then
+      if [ "$vrc" = "124" ]; then
+        log "  could not verify the venv (sbx wedged?) — will retry next cycle"
+      else
+        log "  ERROR: py3.11 venv/deps missing inside the sandbox — run ./deploy-sandbox.sh"
+      fi
       return 1
     fi
     # TWO SEPARATE exec calls, deliberately. The cleanup patterns must not appear
@@ -124,16 +202,14 @@ repair() {
     # "victoria-run" — so a combined command would match itself and SIGTERM the
     # wrapper shell before it ever reached setsid (this bit us twice). Keeping the
     # kill and the launch in different exec calls makes self-matching impossible.
-    sbx exec "$SBX_NAME" -- sh -lc \
-      "pkill -f 'uvicorn[ ]victoria.main' 2>/dev/null; pkill -f 'victoria[-]run[.]sh' 2>/dev/null; exit 0" \
-      >/dev/null 2>&1
+    sbx_t 60 exec "$SBX_NAME" -- sh -lc \
+      "pkill -f 'uvicorn[ ]victoria.main' 2>/dev/null; pkill -f 'victoria[-]run[.]sh' 2>/dev/null; exit 0"
     # setsid + nohup so the supervisor is re-parented to init and outlives this
     # `sbx exec` session (a plain `&` job dies with the exec).
-    sbx exec "$SBX_NAME" -- sh -lc \
-      "setsid nohup sh '$REPO_STAGE/.victoria-run.sh' >> /tmp/victoria.log 2>&1 </dev/null & sleep 2; exit 0" \
-      >/dev/null 2>&1
+    sbx_t 60 exec "$SBX_NAME" -- sh -lc \
+      "setsid nohup sh '$REPO_STAGE/.victoria-run.sh' >> /tmp/victoria.log 2>&1 </dev/null & sleep 2; exit 0"
     log "  supervised uvicorn relaunched"
-    sbx ports "$SBX_NAME" --publish "127.0.0.1:${HOST_PORT}:8000" >/dev/null 2>&1
+    sbx_t 45 ports "$SBX_NAME" --publish "127.0.0.1:${HOST_PORT}:8000"
   fi
   log "  port 127.0.0.1:${HOST_PORT} -> 8000 asserted"
 
@@ -146,6 +222,8 @@ repair() {
   log "  still down after ~5 min — check: sbx exec $SBX_NAME -- tail -30 /tmp/victoria.log"
   return 1
 }
+
+trap 'rm -f "$SCRATCH" "$SCRATCH.docker"' EXIT INT TERM
 
 log "watchdog start (sandbox=$SBX_NAME port=$HOST_PORT interval=${CHECK_INTERVAL}s stage=$REPO_STAGE)"
 was_healthy=""

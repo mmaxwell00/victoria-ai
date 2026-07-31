@@ -32,8 +32,11 @@ fail() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 case "${1:-}" in
   --status)
-    if launchctl list | grep -q "$LABEL"; then
-      say "watchdog LOADED: $(launchctl list | grep "$LABEL")"
+    # `launchctl list <label>` returns nonzero when absent — no pipe, so this can't
+    # trip the `grep -q` + pipefail SIGPIPE race (which reported NOT loaded while the
+    # agent was demonstrably running).
+    if launchctl list "$LABEL" >/dev/null 2>&1; then
+      say "watchdog LOADED: $(launchctl list | awk -v l="$LABEL" '$3 == l {print "pid="$1" last-exit="$2}')"
     else
       warn "watchdog NOT loaded"
     fi
