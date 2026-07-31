@@ -65,7 +65,10 @@ victoria-ai/
 │   ├── claude-login.sh         # Authenticate Claude escalation (subscription login or token)
 │   ├── claude-bridge.py        # Host bridge — Victoria → governed claude-agent sandbox (mTLS; exec/ssh)
 │   ├── setup-bridge.sh         # One-command bridge setup (certs + governed sandbox + launchd auto-start)
-│   └── com.victoria.claude-bridge.plist.template  # launchd template installed by setup-bridge.sh
+│   ├── com.victoria.claude-bridge.plist.template  # launchd template installed by setup-bridge.sh
+│   ├── victoria-watchdog.sh    # Keeps the sandbox HUD alive across reboots + container recycles
+│   ├── setup-watchdog.sh       # One-command watchdog install (launchd agent; --status / --uninstall)
+│   └── com.victoria.watchdog.plist.template      # launchd template installed by setup-watchdog.sh
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
 ├── tests/                      # 346 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
@@ -530,8 +533,16 @@ published to `127.0.0.1:8001`.
 
 ```bash
 ./deploy-sandbox.sh          # stages code, packs the sbx kit, runs it, publishes the HUD
+./scripts/setup-watchdog.sh  # keep it alive across reboots + container recycles (recommended)
 open http://127.0.0.1:8001   # use 127.0.0.1 — NOT localhost (resolves to ::1)
 ```
+
+> The kit's `startup` service fires **once**, at `sbx run` — so a Mac reboot or a
+> Docker container recycle leaves `:8001` dark (the recycle kills uvicorn *and* the
+> in-VM supervisor while `sbx ls` still reads `running`). `./scripts/setup-watchdog.sh`
+> installs a **host-side** launchd agent that starts at login and re-checks `/health`
+> every 30s, repairing in seconds without a rebuild. Status:
+> `./scripts/setup-watchdog.sh --status`.
 
 See **[SANDBOX-DEPLOYMENT.md](SANDBOX-DEPLOYMENT.md)** for the full guide,
 architecture, gotchas, and the Phase 3 hardening roadmap

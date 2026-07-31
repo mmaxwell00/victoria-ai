@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Victoria sandbox watchdog launchd agent.
+     TEMPLATE — do not load this file directly. scripts/setup-watchdog.sh substitutes
+     the placeholder tokens (host-specific absolute paths) and installs the result to
+     ~/Library/LaunchAgents/com.victoria.watchdog.plist.
+
+     WHY THIS EXISTS: the sbx kit's `startup` service is one-shot at `sbx run`, NOT a
+     boot service. So Victoria does not come back on its own after (a) a Mac reboot —
+     Docker Desktop auto-starts but the sandbox does not, and (b) Docker recycling the
+     sandbox's container mid-session, which kills uvicorn AND the kit's in-VM `while
+     true` supervisor. Both leave :8001 dark until someone re-runs the deploy by hand.
+
+     A HOST-side agent is the fix: it survives anything that happens inside the VM.
+     RunAtLoad starts it at login (covers reboot); the script then polls /health
+     forever and repairs on failure (covers recycles). KeepAlive restarts the watchdog
+     itself if it ever dies. ThrottleInterval avoids a hot respawn loop. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.victoria.watchdog</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__WATCHDOG_SCRIPT__</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- launchd starts agents with a minimal PATH; the watchdog shells out to
+             `sbx`, `docker`, and `curl`, so their dirs must be here. -->
+        <key>PATH</key>
+        <string>__PATH__</string>
+        <key>SBX_NAME</key>
+        <string>__SBX_NAME__</string>
+        <key>HOST_PORT</key>
+        <string>__HOST_PORT__</string>
+        <key>REPO_STAGE</key>
+        <string>__REPO_STAGE__</string>
+        <key>CHECK_INTERVAL</key>
+        <string>__CHECK_INTERVAL__</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>StandardOutPath</key>
+    <string>__LOG_FILE__</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG_FILE__</string>
+</dict>
+</plist>

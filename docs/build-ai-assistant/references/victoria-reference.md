@@ -42,6 +42,7 @@ Use this to see a working version of each layer the playbook describes.
 | HUD dashboard — weather / stocks / news + conversational tracking | `victoria/dashboard/{store,feeds}.py`, `victoria/tools/dashboard_tools.py` (dashboard row in `victoria/static/`) |
 | Knowledge bases — Obsidian vaults (read / search / write notes) | `victoria/knowledge/vaults.py`, `victoria/tools/knowledge_tools.py` — path-safe native file access over Markdown vaults |
 | Ops — install / update / self-heal / launch | `setup-victoria-mac.sh`, `scripts/{update,ensure-model-runner,start}.sh` |
+| Ops — sandbox uptime (reboot + container-recycle recovery) | `scripts/{victoria-watchdog,setup-watchdog}.sh` + `scripts/com.victoria.watchdog.plist.template` — host-side launchd agent; polls `/health`, repairs without a rebuild |
 | Deployment | `Dockerfile`, `docker-compose.yml` (native or containerized) |
 | Docs — README, arch diagram, decisions | `README.md`, `docs/architecture.svg`, `docs/decisions-md.md` |
 | Tests | `tests/` (per-feature: escalation, voice, skills, MCP, vault, profile, api, …) |
