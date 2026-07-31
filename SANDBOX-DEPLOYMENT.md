@@ -83,6 +83,46 @@ Override any default via env: `SBX_NAME`, `REPO_STAGE`, `VAULT_PATH`, `HOST_PORT
 (`sbx login`, escalation via `sbx secret set -g anthropic`, and voice being
 browser-based are covered below and in the gotchas.)
 
+## Keep it running — the watchdog (recommended, one command)
+
+```bash
+./scripts/setup-watchdog.sh              # install (launchd agent, starts immediately)
+./scripts/setup-watchdog.sh --status     # is it loaded? is Victoria up?
+./scripts/setup-watchdog.sh --uninstall  # remove the agent (Victoria keeps running)
+```
+
+**Why you want this.** The kit's `startup` service fires **once, at `sbx run`** — it
+is not a boot service. So Victoria does *not* come back on her own after either of
+these, and `:8001` stays dark until someone re-runs the deploy by hand:
+
+| Event | What happens without the watchdog |
+|---|---|
+| **Mac reboot** | Docker Desktop auto-starts, but the sandbox does not, the one-shot `startup` never re-fires, and the `sbx ports` publish is gone |
+| **Docker recycles the sandbox's container** (idle / resume / resource pressure) | uvicorn **and** the kit's in-VM `while true` supervisor are killed; `sbx ls` still cheerfully reads `running` while nothing listens |
+
+The watchdog is a **host-side** launchd agent (`com.victoria.watchdog`), so it
+survives everything that happens inside the VM. `RunAtLoad` covers the reboot;
+it then polls `/health` every 30s and repairs on failure. It distinguishes the two
+failure shapes and applies the **cheap** fix — never a recreate, because the
+sandbox's filesystem (uv py3.11 venv + deps) survives a recycle:
+
+- **App alive inside, host port dead** → re-publish `127.0.0.1:8001→8000` only, app untouched.
+- **App dead inside** → relaunch the supervised uvicorn (`sbx exec` starts the sandbox first if it is stopped, so this also covers "stopped after reboot").
+
+Log: `~/Library/Logs/victoria-watchdog.log` (self-rotates at ~1 MB; only logs state
+transitions, so an idle watchdog stays quiet).
+
+```
+11:33:12 REPAIR: :8001 is down — attempting cheap in-place restart
+11:33:12   in-sandbox /health = 200
+11:33:12   app is healthy inside — republishing the host port mapping
+11:33:13   RECOVERED: http://127.0.0.1:8001 is serving
+```
+
+**It will not rebuild a DELETED sandbox** (after `sbx rm` / `sbx reset`) — that
+needs a kit pack + mounts, which is deliberately left to `./deploy-sandbox.sh`
+rather than fired unattended. The watchdog logs that case loudly instead.
+
 ## Verified working (Phase 2)
 
 | Capability | Status |
@@ -117,6 +157,24 @@ browser-based are covered below and in the gotchas.)
   If a running sandbox is ever wedged this way the venv is already built — relaunch
   the service from the kit (redeploy) rather than `sbx exec`-ing it (exec-started
   procs aren't the supervised service).
+- **`startup` is one-shot, so nothing survives a reboot or a container recycle.**
+  The kit's `startup` service runs at `sbx run` only. Docker recycling the sandbox's
+  container (idle / resume / resource pressure) kills uvicorn **and** the in-VM
+  `while true` supervisor, yet `sbx ls` still reads `running` — the tell is that the
+  in-VM client IP has changed (e.g. `172.17.0.8` → `172.17.0.6`) with **no crash in
+  `/tmp/victoria.log`**, which simply ends mid-poll. A recycle can also drop the
+  `sbx ports` publish on its own, giving the confusing "healthy inside, dead from the
+  host" shape. Fix: the host-side watchdog above (`./scripts/setup-watchdog.sh`);
+  the repair is cheap because the venv survives — only the processes die.
+- **`pgrep -f` / `pkill -f` inside `sbx exec` will match the wrapper shell itself.**
+  `sbx exec <sbx> -- sh -lc '<cmd>'` gives that shell a cmdline **containing
+  `<cmd>`**, so `pgrep -f "uvicorn victoria.main"` matches *itself* and always
+  reports alive, and the matching `pkill -f` makes the shell **SIGTERM itself** —
+  logging "relaunched" while launching nothing. Use the bracket trick
+  (`uvicorn[ ]victoria.main`), keep the kill and the launch in **separate** exec
+  calls (a combined one re-triggers it via the runner's own `victoria-run` path),
+  and prefer an **HTTP probe over process matching** for liveness. Background a
+  survivor with `setsid nohup …` — a plain `&` job dies with the exec session.
 - **The Piper voice model isn't in the clone.** `models/*.onnx` is large and
   gitignored, so the staged clone (and thus the sandbox) doesn't get it — and
   `/v1/tts` then 503s (`Piper model not found`): Victoria hears you (Whisper STT)

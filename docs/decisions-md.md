@@ -85,6 +85,49 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-07-30 · Sandbox uptime — a host-side launchd watchdog, not an in-VM supervisor
+
+**Status:** Built + verified. `scripts/victoria-watchdog.sh`,
+`scripts/setup-watchdog.sh`, `scripts/com.victoria.watchdog.plist.template`.
+
+**Context:** `:8001` went dark twice in one session. Neither was an app crash: the
+sbx kit's `startup` service fires **once at `sbx run`**, so when Docker recycles the
+sandbox's container (idle / resume / pressure) it kills uvicorn *and* the kit's in-VM
+`while true` supervisor — while `sbx ls` still reads `running`. The tell is a changed
+in-VM client IP (`172.17.0.8` → `172.17.0.6`) with no crash in `/tmp/victoria.log`. A
+recycle can also drop the `sbx ports` publish by itself. The same one-shot `startup`
+means a **Mac reboot** leaves her down too: Docker Desktop auto-starts (`AutoStart:
+true`), but `sbx` has no autostart/restart concept for a sandbox.
+
+**Decision:** Recover from the **host**, not from inside the VM.
+- A launchd agent (`com.victoria.watchdog`, `RunAtLoad` + `KeepAlive`) polls
+  `/health` every 30s. `RunAtLoad` covers reboot; polling covers recycles.
+- **Repair is always the cheap path, never a recreate** — a recycle kills processes
+  but not the filesystem, so the uv py3.11 venv + deps survive. Two shapes, two fixes:
+  app healthy inside → re-publish the host port only; app dead → relaunch the
+  supervised uvicorn (`sbx exec` starts a stopped sandbox first, covering reboot).
+- **A deleted sandbox is explicitly out of scope.** Rebuilding needs a kit pack +
+  mounts; too heavy to fire unattended, so it stays `./deploy-sandbox.sh` and the
+  watchdog just logs it.
+
+**Rejected:** *strengthening the in-VM supervisor* — anything inside the VM dies with
+the container, which is the actual failure. *A `KeepAlive`-only launchd job wrapping
+uvicorn* — the process lives inside the sandbox, not on the host. *Auto-running
+`deploy-sandbox.sh` on failure* — a ~15–20 min cold rebuild as an unattended reflex,
+when the venv is nearly always intact.
+
+**Verified:** killed uvicorn + supervisor → self-recovered in ~15s; unpublished the
+port with the app alive → re-published in ~20s; both hands-off, then chat + the
+knowledge base confirmed working.
+
+**Gotcha worth remembering (cost two failed repairs):** inside
+`sbx exec <sbx> -- sh -lc '<cmd>'` the wrapper shell's cmdline **contains `<cmd>`**,
+so `pgrep -f "uvicorn victoria.main"` matches *itself* (always "alive") and `pkill -f`
+makes that shell **SIGTERM itself** — it logged "relaunched" while launching nothing.
+Use bracket patterns (`uvicorn[ ]victoria.main`), keep kill and launch in *separate*
+exec calls (a combined one re-triggers it via the runner's own `victoria-run` path),
+prefer an HTTP probe over process matching, and background with `setsid nohup`.
+
 ### 2026-07-27 · Claude bridge — one-command setup + `exec` transport (no nightly)
 
 **Status:** Built. `scripts/setup-bridge.sh`, `scripts/com.victoria.claude-bridge.plist.template`,

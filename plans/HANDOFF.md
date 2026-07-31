@@ -15,8 +15,11 @@
 > 5. `git commit -m "…"` with backticks corrupts the message (shell command-subst).
 >    Use `git commit -F -` with a quoted `<<'MSG'` heredoc, or `--body-file` for PRs.
 
-Last updated: 2026-07-27. `main` at `1bb35b7`. **346 tests pass.** No open PRs.
+Last updated: 2026-07-30. `main` at `620af7f`. **347 tests pass.** PR #87 open (watchdog).
 Claude escalation via the host bridge is **ACTIVATED and verified end-to-end.**
+The sandbox now has a **host-side launchd watchdog** so `:8001` survives reboots and
+Docker container recycles (see §2). Victoria also correctly **owns her Obsidian
+knowledge base** in conversation as of #86 (she used to deny filesystem access).
 
 ## 1. Who / Goal
 
@@ -57,7 +60,19 @@ All PRs #39–#80 merged. #78 = one-command bridge setup; #79 = auth-wording fix
   placeholders that `deploy-sandbox.sh` substitutes at pack time. No per-user edits.
 - **Self-healing (#73):** the startup command runs uvicorn in a `while true` supervisor
   loop — if uvicorn dies (crash, or an `sbx exec` cycling the sandbox), it restarts in
-  ~3s. Demonstrated working.
+  ~3s. Demonstrated working. **BUT this only covers uvicorn dying — not the container
+  dying.** `startup` is one-shot at `sbx run`, so a Docker container recycle (idle /
+  resume / pressure) kills uvicorn AND this supervisor, and a Mac reboot never re-fires
+  it. Both leave `:8001` dark. See the watchdog below.
+- **Host-side watchdog (#87):** `./scripts/setup-watchdog.sh` installs a launchd agent
+  (`com.victoria.watchdog`, `RunAtLoad`+`KeepAlive`) that polls `/health` every 30s and
+  repairs from the HOST — the only place that survives a container recycle. App healthy
+  inside but host port dead → re-publish only; app dead → relaunch the supervised
+  uvicorn (`sbx exec` starts a stopped sandbox first, so reboot is covered). Never
+  recreates: the venv survives, so repair is seconds. A DELETED sandbox is out of scope
+  (still `./deploy-sandbox.sh`). Log: `~/Library/Logs/victoria-watchdog.log`;
+  status: `./scripts/setup-watchdog.sh --status`. Verified: killed uvicorn → back in
+  ~15s; unpublished the port → back in ~20s, both hands-off.
 - **Startup race guard (#66):** startup waits (≤~20 min) for `import uvicorn, victoria.main`
   before launching — covers cold uncached wheel installs on a slow host.
 - **Voice (#70):** the Piper model (`en_GB-jenny_dioco-medium.onnx`) is gitignored, so
@@ -130,6 +145,24 @@ tools `search_notes` / `read_note` / `list_notes` / `write_note`.
   fs-mount allow rules: `~/sandboxes/**` and `~/Obsidian/**` (both required, case-sensitive).
 
 ## 4. What's Been Tried That Failed (DO NOT REPEAT)
+
+**Watchdog repair via process matching (fixed in #87 — cost two silent failed repairs):**
+- **`pgrep -f` / `pkill -f` inside `sbx exec`.** DO NOT REPEAT. `sbx exec <sbx> -- sh -lc
+  '<cmd>'` gives the wrapper shell a cmdline that **contains `<cmd>`**, so
+  `pgrep -f "uvicorn victoria.main"` matches **itself** → always reports ALIVE (it
+  reported ALIVE while uvicorn was dead), and `pkill -f "uvicorn victoria.main"` makes
+  that shell **SIGTERM itself** → it logged "relaunched" while launching nothing, and
+  even killed a live server. Bracket patterns (`uvicorn[ ]victoria.main`) fix the
+  self-match, but **a combined kill+launch command still self-matches** via the runner's
+  own path (`.victoria-run.sh` contains `victoria-run`) — so keep the kill and the launch
+  in **separate `sbx exec` calls**. Prefer an **HTTP probe** (`curl` the in-sandbox
+  `/health`) over process matching for liveness, and background survivors with
+  `setsid nohup` (a plain `&` job dies with the exec session).
+- **Strengthening the in-VM supervisor instead.** Pointless for this failure: anything
+  inside the VM dies with the container. Recovery must come from the host.
+- **Auto-running `deploy-sandbox.sh` on failure.** Rejected — a ~15-20 min cold rebuild
+  as an unattended reflex, when a recycle leaves the venv intact and a relaunch takes
+  seconds. The watchdog only ever does the cheap repair.
 
 **Bridge mTLS activation (fixed in #80 — the two bugs that made escalation silently fail):**
 - **Self-signed CA without extensions.** The old `_gen_certs` made a CA with no

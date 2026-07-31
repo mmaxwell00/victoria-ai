@@ -63,7 +63,9 @@ victoria-ai/
 ├── scripts/
 │   ├── chat.py                 # Terminal chat
 │   ├── run_telegram.py
-│   └── run_voice.py
+│   ├── run_voice.py
+│   ├── victoria-watchdog.sh    # Sandbox uptime — survives reboots + container recycles
+│   └── setup-watchdog.sh       # Installs the watchdog as a launchd agent
 ├── tests/                      # 346 pytest tests
 ├── docs/
 │   └── DECISIONS.md            # Running decision log
