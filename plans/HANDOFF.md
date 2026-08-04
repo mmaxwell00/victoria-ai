@@ -15,11 +15,23 @@
 > 5. `git commit -m "…"` with backticks corrupts the message (shell command-subst).
 >    Use `git commit -F -` with a quoted `<<'MSG'` heredoc, or `--body-file` for PRs.
 
-Last updated: 2026-07-30. `main` at `620af7f`. **347 tests pass.** PR #87 open (watchdog).
+Last updated: 2026-08-01. `main` at `e51b968` (+ the watchdog auth-awareness PR).
+**347 tests pass.** All PRs through #87 merged.
 Claude escalation via the host bridge is **ACTIVATED and verified end-to-end.**
-The sandbox now has a **host-side launchd watchdog** so `:8001` survives reboots and
-Docker container recycles (see §2). Victoria also correctly **owns her Obsidian
+The sandbox has a **host-side launchd watchdog** (#87) so `:8001` survives reboots and
+Docker container recycles — **validated by a real reboot**, not just simulation: on
+2026-08-01 it fired at login, waited out Docker's boot, and had Victoria serving again
+~44s later with no human involved (see §2). Victoria also correctly **owns her Obsidian
 knowledge base** in conversation as of #86 (she used to deny filesystem access).
+
+⚠️ **Known live issue right now:** the `sbx` CLI is **signed out of Docker**
+(`sbx ls` → `401 Unauthorized … no valid user session found`). Victoria is UNAFFECTED
+and still serving (the sandbox container outlives the CLI session), but the watchdog
+repairs *through* `sbx`, so **its safety net is disarmed until someone runs
+`sbx login`**. `./scripts/setup-watchdog.sh --status` now says so explicitly. This is
+also the likely root cause of 2026-07-30's two container recycles and the
+`com.victoria.claude-bridge` SIGTERM (`last exit -15`) — a Docker Desktop session
+expiry/restart explains all three.
 
 ## 1. Who / Goal
 
@@ -72,7 +84,14 @@ All PRs #39–#80 merged. #78 = one-command bridge setup; #79 = auth-wording fix
   recreates: the venv survives, so repair is seconds. A DELETED sandbox is out of scope
   (still `./deploy-sandbox.sh`). Log: `~/Library/Logs/victoria-watchdog.log`;
   status: `./scripts/setup-watchdog.sh --status`. Verified: killed uvicorn → back in
-  ~15s; unpublished the port → back in ~20s, both hands-off.
+  ~15s; unpublished the port → back in ~20s, both hands-off; then a **real reboot** on
+  2026-08-01 → recovered ~44s after login (it logged `Docker not ready yet` once, then
+  repaired on the next cycle).
+  **Two hard dependencies to know about:** the watchdog repairs *through* the `sbx` CLI,
+  so it is disarmed if `sbx` is (a) **signed out** (`sbx login` — it now logs exactly
+  this) or (b) **wedged** (hung `sbx ls`/`exec` processes seen surviving >24h; every call
+  is timeout-bounded so the watchdog survives, but repairs queue). Check both with
+  `./scripts/setup-watchdog.sh --status`.
 - **Startup race guard (#66):** startup waits (≤~20 min) for `import uvicorn, victoria.main`
   before launching — covers cold uncached wheel installs on a slow host.
 - **Voice (#70):** the Piper model (`en_GB-jenny_dioco-medium.onnx`) is gitignored, so

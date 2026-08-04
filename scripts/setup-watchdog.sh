@@ -45,6 +45,12 @@ case "${1:-}" in
     else
       warn "Victoria is DOWN on :${HOST_PORT} (watchdog should repair within ~${CHECK_INTERVAL}s)"
     fi
+    # The watchdog repairs via the sbx CLI, so a signed-out CLI silently disarms it
+    # while Victoria may still be serving (the sandbox outlives the CLI session).
+    if ! sbx ls >/dev/null 2>&1; then
+      warn "sbx CLI is not usable (signed out or wedged) — the watchdog CANNOT repair until fixed."
+      warn "  try: sbx login    (then: ./scripts/setup-watchdog.sh --status)"
+    fi
     [ -f "$LOG_FILE" ] && { say "last log lines:"; tail -5 "$LOG_FILE"; }
     exit 0 ;;
   --uninstall)

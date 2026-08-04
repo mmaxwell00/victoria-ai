@@ -75,7 +75,10 @@ kill_tree() {
 run_timeout() {                     # run_timeout <secs> <outfile> <cmd> [args...]
   local secs="$1" out="$2"; shift 2
   : > "$out"
-  ( "$@" >"$out" 2>/dev/null ) & local pid=$!
+  # stderr is merged into the capture file on purpose: sbx reports auth failures
+  # ("401 Unauthorized … please sign in") on stderr, and we want to recognise those
+  # rather than report them as a generic wedge.
+  ( "$@" >"$out" 2>&1 ) & local pid=$!
   local waited=0
   while kill -0 "$pid" 2>/dev/null; do
     if [ "$waited" -ge "$secs" ]; then
@@ -104,8 +107,21 @@ sbx_t() {                           # sbx_t <secs> <args...>  -> stdout in $SBX_
   if [ "$rc" = "124" ]; then
     log "  WARN: 'sbx $*' timed out after ${secs}s — sbx CLI may be wedged"
     log "        (check: ps -eo pid,etime,args | grep sbx  →  kill -9 any long-running ones)"
+  elif [ "$rc" != "0" ] && sbx_signed_out; then
+    # Nothing can be repaired while the CLI is unauthenticated, and this is NOT a
+    # wedge — say so with the actual remedy instead of a misleading timeout warning.
+    # (Seen live: Docker Desktop's session expired, which also recycled the
+    # container and SIGTERMed the bridge. Victoria kept serving throughout — the
+    # sandbox outlives the CLI session — but no repair was possible.)
+    log "  ERROR: sbx is signed out of Docker — repairs are PAUSED until you run: sbx login"
   fi
   return "$rc"
+}
+
+# Auth failure looks like: "401 Unauthorized: user is not authenticated to Docker",
+# "no valid user session found, please sign in to Docker to proceed".
+sbx_signed_out() {
+  printf '%s' "$SBX_OUT" | grep -qiE 'not authenticated|no valid user session|please sign in|401 unauthorized'
 }
 
 docker_ready() { run_timeout 20 "$SCRATCH.docker" docker info; }
@@ -166,7 +182,8 @@ repair() {
     log "         (needs a kit pack + mounts). Run: ./deploy-sandbox.sh"
     return 1
   elif [ "$ex" = "2" ]; then
-    log "  could not list sandboxes (sbx wedged?) — will retry next cycle"
+    # sbx_t already logged the specific cause (timeout/wedge vs signed out).
+    log "  could not list sandboxes — will retry next cycle"
     return 1
   fi
   ensure_runner || return 1
