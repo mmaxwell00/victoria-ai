@@ -17,7 +17,12 @@
 
 Last updated: 2026-08-01. `main` at `e51b968` (+ the watchdog auth-awareness PR).
 **347 tests pass.** All PRs through #87 merged.
-Claude escalation via the host bridge is **ACTIVATED and verified end-to-end.**
+Claude escalation: the host bridge **works from the host** (verified 2026-08-04,
+`http=200`, real Claude answer) but is **DENIED from inside the sandbox by egress
+policy — deliberately.** Mark's decision: network policy is the control point, so the
+sandbox is **local-model-only** and escalation happens from the native/host run. A
+filesystem side-channel to restore it was **rejected as a covert channel.** See §2 and
+the 2026-08-04 ADR.
 The sandbox has a **host-side launchd watchdog** (#87) so `:8001` survives reboots and
 Docker container recycles — **validated by a real reboot**, not just simulation: on
 2026-08-01 it fired at login, waited out Docker's boot, and had Victoria serving again
@@ -45,7 +50,23 @@ the-loop), layered memory, a web HUD, tools, MCP, an encrypted vault, and an
 Obsidian-backed knowledge base.
 
 **Where the work is right now (newest first):**
-- **Claude escalation via a host bridge — ACTIVATED, working end-to-end.** Set up once
+- **Sandbox egress is now DEFAULT-DENY, and escalation from the sandbox is OFF by
+  policy (2026-08-04).** The org `NetworkAll: allow **` rule is **gone**; `sbx policy ls`
+  shows `kit  sandbox:victoria  network: 20 allow`, so the kit's `network.allowedDomains`
+  **is** the live policy (verified: allow-listed → 200, Yahoo → 429 = allowed/rate-limited,
+  `example.com` → **403**). ⚠️ **The allowlist is load-bearing:** any feature calling a
+  host not in `sbx/spec.yaml` fails 403 until it's added + redeployed.
+  Consequence for escalation: the egress proxy (`gateway.docker.internal:3128`)
+  **ssl-bumps host-directed TLS** — `CONNECT host.docker.internal:8787` is granted then
+  answered with the proxy's own cert (`CN=localhost`, issuer `Docker Sandboxes Proxy CA`),
+  so mTLS to the bridge cannot work (client cert can't traverse a bumping proxy; the
+  bridge requires one). Only `:12434` (Model Runner) is usable on the host.
+  **Mark's decision: keep it that way** — network policy is the control, the sandbox is
+  local-model-only, escalate from the native/host run. Full rationale + rejected options
+  in the 2026-08-04 ADR and `SECURITY-AUDIT.md`.
+- **Claude escalation via a host bridge — built and working FROM THE HOST** (denied from
+  the sandbox, see above; that path was verified end-to-end on 2026-07-27, before the
+  egress change). Set up once
   with `./scripts/setup-bridge.sh` (certs + governed `victoria-claude` sandbox + launchd
   auto-start bridge); `deploy-sandbox.sh` auto-wires Victoria from `~/.victoria/bridge-env`.
   Verified 2026-07-27: `POST /v1/chat {backend:"claude"}` → Victoria (sandbox) → mTLS →
@@ -151,13 +172,18 @@ tools `search_notes` / `read_note` / `list_notes` / `write_note`.
 
 - **Stack:** Python 3.11 · FastAPI + Uvicorn · ChromaDB (semantic memory) · SQLite
   (session memory) · Fernet vault · httpx · faster-whisper (STT) · Piper (TTS).
-- **[LOCKED] Sandbox egress = broad (decision C).** sbx network governance is
-  **org/team-scoped, not per-sandbox**, and all sandboxes share Mark's Docker identity,
-  so you CANNOT harden only `victoria`. The `network.allowedDomains` block in the kit is
-  INERT (org `NetworkAll: allow **` overrides it). Left broad on purpose; the sandbox's
-  hardware isolation is the security property. Full detail: `SECURITY-AUDIT.md`.
+- **[LOCKED] Sandbox egress = DEFAULT-DENY via the kit allowlist** (supersedes the old
+  "broad / decision C", which assumed org rules override kit rules — no longer true).
+  `sbx policy ls` → `kit  sandbox:victoria  network: 20 allow`. Keep `sbx/spec.yaml`'s
+  `network.allowedDomains` current or features 403. Full detail: `SECURITY-AUDIT.md`.
 - **[LOCKED] Claude escalation = host bridge, subscription auth, credential never in the
   VM.** API-key billing rejected; token-in-VM (Path 2) rejected on containment grounds.
+- **[LOCKED] Escalation stays NETWORK-GATED — no side-channels.** Victoria must not be
+  able to reach Claude by any route that bypasses network policy. A mount-based
+  request/response channel was proposed and **rejected as a covert channel**. If sandbox
+  escalation is ever wanted, do it the policy-visible way: `api.anthropic.com` (already
+  allow-listed) with the credential **proxy-injected via `sbx secret`**, never a token in
+  the VM and never a filesystem side-channel.
 - **[LOCKED] Level-1 consent** — Victoria suggests, the user gives the final yes. Never
   auto-call Claude.
 - **Governance:** `sbx` managed by org `mmaxwelldemoorg` (remote-synced). Active

@@ -253,6 +253,8 @@ How the local model signals it's stuck: local backends are given an *escalation 
 > Requires the [Claude Code CLI](https://claude.com/claude-code) installed and logged in (`claude` on your PATH). Adding ChatGPT as an alternative is a planned follow-up.
 
 > **In the Docker Sandbox**, escalation instead routes through a governed **host bridge** so the Claude credential never enters the sandbox: Victoria sends only the prompt over mTLS to `scripts/claude-bridge.py`, which runs `claude -p` in a governed `claude`-agent sandbox and returns the answer. Set it up **once** with `./scripts/setup-bridge.sh` (generates the mTLS certs, creates the governed sandbox, installs the bridge as an auto-starting launchd service); the next `./deploy-sandbox.sh` wires Victoria to it automatically. Full guide in [SANDBOX-DEPLOYMENT.md](SANDBOX-DEPLOYMENT.md).
+>
+> ⚠️ **As of 2026-08-04 this path is blocked from inside the sandbox — by design, and we're keeping it that way.** Docker Sandboxes now enforce **default-deny egress** (the kit's allowlist is the live policy) and **ssl-bump host-directed TLS**, which mTLS cannot survive. Rather than route around it, escalation stays **network-gated**: the sandboxed Victoria is **local-model-only** and escalation is used from the **native/host** run, where the bridge works. Network policy is the control point — a filesystem side-channel that reached Claude without appearing in policy was considered and rejected as a covert channel. Rationale, evidence, and the policy-respecting future option (`api.anthropic.com` with a `sbx secret` proxy-injected credential) are in [SECURITY-AUDIT.md](SECURITY-AUDIT.md).
 
 <p align="center">
   <img src="docs/claude-bridge-architecture.svg" width="820"

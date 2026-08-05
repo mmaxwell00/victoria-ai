@@ -123,6 +123,35 @@ transitions, so an idle watchdog stays quiet).
 needs a kit pack + mounts, which is deliberately left to `./deploy-sandbox.sh`
 rather than fired unattended. The watchdog logs that case loudly instead.
 
+## Network reference — what to open (verified 2026-08-04)
+
+**Short answer: no firewall ports to open.** sbx egress is governed by *domain*
+allowlist, not ports, and every local port in play is loopback or Docker-internal.
+
+| Port | Path | Exposure |
+|---|---|---|
+| `127.0.0.1:8001` → sandbox `:8000` | the HUD (`sbx ports --publish`) | **loopback only** — not on the LAN |
+| `host.docker.internal:12434` | sandbox → host Model Runner | Docker-internal (the only usable host port) |
+| `gateway.docker.internal:3128` | sandbox egress proxy | Docker-internal |
+| `127.0.0.1:8787` | Claude bridge | host-only; unreachable from the sandbox by design |
+
+The thing you actually maintain is `network.allowedDomains` in
+[`sbx/spec.yaml`](sbx/spec.yaml) — **20 hosts**, all verified reachable from inside:
+
+| Purpose | Hosts |
+|---|---|
+| Local LLM (host) | `host.docker.internal` |
+| Weather | `wttr.in` |
+| Markets | `query1.finance.yahoo.com`, `query2.finance.yahoo.com` |
+| Headlines | `feeds.nbcnews.com`, `moxie.foxnews.com` |
+| Web search | `duckduckgo.com`, `*.duckduckgo.com` |
+| Skills / GitHub tools | `github.com`, `api.github.com`, `codeload.github.com`, `raw.githubusercontent.com`, `objects.githubusercontent.com` |
+| **Build-time deps** (cold deploy) | `pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`, `deb.debian.org` |
+| Voice model download | `huggingface.co`, `*.huggingface.co` |
+| Escalation (allow-listed, unused from the sandbox) | `api.anthropic.com` |
+
+Anything else returns **403**. Add the host here + redeploy to enable a new call.
+
 ## Verified working (Phase 2)
 
 | Capability | Status |
@@ -175,6 +204,25 @@ rather than fired unattended. The watchdog logs that case loudly instead.
   calls (a combined one re-triggers it via the runner's own `victoria-run` path),
   and prefer an **HTTP probe over process matching** for liveness. Background a
   survivor with `setsid nohup …` — a plain `&` job dies with the exec session.
+- **Egress is DEFAULT-DENY as of 2026-08-04 — the kit allowlist is the firewall.**
+  There is **no port to open**: sbx network policy is *domain*-based
+  (`network.allowedDomains`), and `sbx policy ls` now shows
+  `kit  sandbox:victoria  network: 20 allow` (the old org `NetworkAll: allow **` that
+  made the block inert is gone). A host that isn't listed returns **403** —
+  `example.com` does today, while `wttr.in`/`github.com` return 200. **Adding a feature
+  that calls somewhere new means adding the host to `sbx/spec.yaml` and redeploying.**
+  The list already covers build-time hosts (`pypi.org`, `files.pythonhosted.org`,
+  `registry.npmjs.org`, `deb.debian.org`, `huggingface.co`), so a cold deploy still
+  works — verified 200 from inside. Non-443 CONNECT is permitted, so unusual ports on
+  *allow-listed* hosts are fine.
+- **Only `host.docker.internal:12434` is usable on the host, and host TLS is ssl-bumped.**
+  `host.docker.internal` being allow-listed does NOT open arbitrary host ports: the
+  Model Runner port answers 200, while other host ports (`:8787`, `:9911`) give **403**
+  proxied / **000** direct. For `https://host.docker.internal:8787` the proxy grants the
+  tunnel then presents **its own** cert (`CN=localhost`, issuer `Docker Sandboxes Proxy
+  CA`), so mTLS cannot work — the client cert can't traverse a bumping proxy. This is
+  why Claude escalation is off inside the sandbox and, per the 2026-08-04 ADR, **stays**
+  off: network policy is the control point. Escalate from the native/host run instead.
 - **The Piper voice model isn't in the clone.** `models/*.onnx` is large and
   gitignored, so the staged clone (and thus the sandbox) doesn't get it — and
   `/v1/tts` then 503s (`Piper model not found`): Victoria hears you (Whisper STT)

@@ -85,6 +85,55 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-08-04 · Sandbox egress is now default-deny; Claude escalation stays network-gated
+
+**Status:** Decided by Mark. Docs updated (`SECURITY-AUDIT.md`, `SANDBOX-DEPLOYMENT.md`,
+`README.md`, `plans/HANDOFF.md`). No code change — the desired behaviour is the
+current behaviour.
+
+**Context:** Two things changed underneath us, discovered while checking the bridge.
+1. The org policy `NetworkAll` (`allow **`) is **gone**. `sbx policy ls` now shows
+   `kit  sandbox:victoria  network: 20 allow`, so the kit's `network.allowedDomains`
+   is the effective policy: **default-deny**. Verified: allow-listed hosts 200 (Yahoo
+   429 = allowed, rate-limited), `example.com` **403**. The 2026-07-22 ADR's premise
+   ("the allowlist is INERT, org rules override kit rules") no longer holds.
+2. Sandbox egress runs through a Docker Sandboxes proxy (`gateway.docker.internal:3128`)
+   that **ssl-bumps host-directed TLS**: `CONNECT host.docker.internal:8787` is granted
+   (`HTTP/1.0 200 OK`) and then answered with the proxy's own cert
+   (`CN=localhost`, issuer `Docker Sandboxes Proxy CA`). Only `:12434` (Model Runner)
+   is actually usable on the host. This broke the mTLS host bridge — Victoria reports
+   `CERTIFICATE_VERIFY_FAILED: self-signed certificate in certificate chain`. Not a
+   Victoria regression: the bridge still answers `http=200` when called from the host.
+
+**Decision:** **Keep escalation network-gated. The sandbox runs local-model-only.**
+Mark's rationale, and the deciding constraint: *network policy is the control*, so
+whether Victoria can reach Claude must be a policy decision, not something she can
+route around. Escalation happens from the **native/host** Victoria, where choosing it
+is explicit. The Level-1 human-in-the-loop prompt is unchanged.
+
+**Rejected — filesystem side-channel (mount-based IPC).** Victoria writing request
+files into the mounted repo for a host-side watcher to execute would restore
+escalation and is immune to proxy/port policy. It is also a **covert channel**: it
+reaches Claude without appearing in network policy at all, which defeats the control
+being relied on. Explicitly not built. (It was proposed before Mark stated the
+constraint; withdrawn once he did.)
+
+**Rejected — allowlist/tunnel workarounds.** Tested and dead: `host.docker.internal`
+is *already* allow-listed, so adding entries changes nothing; non-443 CONNECT is
+already permitted (`github.com:8787` tunnels cleanly), so it is not a port rule. The
+interception is specific to host-directed traffic, and mTLS cannot survive a bumping
+proxy — the client cert cannot traverse it and the bridge requires one. Trusting the
+proxy CA plus a bearer token would work but puts prompts in cleartext at the proxy
+and drops client-cert auth; rejected on containment grounds.
+
+**Future path if sandbox escalation is ever wanted:** `api.anthropic.com` (already
+allow-listed) with the credential **proxy-injected via `sbx secret`**, the mechanism
+that gives the `claude` sandbox a `proxy-managed` sentinel rather than the real token.
+Egress stays visible to network policy; the credential stays out of the VM.
+
+**Consequence to remember:** the allowlist is now load-bearing. Any feature calling a
+new host fails **403** until it is added to `sbx/spec.yaml` and the sandbox redeployed.
+
 ### 2026-07-30 · Sandbox uptime — a host-side launchd watchdog, not an in-VM supervisor
 
 **Status:** Built + verified. `scripts/victoria-watchdog.sh`,
