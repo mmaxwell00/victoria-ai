@@ -85,6 +85,84 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-08-04 · Sandbox egress is now default-deny; Claude escalation stays network-gated
+
+**Status:** Decided by Mark. Docs updated (`SECURITY-AUDIT.md`, `SANDBOX-DEPLOYMENT.md`,
+`README.md`, `plans/HANDOFF.md`). No code change — the desired behaviour is the
+current behaviour.
+
+**Context:** Two things changed underneath us, discovered while checking the bridge.
+1. The org policy `NetworkAll` (`allow **`) is **gone**. `sbx policy ls` now shows
+   `kit  sandbox:victoria  network: 20 allow`, so the kit's `network.allowedDomains`
+   is the effective policy: **default-deny**. Verified: allow-listed hosts 200 (Yahoo
+   429 = allowed, rate-limited), `example.com` **403**. The 2026-07-22 ADR's premise
+   ("the allowlist is INERT, org rules override kit rules") no longer holds.
+2. Sandbox egress runs through a Docker Sandboxes proxy (`gateway.docker.internal:3128`)
+   that **ssl-bumps host-directed TLS**: `CONNECT host.docker.internal:8787` is granted
+   (`HTTP/1.0 200 OK`) and then answered with the proxy's own cert
+   (`CN=localhost`, issuer `Docker Sandboxes Proxy CA`). Only `:12434` (Model Runner)
+   is actually usable on the host. This broke the mTLS host bridge — Victoria reports
+   `CERTIFICATE_VERIFY_FAILED: self-signed certificate in certificate chain`. Not a
+   Victoria regression: the bridge still answers `http=200` when called from the host.
+
+**Decision:** **Keep escalation network-gated. The sandbox runs local-model-only.**
+Mark's rationale, and the deciding constraint: *network policy is the control*, so
+whether Victoria can reach Claude must be a policy decision, not something she can
+route around. Escalation happens from the **native/host** Victoria, where choosing it
+is explicit. The Level-1 human-in-the-loop prompt is unchanged.
+
+**Rejected — filesystem side-channel (mount-based IPC).** Victoria writing request
+files into the mounted repo for a host-side watcher to execute would restore
+escalation and is immune to proxy/port policy. It is also a **covert channel**: it
+reaches Claude without appearing in network policy at all, which defeats the control
+being relied on. Explicitly not built. (It was proposed before Mark stated the
+constraint; withdrawn once he did.)
+
+**Rejected — allowlist/tunnel workarounds.** Tested and dead: `host.docker.internal`
+is *already* allow-listed, so adding entries changes nothing; non-443 CONNECT is
+already permitted (`github.com:8787` tunnels cleanly), so it is not a port rule. The
+interception is specific to host-directed traffic, and mTLS cannot survive a bumping
+proxy — the client cert cannot traverse it and the bridge requires one. Trusting the
+proxy CA plus a bearer token would work but puts prompts in cleartext at the proxy
+and drops client-cert auth; rejected on containment grounds.
+
+**Future path if sandbox escalation is ever wanted:** `api.anthropic.com` (already
+allow-listed) with the credential **proxy-injected via `sbx secret`**, the mechanism
+that gives the `claude` sandbox a `proxy-managed` sentinel rather than the real token.
+Egress stays visible to network policy; the credential stays out of the VM.
+
+**Consequence to remember:** the allowlist is now load-bearing. Any feature calling a
+new host fails **403** until it is added to `sbx/spec.yaml` and the sandbox redeployed.
+
+**Follow-up (2026-08-05) — the kit-native injection path was TESTED and rejected.**
+Mark asked whether aligning with Docker's documented kit model
+(`docs.docker.com/ai/sandboxes/customize/build-an-agent/`) could open Claude access in
+a policy-visible way. Tested on a branch with `serviceDomains` +`serviceAuth` for
+`api.anthropic.com` and `environment.proxyManaged: [ANTHROPIC_API_KEY]`:
+- **The mechanism works** — the VM received the documented sentinel
+  (`ANTHROPIC_API_KEY=proxy-managed`); egress was already fine (401 from Anthropic,
+  not 403, with a real `request_id`).
+- **But there is no injectable credential.** sbx reported
+  `SBX_CRED_ANTHROPIC_MODE=none`: the stored global `anthropic` secret is an **OAuth
+  subscription session**, not an API key, so the Messages API still returned
+  `401 invalid x-api-key`. Making it work needs a real API key → **metered billing**,
+  which the escalation ADRs rule out. The subscription and the public API are simply
+  different credentials.
+- **And it actively degraded Victoria:** the sentinel is read by pydantic into
+  `settings.anthropic_api_key`, which `llm_router._pick_backend` uses as a **truthy
+  gate** — so any query over `complex_query_threshold` (200 words) would be routed to
+  the Claude API with a bogus key and **401 instead of answered locally** (verified:
+  gate `True`). Both blocks were removed, with comments so they are not re-added.
+- **Also documented as undocumented:** host-service access. Across build-an-agent /
+  kits / kit-reference / credentials there is no `host.docker.internal`, localhost,
+  raw-TCP or client-certificate mechanism — the model assumes all egress goes through
+  the host proxy. So kit alignment cannot reopen the mTLS bridge either.
+
+**Net: the decision above stands, now with evidence.** Escalation remains
+network-gated; the sandbox is local-model-only. The one thing the experiment *did*
+surface was valuable: a cold deploy was **broken** under default-deny (four missing
+build hosts), which is fixed in the kit.
+
 ### 2026-07-30 · Sandbox uptime — a host-side launchd watchdog, not an in-VM supervisor
 
 **Status:** Built + verified. `scripts/victoria-watchdog.sh`,

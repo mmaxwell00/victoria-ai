@@ -1,18 +1,51 @@
 ## Victoria Sandbox — Network Security Audit
 
-> **Status (Phase 3 — verified 2026-07-22; decision: leave egress broad for now).**
-> The kit ships the egress allowlist below as a top-level `network.allowedDomains`
-> block in [`sbx/spec.yaml`](sbx/spec.yaml), but **it is currently INERT — and that
-> is a deliberate choice, not an oversight.** This environment is governed by the
-> org policy `NetworkAll` (`allow ** network`, applies to *all* sandboxes, active);
-> per Docker's model an active org rule **overrides kit-defined network rules**.
-> Confirmed empirically: from inside the sandbox a *non-allowlisted* host
-> (`https://example.com`) still returns **HTTP 200**, including in the
-> `sandbox:victoria` policy context (`sbx policy check`). The allowlist is kept
-> here as the ready **target** config. The security property Victoria actually
-> relies on is **hardware / process / filesystem isolation** from the host, which
-> the sandbox already provides; egress lockdown is a further, optional step. The
-> host Model Runner is reached at `host.docker.internal:12434` (not `localhost`).
+> **Status (verified 2026-08-04): the egress allowlist is now LIVE — default-deny
+> is in force.** This supersedes the earlier "INERT / leave egress broad" status.
+> The org policy `NetworkAll` (`allow **`) that used to override kit rules is **no
+> longer present**; `sbx policy ls` now shows the kit's own policy applying to this
+> sandbox:
+>
+> ```
+> ffb208da-…  kit  sandbox:victoria  network: 20 allow
+> ```
+>
+> So the `network.allowedDomains` block in [`sbx/spec.yaml`](sbx/spec.yaml) is the
+> effective policy. Confirmed empirically from inside the sandbox:
+>
+> | Destination | Result |
+> |---|---|
+> | `wttr.in`, `github.com` (allow-listed) | **200** |
+> | `query1.finance.yahoo.com` (allow-listed) | **429** — allowed through; Yahoo rate-limit |
+> | `https://example.com` (**not** listed) | **403** — denied by the proxy |
+>
+> **The allowlist is therefore load-bearing.** Any new feature that calls a host not
+> on the list will fail with **403** until the domain is added to `sbx/spec.yaml` and
+> the sandbox redeployed. Egress now runs through a Docker Sandboxes proxy at
+> `gateway.docker.internal:3128` (see the interception note below).
+>
+> Victoria still also relies on **hardware / process / filesystem isolation** from
+> the host; egress lockdown is now an additional layer rather than a future step.
+> The host Model Runner is reached at `host.docker.internal:12434` (not `localhost`).
+
+> **Host-directed TLS is intercepted (ssl-bumped), and only `:12434` is reachable.**
+> `host.docker.internal` is on the allowlist, but that does not make arbitrary host
+> ports usable. Measured from inside the sandbox:
+>
+> - `http://host.docker.internal:12434` → **200** (the Model Runner integration).
+> - `http://host.docker.internal:8787` (Claude bridge) → **403**; any other host port
+>   tested (e.g. `:9911`) → **403** proxied, **000** direct.
+> - `https://host.docker.internal:8787` → the proxy grants the tunnel
+>   (`CONNECT … → HTTP/1.0 200 OK`) and then **presents its own certificate**:
+>   `subject: O=Docker Sandboxes; CN=localhost`, `issuer: … CN=Docker Sandboxes Proxy CA`.
+>
+> That last point is why **mTLS to the host bridge cannot work from the sandbox**: a
+> bumping proxy terminates TLS, so Victoria's *client* certificate never reaches the
+> bridge (which requires one), and the server certificate can never match the bridge
+> CA. Victoria surfaces it as `CERTIFICATE_VERIFY_FAILED: self-signed certificate in
+> certificate chain`. Non-443 CONNECT is *not* the blocker — a tunnel to
+> `github.com:8787` is granted cleanly; the interception is specific to host-directed
+> traffic. See "Claude escalation" below.
 
 ## Activation — an org-wide policy change (no per-sandbox option)
 
@@ -29,11 +62,35 @@ can only be tightened in **Docker Home** (or the Governance API), not the local
 2. **Team-scoped hardened policy** — only isolates `victoria` if it runs under a
    **separate identity/team**; that's extra identity setup, not in place today.
 
-**Current decision (C): leave egress broad.** For a personal, always-on assistant
-on your own machine, the isolation win we wanted is already delivered by the
-sandbox; org-wide default-deny would carry a blast radius across every other
-sandbox for the benefit of one. The kit allowlist stays as documented intent so a
-future org-wide default-deny (path 1) activates cleanly.
+**Superseded (2026-08-04).** Decision (C) — "leave egress broad" — is no longer the
+state of the world, and no longer requires the org-wide change described above. The
+`NetworkAll` (`allow **`) rule is gone, so the kit's allowlist now *is* the policy
+for `sandbox:victoria`: **default-deny with 20 allowed hosts**, per-sandbox, with no
+blast radius across other sandboxes. The outcome path 1 was meant to achieve arrived
+without us tightening anything org-wide.
+
+## Claude escalation from the sandbox — denied, on purpose
+
+Escalation from **inside the sandbox is OFF**, and that is the intended posture:
+network policy is the control point, so Claude access is something the policy grants
+or denies rather than something Victoria can arrange for herself.
+
+- The **host bridge is healthy** — called from the host it returns a real Claude
+  answer (`http=200`), the launchd agent runs, certs verify, and the global
+  `anthropic` OAuth is configured. Escalation works for a **native/host** Victoria.
+- From the **sandbox** it is denied by the egress rules above (host-directed TLS is
+  ssl-bumped; only `:12434` is permitted). Victoria falls back to the local model and
+  says so; no silent failure.
+- **Rejected: a filesystem side-channel** (Victoria writing request files into the
+  mounted repo for a host watcher to execute). It would work, and it would be a
+  **covert channel** — reaching Claude without appearing in network policy at all,
+  defeating the very control this document is about. Not built, deliberately.
+- **If escalation is ever wanted inside the sandbox**, the policy-respecting route is
+  **`api.anthropic.com`** (already on the allowlist) with the credential
+  **proxy-injected via `sbx secret`** — the same mechanism that hands the `claude`
+  sandbox a `proxy-managed` sentinel instead of the real token. That keeps egress
+  visible to network policy *and* keeps the credential out of the VM. Not
+  implemented; recorded as the correct direction if the need arises.
 
 Verify IF/when egress is tightened (from the host):
 
