@@ -40,7 +40,20 @@ agentContext: |
   The local LLM is the host's Docker Model Runner at host.docker.internal:12434.
 
 environment:
+  # NOTE — do NOT add `proxyManaged: [ANTHROPIC_API_KEY]` here. Tested 2026-08-05:
+  # the sentinel it injects (`ANTHROPIC_API_KEY=proxy-managed`) is read by pydantic
+  # into `settings.anthropic_api_key`, which `llm_router._pick_backend` uses as a
+  # TRUTHY GATE — so every query over `complex_query_threshold` (200) words would be
+  # routed to the Claude API with a bogus key and 401 instead of being answered
+  # locally. sbx also reported `SBX_CRED_ANTHROPIC_MODE=none` (no injectable
+  # credential), so it bought nothing. See the 2026-08-05 ADR.
   variables:
+    # Pull model files straight from huggingface.co instead of HF's Xet CDN. Xet
+    # hops across rotating hosts (xethub.hf.co, us.aws.cdn.hf.co, …) which is hostile
+    # to a default-deny allowlist; disabling it keeps downloads on the one host we
+    # allow. Slightly slower, far more predictable. (The `**.hf.co` entries above are
+    # belt-and-braces in case a library ignores this.)
+    HF_HUB_DISABLE_XET: "1"
     DEFAULT_LLM: docker
     # Reach the host Model Runner from inside the sandbox (NOT localhost):
     MODEL_RUNNER_URL: http://host.docker.internal:12434/engines/llama.cpp/v1
@@ -82,6 +95,13 @@ environment:
 # correct target so a future org-wide default-deny activates cleanly.
 # `deniedDomains` is unnecessary: the org already enforces its own denies (DPRK, etc.).
 network:
+  # NOTE — `serviceDomains`/`serviceAuth` for api.anthropic.com were TESTED here on
+  # 2026-08-05 and deliberately removed. The kit mechanism works (the sentinel is
+  # injected as documented) but sbx reports `SBX_CRED_ANTHROPIC_MODE=none`: the
+  # stored global `anthropic` secret is an OAuth *subscription* session, not an
+  # injectable API key, so requests still returned 401 "invalid x-api-key".
+  # Making this path work needs a real Anthropic API key (metered billing), which
+  # is a deliberate no per the escalation ADRs. See the 2026-08-05 ADR.
   allowedDomains:
     # -- Local LLM: host Model Runner via the sandbox's host gateway --
     - host.docker.internal
@@ -102,20 +122,63 @@ network:
     - codeload.github.com
     - raw.githubusercontent.com
     - objects.githubusercontent.com
+    # GitHub serves release assets from release-assets.githubusercontent.com (and
+    # rotates these hostnames), which `uv venv --python 3.11` needs to fetch its
+    # managed CPython. Missing it = 403 → no venv → no ChromaDB/voice → sandbox
+    # creation aborts (measured 2026-08-05). The wildcard future-proofs the rotation.
+    - "*.githubusercontent.com"
+    - release-assets.githubusercontent.com
     # -- Build-time: dependency install (uv-managed py3.11 + pip + model pulls) --
     - pypi.org
     - files.pythonhosted.org
     - huggingface.co
     - "*.huggingface.co"
-    - deb.debian.org              # apt: ffmpeg + libportaudio2
+    # Hugging Face serves model BLOBS through Xet storage on a DIFFERENT domain
+    # (cas-server.xethub.hf.co). Without these, huggingface.co resolves metadata but
+    # the download 403s — measured 2026-08-05: /v1/transcribe returned "CAS Client
+    # Error … 403" because faster-whisper couldn't fetch the Whisper model.
+    # NOTE the DOUBLE star: sbx wildcards are `*` = ONE label, `**` = many. `*.hf.co`
+    # covers xethub.hf.co but NOT us.aws.cdn.hf.co (three labels), which is where the
+    # blob download actually landed — measured 2026-08-05, two 403s on two different
+    # HF hosts before this was understood.
+    - hf.co
+    - "**.hf.co"
+    - "**.huggingface.co"
+    - deb.debian.org
+    # The shell-docker base image moved to UBUNTU, so apt fetches from the Ubuntu
+    # mirrors — on arm64 that's ports.ubuntu.com, NOT deb.debian.org. Missing these
+    # under default-deny egress made `apt-get` exit 100 ("repository … is not
+    # signed" is what a proxy denial looks like to apt) and aborted sandbox
+    # creation outright (2026-08-05). Both :80 (apt uses plain HTTP) and the bare
+    # host are listed so the entry can't be defeated by port matching.
+    - ports.ubuntu.com
+    - "ports.ubuntu.com:80"
+    - archive.ubuntu.com
+    - "archive.ubuntu.com:80"
+    - security.ubuntu.com
+    - "security.ubuntu.com:80"
+    # The base image ships a Docker CE apt repo, so `apt-get update` also hits
+    # download.docker.com. Blocking it makes the whole update exit non-zero, which
+    # (with the `&&`) silently skips the ffmpeg/PortAudio install — that's why voice
+    # deps were missing after the 2026-08-05 rebuild even though the Ubuntu mirrors
+    # were reachable.
+    - download.docker.com
+    - "download.docker.com:80"              # apt: ffmpeg + libportaudio2
     - registry.npmjs.org          # optional MCP (node) servers
 
 commands:
   install:
     # System libs: ffmpeg (Whisper STT) + PortAudio (sounddevice). Root user.
-    - command: apt-get update -qq && apt-get install -y -qq ffmpeg libportaudio2
+    # NON-FATAL on purpose (`|| echo`): a start-hook failure here aborts the whole
+    # sandbox creation, so a transient apt/egress problem would cost the entire
+    # deployment rather than just voice. Measured 2026-08-05: apt exited 100
+    # ("repository … is not signed" — the proxy denying ports.ubuntu.com), which
+    # killed `sbx run` and left NO sandbox at all. Voice degrades; Victoria still runs.
+    - command: >-
+        apt-get update -qq && apt-get install -y -qq ffmpeg libportaudio2
+        || echo "[install] apt failed — voice deps unavailable (ffmpeg/PortAudio); Victoria still starts"
       user: "0"
-      description: System libraries for voice (Whisper ffmpeg + PortAudio)
+      description: System libraries for voice (Whisper ffmpeg + PortAudio) — non-fatal
     # The shell-docker image ships Python 3.14 — too new for chromadb / faster-
     # whisper / piper. uv (preinstalled in the image) manages a Python 3.11 venv
     # so the FULL dependency set installs → semantic memory (ChromaDB) + voice.
