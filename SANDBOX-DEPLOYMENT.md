@@ -146,8 +146,8 @@ The thing you actually maintain is `network.allowedDomains` in
 | Headlines | `feeds.nbcnews.com`, `moxie.foxnews.com` |
 | Web search | `duckduckgo.com`, `*.duckduckgo.com` |
 | Skills / GitHub tools | `github.com`, `api.github.com`, `codeload.github.com`, `raw.githubusercontent.com`, `objects.githubusercontent.com` |
-| **Build-time deps** (cold deploy) | `pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`, `deb.debian.org` |
-| Voice model download | `huggingface.co`, `*.huggingface.co` |
+| **Build-time deps** (cold deploy) | `pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`, `deb.debian.org`, Ubuntu apt mirrors (`ports/archive/security.ubuntu.com` + `:80`), `download.docker.com`, `*.githubusercontent.com` (release assets for `uv`'s CPython) |
+| Voice model download | `huggingface.co`, `*.huggingface.co`, `hf.co`, `**.hf.co` (Xet CDN) |
 | Escalation (allow-listed, unused from the sandbox) | `api.anthropic.com` |
 
 Anything else returns **403**. Add the host here + redeploy to enable a new call.
@@ -211,10 +211,35 @@ Anything else returns **403**. Add the host here + redeploy to enable a new call
   made the block inert is gone). A host that isn't listed returns **403** —
   `example.com` does today, while `wttr.in`/`github.com` return 200. **Adding a feature
   that calls somewhere new means adding the host to `sbx/spec.yaml` and redeploying.**
-  The list already covers build-time hosts (`pypi.org`, `files.pythonhosted.org`,
-  `registry.npmjs.org`, `deb.debian.org`, `huggingface.co`), so a cold deploy still
-  works — verified 200 from inside. Non-443 CONNECT is permitted, so unusual ports on
-  *allow-listed* hosts are fine.
+  Non-443 CONNECT is permitted, so unusual ports on *allow-listed* hosts are fine.
+  ⚠️ **A reachability check is NOT a working cold deploy.** An earlier revision of
+  this guide concluded the build hosts were covered "so a cold deploy still works —
+  verified 200 from inside"; that was wrong. The listed hosts *were* reachable, but a
+  real `sbx rm` + rebuild still failed, because the build needs hosts that were never
+  listed at all (Ubuntu apt mirrors after the base image moved to Ubuntu,
+  `download.docker.com` for the image's Docker CE repo, GitHub *release-asset* hosts
+  for `uv`'s CPython, and Hugging Face's Xet CDN). Fixed in the kit — see the
+  cold-deploy gotcha below. **Verify a cold deploy by running one, not by curling the
+  list.**
+- **A cold deploy needs BUILD hosts too — and a failed create leaves NO sandbox.**
+  `deploy-sandbox.sh` runs `sbx rm` *before* create, so if creation fails you are left
+  with nothing running (and the watchdog deliberately won't rebuild). Under default-deny
+  this bit for real on 2026-08-05: **four separate missing hosts**, each surfacing as a
+  different confusing error.
+  | Symptom | Actually missing |
+  |---|---|
+  | `apt … exited 100`, "repository is not signed" | Ubuntu mirrors — the base image moved to **Ubuntu**, so apt uses `ports.ubuntu.com`, not `deb.debian.org` |
+  | ffmpeg silently absent (create succeeded) | `download.docker.com` — the image ships a Docker CE apt repo, so `apt-get update` exits non-zero and the `&&` skips the install |
+  | `uv venv --python 3.11 … 403` | `release-assets.githubusercontent.com` — GitHub serves release assets there (covered by `*.githubusercontent.com`) |
+  | `/v1/transcribe` → "CAS Client Error … 403" | Hugging Face **Xet CDN** on rotating hosts (`xethub.hf.co`, then `us.aws.cdn.hf.co`); also set `HF_HUB_DISABLE_XET=1` |
+  Two lessons baked into the kit: the apt step is now **non-fatal** (a failing start
+  hook must not cost the whole deployment), and **sbx wildcards are `*` = ONE label,
+  `**` = many** — `*.hf.co` does *not* match `us.aws.cdn.hf.co`.
+- **`sbx exec` runs as uid 1000, not root.** Install steps that declare `user: "0"`
+  behave differently from the same command typed via `sbx exec` — an apt test through
+  exec fails with `Permission denied` on `/var/lib/apt/lists/` and tells you nothing
+  about the real install. Read the create-time error from the daemon log instead:
+  `~/Library/Application Support/com.docker.sandboxes/sandboxes/sandboxd/daemon.log`.
 - **Only `host.docker.internal:12434` is usable on the host, and host TLS is ssl-bumped.**
   `host.docker.internal` being allow-listed does NOT open arbitrary host ports: the
   Model Runner port answers 200, while other host ports (`:8787`, `:9911`) give **403**

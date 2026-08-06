@@ -134,6 +134,35 @@ Egress stays visible to network policy; the credential stays out of the VM.
 **Consequence to remember:** the allowlist is now load-bearing. Any feature calling a
 new host fails **403** until it is added to `sbx/spec.yaml` and the sandbox redeployed.
 
+**Follow-up (2026-08-05) — the kit-native injection path was TESTED and rejected.**
+Mark asked whether aligning with Docker's documented kit model
+(`docs.docker.com/ai/sandboxes/customize/build-an-agent/`) could open Claude access in
+a policy-visible way. Tested on a branch with `serviceDomains` +`serviceAuth` for
+`api.anthropic.com` and `environment.proxyManaged: [ANTHROPIC_API_KEY]`:
+- **The mechanism works** — the VM received the documented sentinel
+  (`ANTHROPIC_API_KEY=proxy-managed`); egress was already fine (401 from Anthropic,
+  not 403, with a real `request_id`).
+- **But there is no injectable credential.** sbx reported
+  `SBX_CRED_ANTHROPIC_MODE=none`: the stored global `anthropic` secret is an **OAuth
+  subscription session**, not an API key, so the Messages API still returned
+  `401 invalid x-api-key`. Making it work needs a real API key → **metered billing**,
+  which the escalation ADRs rule out. The subscription and the public API are simply
+  different credentials.
+- **And it actively degraded Victoria:** the sentinel is read by pydantic into
+  `settings.anthropic_api_key`, which `llm_router._pick_backend` uses as a **truthy
+  gate** — so any query over `complex_query_threshold` (200 words) would be routed to
+  the Claude API with a bogus key and **401 instead of answered locally** (verified:
+  gate `True`). Both blocks were removed, with comments so they are not re-added.
+- **Also documented as undocumented:** host-service access. Across build-an-agent /
+  kits / kit-reference / credentials there is no `host.docker.internal`, localhost,
+  raw-TCP or client-certificate mechanism — the model assumes all egress goes through
+  the host proxy. So kit alignment cannot reopen the mTLS bridge either.
+
+**Net: the decision above stands, now with evidence.** Escalation remains
+network-gated; the sandbox is local-model-only. The one thing the experiment *did*
+surface was valuable: a cold deploy was **broken** under default-deny (four missing
+build hosts), which is fixed in the kit.
+
 ### 2026-07-30 · Sandbox uptime — a host-side launchd watchdog, not an in-VM supervisor
 
 **Status:** Built + verified. `scripts/victoria-watchdog.sh`,
