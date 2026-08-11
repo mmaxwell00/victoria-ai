@@ -15,8 +15,28 @@
 > 5. `git commit -m "…"` with backticks corrupts the message (shell command-subst).
 >    Use `git commit -F -` with a quoted `<<'MSG'` heredoc, or `--body-file` for PRs.
 
-Last updated: 2026-08-01. `main` at `e51b968` (+ the watchdog auth-awareness PR).
-**347 tests pass.** All PRs through #87 merged.
+Last updated: 2026-08-08. `main` at `32261d8`. **347 tests pass. NO open PRs.**
+All PRs through #91 merged. `sbx` is now **v0.37.1** (the older notes below say v0.35).
+
+⚠️ **Read this first if you touch the sandbox.** Default-deny egress has now broken
+**three** different things, each in a way that did NOT look like a network problem.
+Before debugging anything odd in the sandbox, ask "is a host missing from
+`network.allowedDomains`?" — it is the single most likely cause.
+- **A cold `./deploy-sandbox.sh` was BROKEN** (fixed #90): four missing build hosts.
+  Deploy runs `sbx rm` *before* create, so a failed create leaves **no sandbox at all**.
+- **Semantic memory was silently DEAD** (fixed #91): ChromaDB re-downloaded its
+  embedding model on every query, got the proxy's ~142-byte 403 page, failed its SHA256
+  check, and returned nothing — while `/health` still said `semantic_memory: true`.
+  This also made every chat turn ~4s slower, which is what Mark reported as Victoria
+  "pausing" before answering. Fix: allow-list `chroma-onnx-models.s3.amazonaws.com`.
+  Latency 16.6s → 4.4s trivial, 15-21s → 6.3s weather; recall verified across sessions.
+- **Escalation from the sandbox is denied** — that one is DELIBERATE (see below).
+
+**Diagnostic habit that would have found all three faster:** compare Victoria's latency
+against the raw Model Runner (`curl host :12434 …` — 0.3s warm). If she is 10-50x
+slower, the time is ours, not the model's. And a 403 rarely announces itself: it shows
+up as a corrupt download, an "unsigned" apt repo, or a silently empty search.
+
 Claude escalation: the host bridge **works from the host** (verified 2026-08-04,
 `http=200`, real Claude answer) but is **DENIED from inside the sandbox by egress
 policy — deliberately.** Mark's decision: network policy is the control point, so the
@@ -29,14 +49,15 @@ Docker container recycles — **validated by a real reboot**, not just simulatio
 ~44s later with no human involved (see §2). Victoria also correctly **owns her Obsidian
 knowledge base** in conversation as of #86 (she used to deny filesystem access).
 
-⚠️ **Known live issue right now:** the `sbx` CLI is **signed out of Docker**
-(`sbx ls` → `401 Unauthorized … no valid user session found`). Victoria is UNAFFECTED
-and still serving (the sandbox container outlives the CLI session), but the watchdog
-repairs *through* `sbx`, so **its safety net is disarmed until someone runs
-`sbx login`**. `./scripts/setup-watchdog.sh --status` now says so explicitly. This is
-also the likely root cause of 2026-07-30's two container recycles and the
-`com.victoria.claude-bridge` SIGTERM (`last exit -15`) — a Docker Desktop session
-expiry/restart explains all three.
+**Resolved, but expect it to recur:** the `sbx` CLI signs itself out periodically
+(`sbx ls` → `401 … no valid user session found`). Mark fixed it with `sbx login`
+(2026-08-04) and the watchdog is armed again. Victoria keeps serving throughout — the
+sandbox container outlives the CLI session — but the watchdog repairs *through* `sbx`,
+so a signed-out CLI silently **disarms the safety net**;
+`./scripts/setup-watchdog.sh --status` now says so explicitly. A Docker Desktop session
+expiry also explains 2026-07-30's two container recycles and the
+`com.victoria.claude-bridge` SIGTERM (`last exit -15`). Separately, the sbx control
+plane can WEDGE (see §4) — different symptom, different fix.
 
 ## 1. Who / Goal
 
@@ -52,7 +73,7 @@ Obsidian-backed knowledge base.
 **Where the work is right now (newest first):**
 - **Sandbox egress is now DEFAULT-DENY, and escalation from the sandbox is OFF by
   policy (2026-08-04).** The org `NetworkAll: allow **` rule is **gone**; `sbx policy ls`
-  shows `kit  sandbox:victoria  network: 20 allow`, so the kit's `network.allowedDomains`
+  shows `kit  sandbox:victoria  network: N allow` (was 20; #90/#91 added build + embedding hosts), so the kit's `network.allowedDomains`
   **is** the live policy (verified: allow-listed → 200, Yahoo → 429 = allowed/rate-limited,
   `example.com` → **403**). ⚠️ **The allowlist is load-bearing:** any feature calling a
   host not in `sbx/spec.yaml` fails 403 until it's added + redeployed.
@@ -81,9 +102,27 @@ Obsidian-backed knowledge base.
 
 ## 2. Current State (what exists now)
 
-**Test suite: 346 pass** (`python -m pytest -q`, use `.venv/bin/python`).
-All PRs #39–#80 merged. #78 = one-command bridge setup; #79 = auth-wording fix;
-#80 = the mTLS fixes that made escalation actually work (see §4).
+**Test suite: 347 pass** (`python -m pytest -q`, use `.venv/bin/python`).
+All PRs #39–#91 merged. Most recent: #86 = Victoria owns her Obsidian knowledge base
+(she used to deny filesystem access); #87 = the host-side uptime watchdog; #88 =
+watchdog recognises a signed-out `sbx`; #89 = egress/escalation security docs;
+**#90 = repaired the cold deploy**; **#91 = unblocked ChromaDB's embedding model**
+(semantic memory was silently dead + ~4s/turn slower — see the warning at the top).
+
+**Cold deploy — fixed in #90, and what to expect (measured 2026-08-05).** Under
+default-deny egress the build needs hosts that were never allow-listed, and each
+failure looked like something else entirely:
+| Symptom | Actually missing |
+|---|---|
+| `apt … exited 100`, "repository is not signed" | Ubuntu mirrors — the base image moved to **Ubuntu**, so apt uses `ports.ubuntu.com`, not `deb.debian.org` |
+| ffmpeg absent though create "succeeded" | `download.docker.com` — the image ships a Docker CE apt repo, so `apt-get update` exits non-zero and the `&&` skips the install |
+| `uv venv --python 3.11` → 403 | `release-assets.githubusercontent.com` (covered by `*.githubusercontent.com`) |
+| `/v1/transcribe` → "CAS Client Error … 403" | Hugging Face **Xet CDN** on rotating hosts; also `HF_HUB_DISABLE_XET=1` |
+Two rules baked in: apt is now **non-fatal** (a failing start hook must not cost the
+whole deployment), and **sbx wildcards are `*` = ONE label, `**` = many** —
+`*.hf.co` does NOT match `us.aws.cdn.hf.co`. A cold rebuild takes ~4–5 min and was
+verified end-to-end: HUD, semantic memory, knowledge base, dashboard, ffmpeg,
+TTS 200, and STT transcribing real audio.
 
 **Sandbox deployment (the primary run mode):**
 - Kit at `sbx/spec.yaml` (`kind: sandbox`, image `docker/sandbox-templates:shell-docker`).
@@ -174,7 +213,7 @@ tools `search_notes` / `read_note` / `list_notes` / `write_note`.
   (session memory) · Fernet vault · httpx · faster-whisper (STT) · Piper (TTS).
 - **[LOCKED] Sandbox egress = DEFAULT-DENY via the kit allowlist** (supersedes the old
   "broad / decision C", which assumed org rules override kit rules — no longer true).
-  `sbx policy ls` → `kit  sandbox:victoria  network: 20 allow`. Keep `sbx/spec.yaml`'s
+  `sbx policy ls` → `kit  sandbox:victoria  network: N allow`. Keep `sbx/spec.yaml`'s
   `network.allowedDomains` current or features 403. Full detail: `SECURITY-AUDIT.md`.
 - **[LOCKED] Claude escalation = host bridge, subscription auth, credential never in the
   VM.** API-key billing rejected; token-in-VM (Path 2) rejected on containment grounds.
@@ -190,6 +229,63 @@ tools `search_notes` / `read_note` / `list_notes` / `write_note`.
   fs-mount allow rules: `~/sandboxes/**` and `~/Obsidian/**` (both required, case-sensitive).
 
 ## 4. What's Been Tried That Failed (DO NOT REPEAT)
+
+**Trusting `/health` to tell you a subsystem works (cost a silent regression):**
+- **`semantic_memory: true` does NOT mean recall works.** It only means ChromaDB
+  initialised. Every `search()` was failing (blocked embedding-model download → SHA256
+  mismatch) and returning nothing, so cross-session memory was dead for an unknown
+  period while health looked green. DO NOT REPEAT: verify memory **functionally** —
+  state a distinctive fact in session A, ask about it in a NEW session B. Fixed in #91
+  by allow-listing `chroma-onnx-models.s3.amazonaws.com`; if it recurs, check
+  `/tmp/victoria.log` in-sandbox for "does not match expected SHA256".
+- **Chasing the tool loop for a "slow/no answer" complaint.** The tool loop was fine.
+  The give-away was that a NON-tool question ("say hello in five words") was equally
+  slow (16.6s) while the raw Model Runner answered the same thing in 0.3s. Measure the
+  model directly before touching orchestration code.
+
+**sbx credential injection for Claude escalation (tested 2026-08-05, REJECTED):**
+- **`serviceDomains`/`serviceAuth` for `api.anthropic.com` + `proxyManaged:
+  [ANTHROPIC_API_KEY]`.** DO NOT REPEAT without an actual API key. The kit mechanism
+  works (the VM got the documented `ANTHROPIC_API_KEY=proxy-managed` sentinel, and
+  egress was already fine — 401 from Anthropic, not 403), **but sbx reported
+  `SBX_CRED_ANTHROPIC_MODE=none`**: the stored global `anthropic` secret is an OAuth
+  *subscription* session, not an injectable API key, so it still 401'd. A real API key
+  means metered billing, which is a standing no.
+- **Worse, it silently degraded Victoria.** The sentinel is read by pydantic into
+  `settings.anthropic_api_key`, which `llm_router._pick_backend` uses as a **TRUTHY
+  GATE** — so every query over `complex_query_threshold` (200 words) would be routed to
+  the Claude API with a bogus key and 401 **instead of being answered locally**
+  (verified: gate `True`). Comments in `sbx/spec.yaml` warn against re-adding it.
+- **Kit alignment cannot reopen the mTLS host bridge either.** Host-service access is
+  undocumented across build-an-agent / kits / kit-reference / credentials — no
+  `host.docker.internal`, localhost, raw TCP, or client certs. The model assumes all
+  egress goes through the host proxy, which ssl-bumps host-directed TLS.
+
+**Two ways the sandbox got taken down while debugging (both avoidable):**
+- **Wrapping `sbx daemon start` in a timeout.** DO NOT REPEAT. It runs in the
+  **FOREGROUND** — the long-lived process *is* the daemon (a healthy one shows as a
+  days-old `sbx daemon start`). A timeout wrapper kills the daemon it just started, and
+  Victoria goes down with it. Start it detached: `nohup sbx daemon start >log 2>&1 &`.
+- **Assuming a failed deploy is harmless.** `deploy-sandbox.sh` runs `sbx rm --force`
+  *before* create, so a failed create leaves NO sandbox — and the watchdog deliberately
+  won't rebuild one. Unload the watchdog before a redeploy (it fights the recreate) and
+  reload it after.
+- **Diagnosing a `user: "0"` install step via `sbx exec`.** `sbx exec` runs as **uid
+  1000**, so an apt test through it fails with `Permission denied` on
+  `/var/lib/apt/lists/` and tells you nothing about the real install. Read the
+  create-time error from the daemon log instead:
+  `~/Library/Application Support/com.docker.sandboxes/sandboxes/sandboxd/daemon.log`.
+
+**sbx control-plane wedge (recurs; the watchdog survives it, repairs queue):**
+- Symptom: `sbx daemon status` answers instantly ("running") while `sbx ls`/`sbx exec`
+  hang ~10s then jam, and hung `sbx` processes pile up (seen surviving >24h). Daemon log
+  shows `create SDK client: health check: context canceled` for every runtime — it can't
+  reach its own `docker.sock` proxy. Docker itself is fine.
+- Remedy: `kill -9` the hung `sbx` clients, then the Docker daemon process
+  (`/opt/homebrew/bin/sbx daemon start`) and restart it **detached**. **NEVER kill
+  `/usr/libexec/sandboxd`** — that is Apple's own system daemon, not Docker's.
+- Always bound your own `sbx` calls in scripts; the watchdog already does (`run_timeout`
+  + depth-first `kill_tree`, since `pkill -P` orphans grandchildren).
 
 **Watchdog repair via process matching (fixed in #87 — cost two silent failed repairs):**
 - **`pgrep -f` / `pkill -f` inside `sbx exec`.** DO NOT REPEAT. `sbx exec <sbx> -- sh -lc
@@ -272,8 +368,11 @@ tools `search_notes` / `read_note` / `list_notes` / `write_note`.
 
 ## 5. What to Do Next
 
-**A) Claude bridge — DONE + activated (2026-07-27).** No open work; it escalates
-end-to-end. Operational notes if it ever misbehaves:
+**A) Claude bridge — works FROM THE HOST; deliberately unreachable from the sandbox.**
+No open work, and **do not "fix" the sandbox path** — escalation is network-gated by
+decision (§3, and the 2026-08-04/08-05 ADRs). The sandbox is local-model-only; escalate
+from the native/host run. Verified 2026-08-04: host → bridge returns a real Claude
+answer (`http=200`). Operational notes if it ever misbehaves:
 - Bridge is a launchd agent `com.victoria.claude-bridge` on `:8787` (exec mode →
   `victoria-claude`). Logs: `~/Library/Logs/victoria-claude-bridge.log`. Manage:
   `launchctl unload/load -w ~/Library/LaunchAgents/com.victoria.claude-bridge.plist`.
@@ -296,6 +395,15 @@ end-to-end. Operational notes if it ever misbehaves:
 
 **C) Later:** knowledge Phase 2 (persist profile/learned facts as markdown in the AI
 vault); Obsidian Local REST API / MCP.
+
+**D) Small, optional, known:**
+- **The bridge listens on `0.0.0.0:8787`** (LAN-reachable; mTLS still required). Nothing
+  needs it off-host — the sandbox can't reach it either — so binding to `127.0.0.1`
+  costs nothing. Raised with Mark, not yet done.
+- **`docs/screenshots/sbx-hud.png`** still shows `MEMORY: OFFLINE` from Phase 1; it's
+  ACTIVE now. Cosmetic re-capture.
+- **Adding any feature that calls a new host** = add it to `network.allowedDomains` in
+  `sbx/spec.yaml` + redeploy, or it 403s. The allowlist is load-bearing now.
 
 ## 6. Key files
 
