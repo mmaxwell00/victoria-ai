@@ -84,15 +84,14 @@ environment:
     CLAUDE_BRIDGE_CLIENT_KEY: "__CLAUDE_BRIDGE_CLIENT_KEY__"
     CLAUDE_BRIDGE_CA_CERT: "__CLAUDE_BRIDGE_CA_CERT__"
 
-# ── Egress allowlist (Phase 3 hardening target) ──────────────────────────────
-# IMPORTANT: this bites ONLY under a default-deny network baseline. Per Docker's
-# governance model, an ACTIVE org policy overrides kit-defined rules — and this
-# org has a blanket `NetworkAll: allow **` applied to all sandboxes, so the list
-# below is currently INERT (nothing is actually restricted), by deliberate choice.
-# sbx network governance is org/team-scoped (NOT per-sandbox), so activating this
-# means tightening the org-wide `NetworkAll` policy in Docker Home — which affects
-# every sandbox, not just Victoria. See SECURITY-AUDIT.md. Kept here as the ready,
-# correct target so a future org-wide default-deny activates cleanly.
+# ── Egress allowlist — LIVE AND LOAD-BEARING (not aspirational) ───────────────
+# This list IS the enforced policy for this sandbox as of 2026-08-04: the org's blanket
+# `NetworkAll: allow **` is gone, and `sbx policy ls` now shows
+# `kit  sandbox:victoria  network: N allow`. Anything not listed here returns 403.
+# So: adding a feature that calls a new host means adding the host here + redeploying,
+# or it fails — usually in a confusing, indirect way (a corrupt download, an unsigned
+# apt repo, a silently empty search). Every entry below earned its place; see
+# SECURITY-AUDIT.md and the 2026-08-04/08-05 ADRs.
 # `deniedDomains` is unnecessary: the org already enforces its own denies (DPRK, etc.).
 network:
   # NOTE — `serviceDomains`/`serviceAuth` for api.anthropic.com were TESTED here on
@@ -144,6 +143,13 @@ network:
     - hf.co
     - "**.hf.co"
     - "**.huggingface.co"
+    # ChromaDB's DEFAULT embedding function (all-MiniLM-L6-v2, ONNX) is fetched from
+    # this S3 bucket on first use. Denied, chroma re-attempts the download on EVERY
+    # query, gets the proxy's ~142-byte denial page, fails its SHA256 check, and the
+    # search silently returns nothing — so /health reported semantic_memory:true while
+    # cross-session recall was dead, and every chat turn burned ~4s failing. Measured
+    # 2026-08-08.
+    - chroma-onnx-models.s3.amazonaws.com
     - deb.debian.org
     # The shell-docker base image moved to UBUNTU, so apt fetches from the Ubuntu
     # mirrors — on arm64 that's ports.ubuntu.com, NOT deb.debian.org. Missing these
