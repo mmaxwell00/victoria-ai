@@ -13,6 +13,12 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
+# How much of a streamed reply to hold back before showing anything. Both things we
+# must never leak — a bare `[ESCALATE]` sentinel and a tool-refusal — are short and
+# arrive first, so a small hold is enough to judge them while still putting words on
+# screen almost immediately. Measured: the opening 64 chars arrive in ~50ms.
+_HOLD_CHARS = 64
+
 # How the user answers Victoria's "shall I escalate?" prompt. Speech-to-text
 # adds punctuation/casing ("Yes.", "Yeah!"), so we normalise before matching.
 # Single words that clearly mean yes/no on their own.
@@ -371,6 +377,25 @@ class ConversationManager:
             return ("discarded", "Right, I've binned that draft — nothing saved.")
         skills_tools.pop_staged_skill()   # ambiguous reply → drop draft, treat as new turn
         return ("fall_through", None)
+
+    async def _local_answer_stream(self, history, system_prompt, force_backend):
+        """Streaming twin of `_local_answer` — yields text pieces as they arrive.
+
+        Progressive output only starts after a tool has run (see
+        `llm_router._docker_with_tools_stream` for why the first pass must stay
+        buffered); before that, and for backends without a streaming tool loop, the
+        reply arrives as one piece. Callers therefore must not assume >1 piece.
+        """
+        if self.tool_registry and len(self.tool_registry) > 0:
+            async for piece in self.router.stream_chat_with_tools(
+                history, self.tool_registry, system_prompt, force_backend
+            ):
+                yield piece
+            return
+        async for piece, _backend in self.router.stream_chat(
+            history, force_backend=force_backend, system_prompt=system_prompt
+        ):
+            yield piece
 
     async def _local_answer(self, history, system_prompt, force_backend):
         """Run the local model (with tools if available). Returns (text, backend)."""
@@ -821,19 +846,42 @@ class ConversationManager:
             # for weather/search/etc. instead of calling get_weather/web_search.
             # This path already buffers to detect [ESCALATE], so routing through
             # the (non-streaming) tool loop costs no streaming UX.
+            # STREAMING, with a hold-buffer. The tool loop streams its post-tool
+            # synthesis (the slow pass — measured 5.87s of dead air before this), but
+            # we must not leak a bare [ESCALATE] or a refusal to the screen. Both are
+            # SHORT and arrive first, so holding the opening _HOLD_CHARS characters is
+            # enough to judge them: if the whole reply turns out to be a sentinel we
+            # have emitted nothing and can offer Claude instead; if real prose is
+            # flowing, we flush and then stream live.
             buffer = ""
             backend_used = local_backend
             failed = False
+            emitted = False
 
             try:
-                buffer, backend_used = await self._local_answer(
+                async for piece in self._local_answer_stream(
                     history, local_system, local_backend
-                )
+                ):
+                    buffer += piece
+                    if emitted:
+                        yield {"session_id": session_id, "chunk": piece,
+                               "backend": backend_used, "done": False}
+                    elif len(buffer) >= _HOLD_CHARS and not self._needs_escalation(buffer):
+                        emitted = True
+                        yield {"session_id": session_id, "chunk": buffer,
+                               "backend": backend_used, "done": False}
             except Exception:
                 logger.exception("Local answer failed; offering escalation")
                 failed = True
 
-            complete = (buffer or "").strip()
+            complete = _SENTINEL_RE.sub("", buffer or "").strip()
+
+            if emitted:
+                # Already on screen — just close the stream and persist.
+                yield {"session_id": session_id, "chunk": "", "backend": backend_used,
+                       "done": True}
+                self._finalize(session_id, user_id, user_message, complete, backend_used)
+                return
 
             # Empty, errored, or the model signalled it can't answer → offer Claude.
             if failed or self._needs_escalation(complete):
