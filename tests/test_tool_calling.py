@@ -439,9 +439,9 @@ def test_history_for_model_strips_stale_refusals():
 
 async def test_stream_chat_uses_system_prompt():
     """stream_chat() passes the enriched system_prompt (with semantic context)
-    to the local model. The streaming local path routes through _local_answer
-    (so the model keeps its TOOLS); with no tool_registry that lands on
-    router.chat()."""
+    to the local model. The streaming local path routes through
+    _local_answer_stream (so the model keeps its TOOLS); with no tool_registry
+    that lands on router.stream_chat()."""
     memory = make_memory()
     router = make_router()
 
@@ -451,7 +451,12 @@ async def test_stream_chat_uses_system_prompt():
         captured_kwargs["system_prompt"] = system_prompt
         return "It's Monday.", "ollama"
 
+    async def fake_stream(messages, force_backend=None, system_prompt=None):
+        captured_kwargs["system_prompt"] = system_prompt
+        yield "It's Monday.", "ollama"
+
     router.chat = fake_chat
+    router.stream_chat = fake_stream
 
     mock_sem = make_semantic_memory(
         available=True,
@@ -468,3 +473,151 @@ async def test_stream_chat_uses_system_prompt():
     assert captured_kwargs["system_prompt"] is not None
     assert "user is based in London" in captured_kwargs["system_prompt"]
     assert VICTORIA_SYSTEM_PROMPT in captured_kwargs["system_prompt"]
+
+
+# ---------------------------------------------------------------------------
+# Streaming tool loop — the fix for "she pauses, then answers all at once"
+# ---------------------------------------------------------------------------
+
+async def test_stream_with_tools_streams_the_post_tool_answer():
+    """The pass AFTER a tool runs must stream, and must be requested with stream=True.
+
+    Before this existed, a tool-backed answer emitted nothing for ~5.9s and then the
+    whole reply in one chunk — indistinguishable from a hang. Pass 1 stays buffered
+    (that is where the refusal/sentinel guards are judged); the synthesis streams.
+    """
+    router = make_router()
+
+    tool_call = {"choices": [{"message": {
+        "content": "",
+        "tool_calls": [{"id": "tc1", "function": {"name": "get_weather",
+                                                  "arguments": {"location": "Dallas"}}}],
+    }}]}
+
+    mock_registry = make_tool_registry()
+    mock_registry.get_ollama_tools.return_value = [
+        {"type": "function", "function": {"name": "get_weather", "description": "w", "parameters": {}}}
+    ]
+    mock_registry.execute = AsyncMock(return_value="Dallas: 57°F")
+
+    posted, streamed = [], []
+
+    class MockResponse:
+        status_code = 200
+        def __init__(self, data): self._data = data
+        def raise_for_status(self): pass
+        def json(self): return self._data
+
+    class MockStream:
+        status_code = 200
+        def raise_for_status(self): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): pass
+        async def aiter_lines(self):
+            for piece in ("It's ", "57°F ", "in Dallas."):
+                yield 'data: {"choices":[{"delta":{"content":"%s"}}]}' % piece
+            yield "data: [DONE]"
+
+    class MockAsyncClient:
+        is_closed = False
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): pass
+        async def post(self, url, json=None, **kwargs):
+            posted.append(json)
+            return MockResponse(tool_call)
+        def stream(self, method, url, json=None, **kwargs):
+            streamed.append(json)
+            return MockStream()
+
+    with patch("victoria.core.llm_router.httpx.AsyncClient", return_value=MockAsyncClient()):
+        pieces = [
+            p async for p in router.stream_chat_with_tools(
+                messages=[{"role": "user", "content": "temperature in Dallas?"}],
+                tool_registry=mock_registry,
+                system_prompt=VICTORIA_SYSTEM_PROMPT,
+                force_backend="docker",
+            )
+        ]
+
+    # Progressive: more than one piece, and they reassemble to the full answer.
+    assert len(pieces) > 1, f"did not stream progressively: {pieces}"
+    assert "".join(pieces) == "It's 57°F in Dallas."
+    # Pass 1 buffered (stream False), synthesis streamed (stream True).
+    assert posted and posted[0]["stream"] is False
+    assert streamed and streamed[0]["stream"] is True
+    mock_registry.execute.assert_awaited_once()
+
+
+async def test_stream_with_tools_chains_a_second_tool_call():
+    """A tool call that arrives as STREAM deltas must still be assembled and run.
+
+    OpenAI-style streams split one call across deltas (id/name, then argument
+    fragments) keyed by index; if that merge is wrong the second tool silently
+    never runs.
+    """
+    router = make_router()
+
+    first = {"choices": [{"message": {
+        "content": "",
+        "tool_calls": [{"id": "t1", "function": {"name": "get_weather",
+                                                 "arguments": {"location": "Dallas"}}}],
+    }}]}
+
+    mock_registry = make_tool_registry()
+    mock_registry.get_ollama_tools.return_value = [
+        {"type": "function", "function": {"name": "get_weather", "description": "w", "parameters": {}}}
+    ]
+    mock_registry.execute = AsyncMock(return_value="ok")
+
+    stream_calls = {"n": 0}
+
+    class MockResponse:
+        status_code = 200
+        def __init__(self, d): self._d = d
+        def raise_for_status(self): pass
+        def json(self): return self._d
+
+    class MockStream:
+        status_code = 200
+        def __init__(self, lines): self._lines = lines
+        def raise_for_status(self): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): pass
+        async def aiter_lines(self):
+            for line in self._lines:
+                yield line
+
+    class MockAsyncClient:
+        is_closed = False
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): pass
+        async def post(self, url, json=None, **kwargs):
+            return MockResponse(first)
+        def stream(self, method, url, json=None, **kwargs):
+            stream_calls["n"] += 1
+            if stream_calls["n"] == 1:
+                # a tool call split across deltas, then the stream ends
+                return MockStream([
+                    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t2","function":{"name":"get_weather","arguments":"{\\"loc"}}]}}]}',
+                    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ation\\": \\"Austin\\"}"}}]}}]}',
+                    "data: [DONE]",
+                ])
+            return MockStream(['data: {"choices":[{"delta":{"content":"Both done."}}]}', "data: [DONE]"])
+
+    with patch("victoria.core.llm_router.httpx.AsyncClient", return_value=MockAsyncClient()):
+        pieces = [
+            p async for p in router.stream_chat_with_tools(
+                messages=[{"role": "user", "content": "weather in Dallas and Austin?"}],
+                tool_registry=mock_registry,
+                system_prompt=VICTORIA_SYSTEM_PROMPT,
+                force_backend="docker",
+            )
+        ]
+
+    assert "".join(pieces) == "Both done."
+    # Two tools ran: the buffered first call + the one assembled from stream deltas.
+    assert mock_registry.execute.await_count == 2
+    names = [c.args[0] for c in mock_registry.execute.await_args_list]
+    assert names == ["get_weather", "get_weather"]
+    # The streamed call's arguments were reassembled from fragments.
+    assert mock_registry.execute.await_args_list[1].kwargs == {"location": "Austin"}

@@ -308,20 +308,29 @@ async def test_stream_prose_plus_sentinel_is_swallowed():
 # ---------------------------------------------------------------------------
 
 def _local_reply(*chunks, backend="docker"):
-    """Mock router.chat — the buffered local reply the streaming path now uses.
-
-    The streaming local path routes through _local_answer (tool-aware, buffered)
-    rather than router.stream_chat, so the model keeps its tools. Chunks are
-    joined: the path buffers the whole reply before deciding answer-vs-escalate,
-    so there are no partial emissions to simulate."""
+    """Mock router.chat — the buffered local reply (non-streaming callers)."""
     async def _chat(history, force_backend=None, system_prompt=None):
         return "".join(chunks), backend
     return _chat
 
 
+def _local_stream(*chunks, backend="docker"):
+    """Mock router.stream_chat — what the STREAMING path uses.
+
+    stream_chat now emits progressively (that was the point: a tool answer used to
+    show nothing for ~6s, then everything at once), so the streaming tests drive the
+    streaming router API and get real partial pieces to assert on.
+    """
+    async def _stream(history, force_backend=None, system_prompt=None):
+        for c in chunks:
+            yield c, backend
+    return _stream
+
+
 async def test_stream_normal_answer_flushes_and_completes():
     router = MagicMock()
     router.chat = _local_reply("Hello ", "there.")
+    router.stream_chat = _local_stream("Hello ", "there.")
     mgr = make_manager(router)
 
     events = [e async for e in mgr.stream_chat("hi", session_id="s1")]
@@ -334,6 +343,7 @@ async def test_stream_normal_answer_flushes_and_completes():
 async def test_stream_sentinel_offers_escalation():
     router = MagicMock()
     router.chat = _local_reply(ESCALATION_SENTINEL)
+    router.stream_chat = _local_stream(ESCALATION_SENTINEL)
     mgr = make_manager(router)
 
     events = [e async for e in mgr.stream_chat("hard one", session_id="s1")]
@@ -348,6 +358,7 @@ async def test_stream_sentinel_offers_escalation():
 async def test_stream_yes_after_offer_escalates_to_claude():
     router = MagicMock()
     router.chat = _local_reply(ESCALATION_SENTINEL)
+    router.stream_chat = _local_stream(ESCALATION_SENTINEL)
     router.claude_cli = AsyncMock(return_value="Streamed Claude answer.")
     mgr = make_manager(router)
 
@@ -416,3 +427,46 @@ async def test_claude_cli_missing_binary_raises_helpful_error():
                AsyncMock(side_effect=FileNotFoundError())):
         with pytest.raises(RuntimeError, match="not found on PATH"):
             await router.claude_cli("ping")
+
+
+async def test_stream_holds_back_a_bare_sentinel(monkeypatch):
+    """Streaming must NOT leak a bare [ESCALATE] to the screen.
+
+    This is the guard that makes progressive output safe: the sentinel is short and
+    arrives first, so the hold-buffer catches it and the user sees the "shall I ask
+    Claude?" offer instead of the raw token.
+    """
+    router = MagicMock()
+    router.chat = _local_reply(ESCALATION_SENTINEL)
+    router.stream_chat = _local_stream("[ESCA", "LATE]")   # split across deltas
+    mgr = make_manager(router)
+
+    events = [e async for e in mgr.stream_chat("something hard", session_id="s9")]
+    text = "".join(e["chunk"] for e in events)
+
+    assert "ESCALATE" not in text, f"leaked the sentinel: {text!r}"
+    assert "?" in text                                  # it asked permission
+    assert mgr._pending_escalation["s9"] == "something hard"
+
+
+async def test_stream_flushes_long_prose_progressively():
+    """A real answer longer than the hold threshold arrives in MORE THAN ONE event.
+
+    That is the whole point of the change: the user should see words appear rather
+    than nothing-then-everything.
+    """
+    router = MagicMock()
+    tail = [" and keeps going" for _ in range(6)]
+    router.chat = _local_reply("x")
+    router.stream_chat = _local_stream(
+        "This is a genuine answer that comfortably exceeds the hold threshold",
+        *tail,
+    )
+    mgr = make_manager(router)
+
+    events = [e async for e in mgr.stream_chat("tell me something", session_id="s10")]
+    content_events = [e for e in events if e["chunk"]]
+
+    assert len(content_events) > 1, f"did not flush progressively: {events}"
+    assert "s10" not in mgr._pending_escalation
+    assert events[-1]["done"] is True

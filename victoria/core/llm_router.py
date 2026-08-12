@@ -233,6 +233,35 @@ class LLMRouter:
             async for chunk in self._ollama_stream(messages, system_prompt=system_prompt):
                 yield chunk, backend
 
+    async def stream_chat_with_tools(
+        self,
+        messages: list[dict],
+        tool_registry: "ToolRegistry",
+        system_prompt: str,
+        force_backend: Optional[str] = None,
+    ) -> AsyncIterator[str]:
+        """Tool-calling loop that streams the post-tool answer (docker backend only).
+
+        Falls back to the buffered loop for other backends, so callers can use this
+        unconditionally: they get progressive output where it is available and a
+        single final chunk where it is not.
+        """
+        last_user_msg = next(
+            (m["content"] for m in reversed(messages) if m["role"] == "user"), ""
+        )
+        backend = self._pick_backend(last_user_msg, force_backend)
+        if backend == "docker":
+            async for piece in self._docker_with_tools_stream(
+                messages, tool_registry, system_prompt
+            ):
+                yield piece
+            return
+        text, _ = await self.chat_with_tools(
+            messages, tool_registry, system_prompt, force_backend
+        )
+        if text:
+            yield text
+
     async def chat_with_tools(
         self,
         messages: list[dict],
@@ -555,6 +584,126 @@ class LLMRouter:
                     data = _json.loads(line[6:])
                     if chunk := data.get("choices", [{}])[0].get("delta", {}).get("content"):
                         yield chunk
+
+    async def _docker_with_tools_stream(
+        self,
+        messages: list[dict],
+        tool_registry: "ToolRegistry",
+        system_prompt: str,
+    ) -> AsyncIterator[str]:
+        """`_docker_with_tools`, but the post-tool synthesis STREAMS.
+
+        Why the split rather than "just stream everything": the FIRST pass is where
+        two guards are judged on the COMPLETE text — the forced-tool retry (a
+        refusal must be re-asked, never shown) and the `[ESCALATE]` sentinel (a bare
+        sentinel must become "shall I ask Claude?", not appear as output). Streaming
+        that pass would leak a refusal or a sentinel to the user before we could act
+        on it. So pass 1 stays buffered, exactly as the proven non-streaming path.
+
+        Once a tool HAS run, neither guard applies — the model is summarising a tool
+        result — and that is precisely the pass that takes seconds. Measured before
+        this existed: a weather question emitted nothing for 5.87s and then the whole
+        274-char answer at once, which reads as Victoria hanging. Streaming that pass
+        puts words on screen while the rest is still being generated.
+
+        Yields content deltas. Tool-call deltas are accumulated and executed, so a
+        model that chains another tool call after the first still works.
+        """
+        import json as _json
+
+        working_messages = [{"role": "system", "content": system_prompt}] + list(messages)
+        model = self._pick_local_model(messages)
+        tools = tool_registry.get_ollama_tools()
+        forced_retry = False
+        any_tool_executed = False
+
+        for _ in range(6):
+            # Buffered until a tool has run — see the docstring.
+            if not any_tool_executed:
+                payload = {"model": model, "messages": working_messages,
+                           "tools": tools, "stream": False}
+                if forced_retry:
+                    payload["tool_choice"] = "required"
+                resp = await self.http.post(
+                    f"{settings.model_runner_url}/chat/completions", json=payload
+                )
+                self._raise_for_docker_status(resp)
+                last_message = resp.json()["choices"][0]["message"]
+                tool_calls = last_message.get("tool_calls") or []
+                if not tool_calls:
+                    content = last_message.get("content") or ""
+                    if (not forced_retry and tools
+                            and _looks_like_tool_refusal(content)):
+                        logger.info(
+                            "Local model refused a tool-answerable question; "
+                            "retrying with tool_choice=required"
+                        )
+                        forced_retry = True
+                        continue
+                    if content:
+                        yield content
+                    return
+                working_messages.append(last_message)
+                forced_retry = False
+            else:
+                # A tool has run: stream the synthesis so the user sees it appear.
+                payload = {"model": model, "messages": working_messages,
+                           "tools": tools, "stream": True}
+                content_parts: list[str] = []
+                # OpenAI-style streams split a tool call across deltas (id/name in
+                # one, arguments in fragments), keyed by index — merge as we go.
+                partial_calls: dict[int, dict] = {}
+                async with self.http.stream(
+                    "POST", f"{settings.model_runner_url}/chat/completions",
+                    json=payload, timeout=180.0,
+                ) as resp:
+                    self._raise_for_docker_status(resp)
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: ") or line == "data: [DONE]":
+                            continue
+                        try:
+                            delta = _json.loads(line[6:])["choices"][0].get("delta", {})
+                        except (KeyError, IndexError, ValueError):
+                            continue
+                        if piece := delta.get("content"):
+                            content_parts.append(piece)
+                            yield piece
+                        for tc in delta.get("tool_calls") or []:
+                            slot = partial_calls.setdefault(
+                                tc.get("index", 0),
+                                {"id": "", "function": {"name": "", "arguments": ""}},
+                            )
+                            if tc.get("id"):
+                                slot["id"] = tc["id"]
+                            fn = tc.get("function") or {}
+                            if fn.get("name"):
+                                slot["function"]["name"] = fn["name"]
+                            if fn.get("arguments"):
+                                slot["function"]["arguments"] += fn["arguments"]
+                tool_calls = [c for c in partial_calls.values() if c["function"]["name"]]
+                if not tool_calls:
+                    return
+                working_messages.append({
+                    "role": "assistant",
+                    "content": "".join(content_parts),
+                    "tool_calls": tool_calls,
+                })
+
+            for tc in tool_calls:
+                fn = tc["function"]
+                args = fn.get("arguments") or {}
+                if isinstance(args, str):
+                    try:
+                        args = _json.loads(args) if args.strip() else {}
+                    except ValueError:
+                        logger.warning("Unparseable tool arguments for %s: %r",
+                                       fn["name"], args)
+                        args = {}
+                result = await tool_registry.execute(fn["name"], **args)
+                any_tool_executed = True
+                working_messages.append({
+                    "role": "tool", "tool_call_id": tc.get("id", ""), "content": result,
+                })
 
     async def _docker_with_tools(
         self,
