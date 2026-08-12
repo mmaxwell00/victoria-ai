@@ -22,6 +22,7 @@ victoria-ai/
 │   │   ├── semantic_memory.py  # ChromaDB cross-session semantic recall
 │   │   ├── user_profile.py     # Persistent user profile (preferences, memories)
 │   │   ├── profile_extractor.py# Regex + LLM style learning from conversations
+│   │   ├── model_warmer.py     # Keeps the local model resident (evicted models cost ~5s on the next question)
 │   │   └── transcription.py    # Whisper speech-to-text
 │   ├── interfaces/
 │   │   ├── api.py              # REST API (chat, stream, history, profile) — /v1 prefix
@@ -70,7 +71,7 @@ victoria-ai/
 │   ├── setup-watchdog.sh       # One-command watchdog install (launchd agent; --status / --uninstall)
 │   └── com.victoria.watchdog.plist.template      # launchd template installed by setup-watchdog.sh
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
-├── tests/                      # 346 pytest tests
+├── tests/                      # 352 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
 ├── deploy-sandbox.sh           # Deploy Victoria into an isolated Docker Sandbox (sbx)
 ├── sbx/

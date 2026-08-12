@@ -8,7 +8,7 @@ is unclear, look at how Victoria actually did it.
   Docker Model Runner / Ollama (local) + Claude Code CLI (cloud escalation),
   Piper + faster-whisper (voice), Fernet + macOS Keychain (vault). Runs native
   (uvicorn in a venv) or containerized (docker-compose).
-- **Scale as of this writing:** ~33 Python modules, 346 tests (23 files),
+- **Scale as of this writing:** ~34 Python modules, 352 tests (24 files),
   3 shipped skills.
 - **Reliable local tool-use lives in two places:** `llm_router._docker_with_tools`
   (forced-tool retry via `tool_choice="required"` + the `_looks_like_tool_refusal`
@@ -29,6 +29,7 @@ Use this to see a working version of each layer the playbook describes.
 | Memory — session history (SQLite) | `victoria/core/memory.py` |
 | Memory — semantic recall (ChromaDB) | `victoria/core/semantic_memory.py` |
 | Memory — user profile + learning | `victoria/core/user_profile.py`, `victoria/core/profile_extractor.py` |
+| Perf — keep the local model resident | `victoria/core/model_warmer.py` — Model Runner evicts an idle model after ~5 min; the reload costs ~5s on the next question (5.3s cold vs 0.36s warm). Pings every `model_keepalive_seconds` (0 disables; staying warm holds ~4.4GB RAM) |
 | STT (Whisper) | `victoria/core/transcription.py` |
 | Voice loop / capture / wake word | `victoria/voice/{conversation,audio,wake_word}.py` |
 | TTS engines (swappable) | `victoria/voice/tts/{base,factory,piper_tts,elevenlabs_tts}.py` |
