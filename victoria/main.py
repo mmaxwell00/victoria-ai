@@ -1,5 +1,6 @@
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +14,7 @@ from victoria.core.conversation import ConversationManager
 from victoria.core.semantic_memory import SemanticMemory
 from victoria.core.user_profile import ProfileStore
 from victoria.core.profile_extractor import ProfileExtractor
+from victoria.core.model_warmer import keep_model_warm
 from victoria.tools import load_all_tools
 from victoria.tools.registry import registry as tool_registry
 from victoria.mcp import mcp_manager
@@ -36,7 +38,13 @@ async def lifespan(app: FastAPI):
         await mcp_manager.connect_all()
     except Exception:
         logging.getLogger("victoria").exception("MCP startup failed")
+    # Keep the local model resident — an evicted model costs ~5s on the next
+    # question (see victoria/core/model_warmer.py). Never blocks boot either.
+    warmer = asyncio.create_task(keep_model_warm())
     yield
+    warmer.cancel()
+    with suppress(asyncio.CancelledError):
+        await warmer
     await mcp_manager.aclose()
 
 
