@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     # stays on model_runner_model. Leave blank to use one model for everything.
     model_runner_code_model: str = ""
 
+    # Keep the local model resident. Docker Model Runner evicts an idle model
+    # after ~5 minutes, and the reload costs ~5s on the NEXT question — measured
+    # 5.3s cold vs 0.36s warm, a ~15x difference. That reload is what reads as
+    # Victoria "pausing" before she answers: you ask, wait, ask again, and the
+    # second one is instant because the first loaded the model. A tiny periodic
+    # completion keeps it loaded. Trade-off: the model stays in RAM (~4.4 GB for
+    # qwen2.5). Set to 0 to disable and reclaim the memory between conversations.
+    model_keepalive_seconds: int = 240
+
     # Complexity threshold — queries longer than this many words route to
     # Claude (only when anthropic_api_key is configured)
     complex_query_threshold: int = 200

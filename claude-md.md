@@ -42,6 +42,7 @@ victoria-ai/
 │   │   ├── semantic_memory.py  # ChromaDB cross-session semantic recall
 │   │   ├── user_profile.py     # Persistent user profile
 │   │   ├── profile_extractor.py# Regex + LLM style learning
+│   │   ├── model_warmer.py     # Local-model keep-alive (model_keepalive_seconds)
 │   │   └── transcription.py    # Whisper STT
 │   ├── interfaces/
 │   │   ├── api.py              # REST + streaming endpoints
@@ -66,7 +67,7 @@ victoria-ai/
 │   ├── run_voice.py
 │   ├── victoria-watchdog.sh    # Sandbox uptime — survives reboots + container recycles
 │   └── setup-watchdog.sh       # Installs the watchdog as a launchd agent
-├── tests/                      # 346 pytest tests
+├── tests/                      # 352 pytest tests
 ├── docs/
 │   └── DECISIONS.md            # Running decision log
 ├── CLAUDE.md                   # This file
@@ -133,7 +134,7 @@ Interfaces (Web HUD / Telegram / Voice / Terminal)
 - **Virtual env in `.venv/`** — standard `python -m venv`, not Poetry/PDM.
 - **Dependencies in `requirements.txt`** — keep it simple.
 - **Config via `.env`** — see `.env.example` for the full list of vars.
-- **Tests with pytest** — 346 tests currently. Never let coverage regress.
+- **Tests with pytest** — 352 tests currently. Never let coverage regress.
 - **Decorator-based tool registry** — `@tool` in `victoria/tools/registry.py`.
 - **All settings env-driven** — never hardcode credentials or paths.
 - **Async where it counts** — FastAPI endpoints, Telegram handlers. Sync OK for tool calls.
