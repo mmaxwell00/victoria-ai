@@ -328,3 +328,67 @@ async def test_background_profile_task_is_referenced():
     await asyncio.gather(*manager._background_tasks)
     await asyncio.sleep(0)  # let done-callbacks run
     assert len(manager._background_tasks) == 0
+
+
+# ---------------------------------------------------------------------------
+# Profile extraction is throttled — it is an LLM call on a single-slot model
+# ---------------------------------------------------------------------------
+
+async def test_profile_extraction_is_throttled_between_turns():
+    """Only the FIRST turn should spawn extraction; the next is rate-limited.
+
+    Unthrottled, this background LLM call ran after every turn — queueing ahead of
+    the user's next question and evicting the cached prompt prefix, which made real
+    (spaced-out) usage 4.7-7.2s instead of ~1.2s.
+    """
+    from victoria.config import settings
+    from victoria.core.conversation import ConversationManager
+
+    mgr = ConversationManager(memory=MagicMock(), router=MagicMock())
+    mgr.profile_extractor = MagicMock()
+    mgr.profile_store = MagicMock()
+
+    spawned = []
+    mgr._update_profile_async = lambda *a, **k: spawned.append(a) or _noop()
+
+    original = settings.profile_extract_min_interval_seconds
+    settings.profile_extract_min_interval_seconds = 300
+    try:
+        mgr._spawn_profile_update("u1", "hello", "hi there")
+        mgr._spawn_profile_update("u1", "again", "hello again")
+        assert len(spawned) == 1, f"extraction ran {len(spawned)} times, expected 1"
+        # A different user is tracked separately.
+        mgr._spawn_profile_update("u2", "hello", "hi")
+        assert len(spawned) == 2
+    finally:
+        settings.profile_extract_min_interval_seconds = original
+    for t in list(mgr._background_tasks):
+        t.cancel()
+
+
+async def test_profile_extraction_every_turn_when_interval_is_zero():
+    """0 restores the old every-turn behaviour, for anyone who wants it."""
+    from victoria.config import settings
+    from victoria.core.conversation import ConversationManager
+
+    mgr = ConversationManager(memory=MagicMock(), router=MagicMock())
+    mgr.profile_extractor = MagicMock()
+    mgr.profile_store = MagicMock()
+
+    spawned = []
+    mgr._update_profile_async = lambda *a, **k: spawned.append(a) or _noop()
+
+    original = settings.profile_extract_min_interval_seconds
+    settings.profile_extract_min_interval_seconds = 0
+    try:
+        mgr._spawn_profile_update("u1", "a", "b")
+        mgr._spawn_profile_update("u1", "c", "d")
+        assert len(spawned) == 2
+    finally:
+        settings.profile_extract_min_interval_seconds = original
+    for t in list(mgr._background_tasks):
+        t.cancel()
+
+
+async def _noop():
+    return None

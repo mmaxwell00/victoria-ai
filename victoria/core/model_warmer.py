@@ -28,16 +28,44 @@ from victoria.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _warm_prefix() -> tuple[str, list[dict]]:
+    """Victoria's REAL stable prefix — the system prompt and tool schemas.
+
+    The ping must carry this, not a bare "ok". llama.cpp caches the prompt PREFIX,
+    and a ping with a *different* prompt evicts the cached one — so the original
+    version of this warmer kept the model resident while actively destroying the
+    thing that made answers fast (measured: a real question 2.5s, then a bare-"ok"
+    ping, then the next question 5.1s). Pinging with the real prefix keeps both the
+    model AND the cache warm, so the next question skips ~2,250 tokens of tool-schema
+    prefill.
+    """
+    from victoria.config import VICTORIA_SYSTEM_PROMPT, ESCALATION_INSTRUCTION
+    system = VICTORIA_SYSTEM_PROMPT + ESCALATION_INSTRUCTION
+    tools: list[dict] = []
+    try:
+        from victoria.tools.registry import registry
+        tools = registry.get_ollama_tools()
+    except Exception:      # tools are a bonus here, never a reason to fail
+        pass
+    return system, tools
+
+
 async def _ping(client: httpx.AsyncClient) -> bool:
-    """One minimal completion. True if the model answered."""
+    """One minimal completion over the real prefix. True if the model answered."""
+    system, tools = _warm_prefix()
+    payload = {
+        "model": settings.model_runner_model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": "ok"},
+        ],
+        "max_tokens": 1,
+        "stream": False,
+    }
+    if tools:
+        payload["tools"] = tools
     r = await client.post(
-        f"{settings.model_runner_url.rstrip('/')}/chat/completions",
-        json={
-            "model": settings.model_runner_model,
-            "messages": [{"role": "user", "content": "ok"}],
-            "max_tokens": 1,
-            "stream": False,
-        },
+        f"{settings.model_runner_url.rstrip('/')}/chat/completions", json=payload
     )
     r.raise_for_status()
     return True

@@ -113,13 +113,25 @@ async def test_failure_is_logged_once_not_every_cycle(monkeypatch, caplog):
     assert len(warnings) == 1, f"logged {len(warnings)} times for one outage"
 
 
-async def test_ping_is_minimal():
-    """One token, no tools, no history — it exists to touch the model."""
+async def test_ping_carries_the_real_prefix_and_generates_one_token():
+    """The ping must WARM Victoria's actual prefix, not just poke the model.
+
+    The first version sent a bare "ok" with no system prompt. That kept the model
+    resident while EVICTING the cached prompt prefix — llama.cpp caches by prefix, so
+    a different prompt throws the useful one away. Measured: real question 2.5s, then a
+    bare-"ok" ping, then the next question 5.1s. Carrying the real system prompt (and
+    tools, which are ~2,250 tokens of the prefill) keeps both model and cache warm.
+    Generation stays at one token — this is about the prompt, not the answer.
+    """
+    from victoria.config import VICTORIA_SYSTEM_PROMPT
+
     client = AsyncMock()
     client.post.return_value.raise_for_status = lambda: None
     await model_warmer._ping(client)
     body = client.post.call_args.kwargs["json"]
-    assert body["max_tokens"] == 1
+
+    assert body["max_tokens"] == 1, "the ping should not generate a real answer"
     assert body["stream"] is False
-    assert "tools" not in body
-    assert len(body["messages"]) == 1
+    system = [m for m in body["messages"] if m["role"] == "system"]
+    assert system, "no system message — the ping would evict the cached prefix"
+    assert VICTORIA_SYSTEM_PROMPT in system[0]["content"]
