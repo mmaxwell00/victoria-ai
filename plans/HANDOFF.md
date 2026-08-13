@@ -15,27 +15,47 @@
 > 5. `git commit -m "…"` with backticks corrupts the message (shell command-subst).
 >    Use `git commit -F -` with a quoted `<<'MSG'` heredoc, or `--body-file` for PRs.
 
-Last updated: 2026-08-08. `main` at `32261d8`. **347 tests pass. NO open PRs.**
-All PRs through #91 merged. `sbx` is now **v0.37.1** (the older notes below say v0.35).
+Last updated: 2026-08-13. `main` at `1d19bc6`. **358 tests pass.**
+All PRs through #94 merged; **#95 open** (stable prompt prefix — the last latency fix).
+`sbx` is now **v0.37.1** (the older notes below say v0.35).
 
-⚠️ **Read this first if you touch the sandbox.** Default-deny egress has now broken
-**three** different things, each in a way that did NOT look like a network problem.
-Before debugging anything odd in the sandbox, ask "is a host missing from
-`network.allowedDomains`?" — it is the single most likely cause.
+## ⚡ "Victoria pauses before answering" — SOLVED, and it was FOUR causes
+
+Mark reported this twice; each fix revealed the next one underneath. Do not treat a
+slow reply as one bug. Measured end-to-end on the real HUD path (`/v1/chat/stream`),
+a weather question went from **~16s of silence** to **first words at 1.2s**:
+
+| PR | Cause | Evidence |
+|---|---|---|
+| #91 | ChromaDB re-downloaded its embedding model on EVERY query (egress-blocked → 142-byte 403 page → SHA256 fail) | ~4s wasted per turn, and cross-session recall silently dead while `/health` said `semantic_memory: true` |
+| #93 | Docker Model Runner evicts an idle model after ~5 min; the next question pays the reload | **5.3s cold vs 0.36s warm**; no TTL knob exists, so `victoria/core/model_warmer.py` pings every `model_keepalive_seconds` (0 disables; costs ~4.4GB RAM) |
+| #94 | Nothing streamed — the whole reply arrived as ONE chunk at the end | `+5.87s chunk_len=274` then done; 2 events for a 274-char answer. Post-tool synthesis now streams (41–78 events) |
+| #95 | Per-turn context injected into the SYSTEM message changed the prompt prefix, discarding llama.cpp's KV cache | stable prefix **0.25–0.30s** (`cached 3190/3199`) vs mutated **2.85–2.96s** (`cached 834/3211`) — ~10x, twice per tool question |
+
+**The diagnostic that found all four:** compare Victoria against the RAW Model Runner
+(`curl host :12434 …` → 0.1–0.3s warm). If she is 10–50x slower, the time is ours, not
+the model's. Then bisect: raw model → +system prompt → +tool schemas → tool itself →
+semantic search. Every one of those is measurable in isolation, and three of the four
+causes were invisible from `/health`.
+
+Residual, accepted: the FIRST request after a restart is ~5s (populating the cache);
+every turn after is ~1.2s. Plain chat ~0.4–0.8s.
+
+⚠️ **Egress lens on the same lesson.** Default-deny egress has broken three separate
+things, none of which looked like a network problem. Before debugging anything odd in
+the sandbox, ask "is a host missing from `network.allowedDomains`?" — a 403 rarely
+announces itself; it surfaces as a corrupt download, an "unsigned" apt repo, or a
+silently empty search.
 - **A cold `./deploy-sandbox.sh` was BROKEN** (fixed #90): four missing build hosts.
   Deploy runs `sbx rm` *before* create, so a failed create leaves **no sandbox at all**.
 - **Semantic memory was silently DEAD** (fixed #91): ChromaDB re-downloaded its
   embedding model on every query, got the proxy's ~142-byte 403 page, failed its SHA256
   check, and returned nothing — while `/health` still said `semantic_memory: true`.
-  This also made every chat turn ~4s slower, which is what Mark reported as Victoria
-  "pausing" before answering. Fix: allow-list `chroma-onnx-models.s3.amazonaws.com`.
-  Latency 16.6s → 4.4s trivial, 15-21s → 6.3s weather; recall verified across sessions.
+  This also made every chat turn ~4s slower. Fix: allow-list
+  `chroma-onnx-models.s3.amazonaws.com`. NOTE it was only ONE of four causes of the
+  reported "pausing" — see the table at the top before concluding a slow reply is
+  explained.
 - **Escalation from the sandbox is denied** — that one is DELIBERATE (see below).
-
-**Diagnostic habit that would have found all three faster:** compare Victoria's latency
-against the raw Model Runner (`curl host :12434 …` — 0.3s warm). If she is 10-50x
-slower, the time is ours, not the model's. And a 403 rarely announces itself: it shows
-up as a corrupt download, an "unsigned" apt repo, or a silently empty search.
 
 Claude escalation: the host bridge **works from the host** (verified 2026-08-04,
 `http=200`, real Claude answer) but is **DENIED from inside the sandbox by egress
@@ -102,8 +122,8 @@ Obsidian-backed knowledge base.
 
 ## 2. Current State (what exists now)
 
-**Test suite: 347 pass** (`python -m pytest -q`, use `.venv/bin/python`).
-All PRs #39–#91 merged. Most recent: #86 = Victoria owns her Obsidian knowledge base
+**Test suite: 358 pass** (`python -m pytest -q`, use `.venv/bin/python`).
+All PRs #39–#94 merged (#95 open). Most recent: #86 = Victoria owns her Obsidian knowledge base
 (she used to deny filesystem access); #87 = the host-side uptime watchdog; #88 =
 watchdog recognises a signed-out `sbx`; #89 = egress/escalation security docs;
 **#90 = repaired the cold deploy**; **#91 = unblocked ChromaDB's embedding model**
@@ -217,6 +237,14 @@ tools `search_notes` / `read_note` / `list_notes` / `write_note`.
   `network.allowedDomains` current or features 403. Full detail: `SECURITY-AUDIT.md`.
 - **[LOCKED] Claude escalation = host bridge, subscription auth, credential never in the
   VM.** API-key billing rejected; token-in-VM (Path 2) rejected on containment grounds.
+- **[LOCKED] The prompt PREFIX must stay byte-stable across turns (#95).** Do NOT put
+  per-turn content (recalled memories, message-relevant skills, timestamps, anything
+  that varies) into the system prompt — it invalidates llama.cpp's KV cache and forces
+  a ~3.2k-token re-prefill (including ~2,250 tokens of tool schemas) on EVERY pass:
+  0.25-0.30s cached vs 2.85-2.96s not. Volatile context goes through
+  `_turn_context()` + `_with_turn_context()`, which attach it to the last USER message.
+  `tests/test_tool_calling.py::test_system_prompt_is_identical_across_turns` guards
+  this — if it fails, someone has moved volatile text back into the prefix.
 - **[LOCKED] Escalation stays NETWORK-GATED — no side-channels.** Victoria must not be
   able to reach Claude by any route that bypasses network policy. A mount-based
   request/response channel was proposed and **rejected as a covert channel**. If sandbox
@@ -229,6 +257,19 @@ tools `search_notes` / `read_note` / `list_notes` / `write_note`.
   fs-mount allow rules: `~/sandboxes/**` and `~/Obsidian/**` (both required, case-sensitive).
 
 ## 4. What's Been Tried That Failed (DO NOT REPEAT)
+
+**Chasing the wrong layer on a "slow reply" complaint (cost most of a session):**
+- **Do NOT start in the tool loop.** It was fine every time. The give-away was that a
+  NON-tool question ("say hello in five words") was equally slow — 16.6s while the raw
+  Model Runner answered the same thing in 0.15s. Measure the model directly FIRST.
+- **Do NOT trust a single measurement.** Latency here is bimodal (cold/warm model,
+  cached/uncached prefix). One 11.5s reading did not reproduce across 5 runs and a
+  second idle test; one 4.2s reading was the cache being populated. Take 3+.
+- **`memory_pressure` ruled out paging** (0 pageouts, 91% free) — worth checking before
+  blaming swap for an after-idle cost.
+- **Streaming is not cosmetic here.** Even at 1.8s total, emitting one chunk at the end
+  means the HUD shows only typing dots; the perceived delay is time-to-FIRST-token, so
+  measure `time_starttransfer` and count `data:` events, not just total.
 
 **Trusting `/health` to tell you a subsystem works (cost a silent regression):**
 - **`semantic_memory: true` does NOT mean recall works.** It only means ChromaDB
