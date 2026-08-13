@@ -56,6 +56,16 @@ environment:
     HF_HUB_DISABLE_XET: "1"
     DEFAULT_LLM: docker
     # Reach the host Model Runner from inside the sandbox (NOT localhost):
+    # Do NOT send model traffic through the sandbox's egress proxy. sbx sets
+    # http_proxy/https_proxy and a NO_PROXY that covers localhost + the gateway but
+    # NOT host.docker.internal, so every single model call was being relayed through
+    # the inspecting proxy. Measured 2026-08-13: the SAME code and model, questions
+    # spaced 20s apart — 2.0s per turn running on the host, 6.9-8.8s from inside the
+    # sandbox. The Model Runner port is the one host port sbx already permits
+    # directly, so bypassing the proxy for it costs nothing and removes both the
+    # latency and a pointless interception point.
+    NO_PROXY: "localhost,127.0.0.1,::1,gateway.docker.internal,host.docker.internal"
+    no_proxy: "localhost,127.0.0.1,::1,gateway.docker.internal,host.docker.internal"
     MODEL_RUNNER_URL: http://host.docker.internal:12434/engines/llama.cpp/v1
     MODEL_RUNNER_MODEL: ai/qwen2.5:32k
     # Obsidian vault mount = the knowledge base (memory + RAG). Placeholder
