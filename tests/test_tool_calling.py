@@ -93,8 +93,15 @@ async def test_conversation_manager_with_tools_calls_chat_with_tools():
 # Semantic context injection
 # ---------------------------------------------------------------------------
 
-async def test_conversation_manager_injects_semantic_context():
-    """_build_system_prompt() injects retrieved memories into the system prompt."""
+async def test_recalled_memories_reach_the_model_without_touching_the_prefix():
+    """Recalled memories must reach the model — but NOT via the system prompt.
+
+    They used to be injected into the system message, which changed the prompt
+    PREFIX every turn and threw away llama.cpp's KV cache: measured 0.25-0.30s with
+    a stable prefix (cached 3190/3199 tokens) versus 2.85-2.96s once per-turn text
+    was prepended (cached 834/3211) — ~10x, twice per tool-using question. So the
+    system prompt must stay byte-stable, and the memories ride with the user turn.
+    """
     memory = make_memory()
     router = make_router()
     router.chat = AsyncMock(return_value=("Got it.", "ollama"))
@@ -105,10 +112,44 @@ async def test_conversation_manager_injects_semantic_context():
     )
 
     manager = ConversationManager(memory=memory, router=router, semantic_memory=mock_sem)
-    prompt = manager._build_system_prompt("Tell me about programming", session_id="new-session")
 
-    assert "user likes Python" in prompt
+    prompt = manager._build_system_prompt("Tell me about programming", session_id="new-session")
     assert VICTORIA_SYSTEM_PROMPT in prompt
+    assert "user likes Python" not in prompt, "memories are back in the cached prefix"
+
+    # ...but they DO reach the model, attached to the user's turn.
+    ctx = manager._turn_context("Tell me about programming", session_id="new-session")
+    assert "user likes Python" in ctx
+    history = manager._with_turn_context([{"role": "user", "content": "Tell me about programming"}], ctx)
+    assert "user likes Python" in history[-1]["content"]
+    assert "Tell me about programming" in history[-1]["content"]
+
+
+def test_system_prompt_is_identical_across_turns():
+    """The whole point: two different questions must produce the SAME prefix."""
+    memory = make_memory()
+    router = make_router()
+    mock_sem = make_semantic_memory(
+        available=True,
+        search_results=[{"content": "user likes Python", "role": "user", "session_id": "old"}],
+    )
+    manager = ConversationManager(memory=memory, router=router, semantic_memory=mock_sem)
+
+    a = manager._build_system_prompt("temperature in Dallas?", session_id="s1")
+    b = manager._build_system_prompt("who won the cup in 1998?", session_id="s1")
+    assert a == b, "system prompt varies per turn — the KV cache will be discarded"
+
+
+def test_turn_context_is_empty_when_there_is_nothing_to_add():
+    """An ordinary turn should cost no extra tokens at all."""
+    memory = make_memory()
+    router = make_router()
+    mock_sem = make_semantic_memory(available=True, search_results=[])
+    manager = ConversationManager(memory=memory, router=router, semantic_memory=mock_sem)
+
+    assert manager._turn_context("hello", session_id="s1") == ""
+    history = [{"role": "user", "content": "hello"}]
+    assert manager._with_turn_context(history, "") is history
 
 
 # ---------------------------------------------------------------------------
@@ -453,6 +494,7 @@ async def test_stream_chat_uses_system_prompt():
 
     async def fake_stream(messages, force_backend=None, system_prompt=None):
         captured_kwargs["system_prompt"] = system_prompt
+        captured_kwargs["messages"] = messages
         yield "It's Monday.", "ollama"
 
     router.chat = fake_chat
@@ -471,8 +513,12 @@ async def test_stream_chat_uses_system_prompt():
 
     assert "system_prompt" in captured_kwargs
     assert captured_kwargs["system_prompt"] is not None
-    assert "user is based in London" in captured_kwargs["system_prompt"]
     assert VICTORIA_SYSTEM_PROMPT in captured_kwargs["system_prompt"]
+    # Recalled context now rides with the user turn, not the cached prefix.
+    assert "user is based in London" not in captured_kwargs["system_prompt"]
+    assert "user is based in London" in "".join(
+        m.get("content", "") for m in captured_kwargs.get("messages", [])
+    )
 
 
 # ---------------------------------------------------------------------------

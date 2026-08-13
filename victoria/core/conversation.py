@@ -274,6 +274,9 @@ class ConversationManager:
         # Create / use → run the local model.
         local_backend = self._local_backend()
         system_prompt = self._build_system_prompt(user_message, session_id, user_id)
+        history = self._with_turn_context(
+            history, self._turn_context(user_message, session_id)
+        )
         try:
             response, backend = await self._local_answer(history, system_prompt, local_backend)
         except Exception:
@@ -444,7 +447,10 @@ class ConversationManager:
         """
         local_backend = self._local_backend()
         system_prompt = self._build_system_prompt(question, session_id, user_id) + _BEST_EFFORT_INSTRUCTION
-        messages = list(history) + [{"role": "user", "content": question}]
+        messages = self._with_turn_context(
+            list(history) + [{"role": "user", "content": question}],
+            self._turn_context(question, session_id),
+        )
         try:
             response, backend = await self._local_answer(messages, system_prompt, local_backend)
         except Exception:
@@ -550,32 +556,82 @@ class ConversationManager:
         task.add_done_callback(self._background_tasks.discard)
 
     def _build_system_prompt(self, user_message: str, session_id: str, user_id: str = "default") -> str:
+        """The STABLE half of the prompt: persona + profile + the skills index.
+
+        Everything here is expected to be byte-identical from one turn to the next,
+        and that is the whole point. llama.cpp caches the prompt PREFIX; anything
+        that changes per turn invalidates the cache from that point on, forcing the
+        entire prompt — including ~2,250 tokens of tool schemas — to be re-processed
+        every single pass. Measured on this stack:
+
+            stable system prompt          0.25-0.30s   (cached 3190 / 3199 tokens)
+            + per-turn memory injected    2.85-2.96s   (cached  834 / 3211 tokens)
+
+        ~10x, twice per tool-using question. That was the bulk of the delay users
+        described as Victoria "pausing" before answering.
+
+        Turn-specific context (recalled memories, message-relevant skills) therefore
+        moves OUT of here and into `_turn_context()`, which is appended after the
+        cached prefix. The model sees the same information, just in an order that
+        does not throw the cache away. Profile stays here: it changes rarely, so it
+        costs one invalidation when it does and buys a longer stable prefix.
+        """
         from victoria.config import VICTORIA_SYSTEM_PROMPT
         base = VICTORIA_SYSTEM_PROMPT
 
-        # 1. Inject user profile
         if self.profile_store:
             profile = self.profile_store.get(user_id)
             profile_context = profile.to_system_context()
             if profile_context:
                 base = base + "\n\n" + profile_context
 
-        # 2. Inject semantic memory (existing logic, unchanged)
+        return base + self._skills_prompt()
+
+    def _turn_context(self, user_message: str, session_id: str) -> str:
+        """The VOLATILE half — recalled memories + any skill relevant to THIS message.
+
+        Returned as text to append after the cached prefix (see
+        `_build_system_prompt` for why). Empty string when there is nothing to add,
+        so an ordinary turn costs no extra tokens at all.
+        """
+        parts: list[str] = []
+
         if self.semantic_memory and self.semantic_memory.available:
-            memories = self.semantic_memory.search(user_message, n=3, exclude_session=session_id)
+            try:
+                memories = self.semantic_memory.search(
+                    user_message, n=3, exclude_session=session_id
+                )
+            except Exception:
+                logger.exception("Semantic recall failed; continuing without it")
+                memories = []
             if memories:
-                context = "\n".join(f"- {m['content'][:200]}" for m in memories)
-                base = base + f"\n\nRelevant context from past conversations:\n{context}"
+                recalled = "\n".join(f"- {m['content'][:200]}" for m in memories)
+                parts.append(f"Relevant context from past conversations:\n{recalled}")
 
-        # 3. Inject skills — the index (always) plus full instructions for any
-        #    skill relevant to this message (so she can apply it without needing
-        #    a tool call, which small local models do unreliably).
-        base = base + self._skills_prompt()
         for skill in self._relevant_skills(user_message):
-            base += (f"\n\nA saved skill applies here — follow its instructions:\n"
-                     f"SKILL '{skill.name}':\n{skill.instructions}")
+            parts.append(
+                f"A saved skill applies here — follow its instructions:\n"
+                f"SKILL '{skill.name}':\n{skill.instructions}"
+            )
 
-        return base
+        return "\n\n".join(parts)
+
+    def _with_turn_context(self, history: list[dict], context: str) -> list[dict]:
+        """Attach turn context to the LAST user message.
+
+        Placing it at the end (rather than in the system message) is what preserves
+        the cached prefix — the user's turn changes every time regardless, so the
+        volatile text rides along for free. Returns a copy; `history` is not mutated.
+        """
+        if not context:
+            return history
+        out = [dict(m) for m in history]
+        for msg in reversed(out):
+            if msg.get("role") == "user":
+                msg["content"] = f"{context}\n\n---\n\n{msg.get('content', '')}"
+                return out
+        # No user turn (unusual) — fall back to appending it as its own message.
+        return out + [{"role": "user", "content": context}]
 
     @staticmethod
     def _skills_prompt() -> str:
@@ -704,6 +760,11 @@ class ConversationManager:
                 self.profile_store.add_memory(user_id, memory)
 
         system_prompt = self._build_system_prompt(user_message, session_id, user_id)
+        # Volatile context rides with the user's turn, keeping the cached prefix
+        # intact (see _build_system_prompt).
+        history = self._with_turn_context(
+            history, self._turn_context(user_message, session_id)
+        )
 
         # Persist the user message up front (matching stream_chat) so it isn't
         # lost when the LLM call fails.
@@ -825,6 +886,11 @@ class ConversationManager:
             self._pending_escalation.pop(session_id, None)
 
         system_prompt = self._build_system_prompt(user_message, session_id, user_id)
+        # Volatile context rides with the user's turn, keeping the cached prefix
+        # intact (see _build_system_prompt).
+        history = self._with_turn_context(
+            history, self._turn_context(user_message, session_id)
+        )
 
         # --- User explicitly chose Claude in the UI -----------------------
         if settings.escalation_enabled and force_backend == "claude":
