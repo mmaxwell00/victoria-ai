@@ -8,7 +8,7 @@ is unclear, look at how Victoria actually did it.
   Docker Model Runner / Ollama (local) + Claude Code CLI (cloud escalation),
   Piper + faster-whisper (voice), Fernet + macOS Keychain (vault). Runs native
   (uvicorn in a venv) or containerized (docker-compose).
-- **Scale as of this writing:** ~34 Python modules, 358 tests (24 files),
+- **Scale as of this writing:** ~34 Python modules, 360 tests (24 files),
   3 shipped skills.
 - **Reliable local tool-use lives in two places:** `llm_router._docker_with_tools`
   (forced-tool retry via `tool_choice="required"` + the `_looks_like_tool_refusal`

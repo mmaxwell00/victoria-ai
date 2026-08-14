@@ -117,6 +117,10 @@ class ConversationManager:
         self._background_tasks: set = set()
         # session_id -> the original question awaiting an escalation yes/no.
         self._pending_escalation: dict[str, str] = {}
+        # user_id -> when profile extraction last ran. Extraction is an LLM call, and
+        # on a single-slot local model it competes with the user's next question AND
+        # evicts the cached prompt prefix — so it is throttled, not run every turn.
+        self._last_profile_extract: dict[str, float] = {}
 
     def new_session_id(self) -> str:
         return str(uuid.uuid4())
@@ -551,6 +555,24 @@ class ConversationManager:
         return reply
 
     def _spawn_profile_update(self, user_id: str, user_message: str, response: str) -> None:
+        """Fire background profile learning — but not on every single turn.
+
+        `extract_from_turn` is an LLM call. On a single-slot local model, firing it
+        after every turn (a) queues ahead of the user's next question and (b) evicts
+        the cached prompt prefix with its own prompt, so the next answer pays a full
+        ~2,250-token tool-schema re-prefill. Measured with it unthrottled: spaced-out
+        questions — i.e. how a human actually uses her — took 4.7-7.2s, against ~1.2s
+        on a warm cache. Style learning does not need every turn, so it is rate-limited
+        per user (`profile_extract_min_interval_seconds`; 0 restores every-turn).
+        """
+        interval = settings.profile_extract_min_interval_seconds
+        if interval > 0:
+            now = asyncio.get_event_loop().time()
+            last = self._last_profile_extract.get(user_id)
+            if last is not None and (now - last) < interval:
+                logger.debug("Skipping profile extraction for %s (throttled)", user_id)
+                return
+            self._last_profile_extract[user_id] = now
         task = asyncio.create_task(self._update_profile_async(user_id, user_message, response))
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)

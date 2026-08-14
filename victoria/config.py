@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     # qwen2.5). Set to 0 to disable and reclaim the memory between conversations.
     model_keepalive_seconds: int = 240
 
+    # Profile learning runs an LLM call in the BACKGROUND after a turn. On a
+    # single-slot local model that call both competes with the user's next question
+    # and evicts the cached prompt prefix, so the next answer pays a full ~2,250-token
+    # tool-schema re-prefill. Measured: spaced-out questions (real usage) took
+    # 4.7-7.2s with extraction on every turn, versus ~1.2s with a warm cache.
+    # Learning the user's style does not need every single turn, so throttle it.
+    # 0 = extract on every turn (the old behaviour).
+    profile_extract_min_interval_seconds: int = 300
+
     # Complexity threshold — queries longer than this many words route to
     # Claude (only when anthropic_api_key is configured)
     complex_query_threshold: int = 200

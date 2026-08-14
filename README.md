@@ -71,7 +71,7 @@ victoria-ai/
 │   ├── setup-watchdog.sh       # One-command watchdog install (launchd agent; --status / --uninstall)
 │   └── com.victoria.watchdog.plist.template      # launchd template installed by setup-watchdog.sh
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
-├── tests/                      # 358 pytest tests
+├── tests/                      # 360 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
 ├── deploy-sandbox.sh           # Deploy Victoria into an isolated Docker Sandbox (sbx)
 ├── sbx/
@@ -786,4 +786,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-358 tests across memory & semantic recall, the local-model keep-alive, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.
+360 tests across memory & semantic recall, the local-model keep-alive, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.
