@@ -7,7 +7,7 @@
 > sandbox:
 >
 > ```
-> ffb208da-…  kit  sandbox:victoria  network: 20 allow
+> ffb208da-…  kit  sandbox:victoria  network: 34 allow
 > ```
 >
 > So the `network.allowedDomains` block in [`sbx/spec.yaml`](sbx/spec.yaml) is the
@@ -65,7 +65,7 @@ can only be tightened in **Docker Home** (or the Governance API), not the local
 **Superseded (2026-08-04).** Decision (C) — "leave egress broad" — is no longer the
 state of the world, and no longer requires the org-wide change described above. The
 `NetworkAll` (`allow **`) rule is gone, so the kit's allowlist now *is* the policy
-for `sandbox:victoria`: **default-deny with 20 allowed hosts**, per-sandbox, with no
+for `sandbox:victoria`: **default-deny with 34 allowed hosts**, per-sandbox, with no
 blast radius across other sandboxes. The outcome path 1 was meant to achieve arrived
 without us tightening anything org-wide.
 
@@ -92,21 +92,32 @@ or denies rather than something Victoria can arrange for herself.
   visible to network policy *and* keeps the credential out of the VM. Not
   implemented; recorded as the correct direction if the need arises.
 
-Verify IF/when egress is tightened (from the host):
+Verify the allowlist is in force (from the host):
 
 ```bash
-# non-allowlisted host should then FAIL (today it returns 200):
+# a non-allowlisted host is DENIED (403 — this is the current, expected result):
 sbx exec victoria -- curl -sS -m 6 -o /dev/null -w '%{http_code}\n' https://example.com
-# allowlisted paths should still work — chat + dashboard:
+# allowlisted paths still work — chat + dashboard:
 curl -4 -sS http://127.0.0.1:8001/health
 ```
+
+**Model traffic deliberately bypasses the proxy.** The kit sets
+`NO_PROXY`/`no_proxy` to include `host.docker.internal`, because sbx's own defaults
+cover `localhost` and the gateway but not the host — so every local-model call was
+being relayed through the inspecting proxy. Measured 2026-08-13: identical code and
+model, questions spaced 20s apart — **2.0s/turn on the host vs 6.9-8.8s from inside
+the sandbox**, fixed to 2.45-2.56s by the bypass. `:12434` is the one host port sbx
+already permits directly, so this removes latency *and* a pointless interception
+point; it does not widen what the sandbox can reach.
 
 **Build-time egress caveat.** The kit installs its full dependency set at
 sandbox-create time (apt → ffmpeg/PortAudio; `uv` → a managed CPython 3.11 from
 GitHub; pip → PyPI; model/tooling pulls → Hugging Face). A strict *runtime*
 allowlist that omits those build hosts would break creation, so the list below
-includes them (`pypi.org`, `files.pythonhosted.org`, `deb.debian.org`,
-`objects.githubusercontent.com`, `huggingface.co`, …). For a tighter runtime-only
+includes them (`pypi.org`, `files.pythonhosted.org`, the **Ubuntu** apt mirrors,
+`download.docker.com`, `*.githubusercontent.com` for GitHub *release assets*,
+`**.hf.co`, …). Four of those were missing and a cold deploy genuinely failed on
+2026-08-05 — see the cold-deploy gotcha in SANDBOX-DEPLOYMENT.md. For a tighter runtime-only
 posture, **bake the dependencies into a custom base image** so the running
 sandbox needs zero build-time egress, then trim the allowlist to runtime hosts.
 
@@ -125,9 +136,11 @@ sandbox needs zero build-time egress, then trim the allowlist to runtime hosts.
 3. **Model Runner host** ✓ CORRECTED
    - The sandbox reaches the host Model Runner at **`host.docker.internal:12434`**,
      NOT `localhost:12434` (localhost is the sandbox itself).
-   - The allowlist entry is therefore `host.docker.internal`. No separate
-     `sbx policy allow` step is needed while the org `NetworkAll` allow is active
-     (it already permits everything); the deploy script does not create policy rules.
+   - The allowlist entry is therefore `host.docker.internal`. **Superseded detail:**
+     this used to note that no policy step was needed "while the org `NetworkAll`
+     allow is active" — that rule is gone as of 2026-08-04 and the kit allowlist is
+     now the enforced policy. The deploy script still creates no policy rules; the
+     kit carries them.
 
 4. **MCP Path References** ✓ FIXED
    - Old mcp.json had a hardcoded host path (e.g. `<your-home>/victoria-mcp-demo`)
@@ -154,7 +167,12 @@ sandbox needs zero build-time egress, then trim the allowlist to runtime hosts.
 | `pypi.org` | ✓ | Python packages (setup phase) | During pip install |
 | `api.elevenlabs.io` | ✗ | Premium TTS (optional) | Only if `TTS_ENGINE=elevenlabs` |
 | `api.telegram.org` | ✗ | Telegram bot (optional) | Only if running victoria-telegram |
-| Everything else | ✗ | Default deny — security first | N/A |
+| `chroma-onnx-models.s3.amazonaws.com` | ✓ | ChromaDB's default embedding model (all-MiniLM-L6-v2, ONNX) | First semantic-memory query. **Blocking it does NOT fail loudly** — Chroma retries the download every query, fails its SHA256 check on the proxy's 403 page, and returns nothing, so recall silently dies while `/health` still says `semantic_memory: true` (2026-08-08) |
+| `ports/archive/security.ubuntu.com` (+`:80`) | ✓ | apt — ffmpeg + PortAudio for voice | Sandbox create. The base image moved to **Ubuntu**, so apt uses `ports.ubuntu.com`, NOT `deb.debian.org` |
+| `download.docker.com` (+`:80`) | ✓ | The image ships a Docker CE apt repo | Sandbox create. Blocking it makes `apt-get update` exit non-zero, which silently skips the ffmpeg install |
+| `*.githubusercontent.com` | ✓ | GitHub **release assets** — `uv`'s managed CPython 3.11 | Sandbox create. Missing it = 403 → no venv → creation aborts |
+| `hf.co`, `**.hf.co`, `**.huggingface.co` | ✓ | Hugging Face model blobs, incl. the **Xet CDN** on rotating hosts | Whisper/voice model download. NOTE `*` matches ONE label — `*.hf.co` does not match `us.aws.cdn.hf.co`; hence `**` |
+| `Everything else` | ✗ | Default deny — security first | N/A |
 
 ### Critical Setup Steps
 
