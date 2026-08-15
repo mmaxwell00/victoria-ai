@@ -66,6 +66,40 @@ def test_read_missing_note_returns_none(kb: KnowledgeBase):
     assert kb.read_note("ai", "does-not-exist") is None
 
 
+# -- reading: tolerant of imprecise paths from the model --------------------
+def test_read_note_case_insensitive(kb: KnowledgeBase):
+    # file is welcome.md; a wrong-case request must still resolve (matters on
+    # case-sensitive filesystems like the Linux sandbox).
+    assert "Victoria's own brain" in kb.read_note("ai", "WELCOME")
+
+
+def test_read_note_basename_finds_note_in_subfolder(kb: KnowledgeBase):
+    # model gives just the note name, not "Projects/victoria" — resolve by basename.
+    assert "dashboard polls Yahoo" in kb.read_note("ai", "victoria")
+
+
+def test_read_note_tolerates_leading_vault_name(kb: KnowledgeBase):
+    # model prepends the vault name — stripped, still resolves.
+    assert "dashboard polls Yahoo" in kb.read_note("ai", "ai/Projects/victoria")
+
+
+def test_read_note_exact_relative_still_wins(kb: KnowledgeBase):
+    assert "dashboard polls Yahoo" in kb.read_note("ai", "Projects/victoria.md")
+
+
+def test_read_note_ambiguous_basename_wont_guess(tmp_path: Path):
+    # two same-named notes in different folders → read_note refuses to guess,
+    # and find_notes lists both for disambiguation.
+    root = tmp_path / "ai"
+    (root / "A").mkdir(parents=True)
+    (root / "B").mkdir(parents=True)
+    (root / "A" / "dup.md").write_text("# A copy\n")
+    (root / "B" / "dup.md").write_text("# B copy\n")
+    kb = KnowledgeBase(vaults={"ai": Vault("ai", root, True)})
+    assert kb.read_note("ai", "dup") is None
+    assert kb.find_notes("ai", "dup") == ["A/dup.md", "B/dup.md"]
+
+
 def test_read_truncates_to_cap(tmp_path: Path):
     root = tmp_path / "ai"
     root.mkdir()
