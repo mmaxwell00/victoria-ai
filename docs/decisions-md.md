@@ -85,6 +85,58 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-08-13 · Response latency — FIVE causes, and the order they hid in
+
+**Status:** All fixed and merged (#91, #93, #94, #95, #96). Measured throughout; no
+change was kept on the strength of a hypothesis alone.
+
+**Context:** Mark reported "Victoria pauses before answering" three separate times. It
+was never one bug — it was five, stacked, each hiding the next. Three of them were
+invisible from `/health`, and the last one was not in the code at all. A tool-using question went from **~16s of silence** to
+**first words at ~1.4s**:
+
+| Cause | Evidence | Fix |
+|---|---|---|
+| ChromaDB re-downloaded its embedding model on EVERY query (egress-blocked → 142-byte 403 page → SHA256 failure) | ~4s wasted per turn, and cross-session recall silently dead while `/health` reported `semantic_memory: true` | #91 — allow-list `chroma-onnx-models.s3.amazonaws.com` |
+| Docker Model Runner evicts an idle model after ~5 min; the reload lands on the next question | **5.3s cold vs 0.36s warm** | #93 — `model_warmer.py`, no TTL knob exists in `docker model` |
+| Nothing streamed — the whole reply arrived as one chunk at the end | `+5.87s chunk_len=274`, 2 events for a 274-char answer | #94 — stream the post-tool synthesis |
+| Per-turn context in the SYSTEM message changed the prompt prefix, discarding llama.cpp's KV cache | stable prefix **0.25-0.30s** (`cached 3190/3199`) vs mutated **2.85-2.96s** (`cached 834/3211`) | #95 — split the prompt by volatility |
+| **Model calls relayed through the sandbox's egress proxy** (`NO_PROXY` covered localhost + gateway but not `host.docker.internal`) | same code: **2.0s/turn on the host vs 6.9-8.8s in the sandbox** | #96 — exempt `host.docker.internal` |
+
+**Decisions worth keeping:**
+- **The prompt prefix is byte-stable** — volatile context attaches to the last USER
+  message via `_turn_context()`/`_with_turn_context()`. Guarded by
+  `test_system_prompt_is_identical_across_turns`.
+- **The keep-alive pings with Victoria's REAL prefix.** The first version sent a bare
+  `"ok"`, which kept the model resident while *evicting* the cache it existed to
+  protect (real question 2.5s → ping → next question 5.1s).
+- **Profile extraction is throttled** (`profile_extract_min_interval_seconds`, 300s).
+  It is an LLM call; unthrottled it queued ahead of the user's next question and
+  overwrote the cached prefix. Kept as hygiene on a single-slot model even though it
+  was NOT the latency fix.
+- **Pass 1 of the tool loop stays buffered.** Streaming it would leak a tool-refusal
+  or a bare `[ESCALATE]` before the guards could act; only the post-tool synthesis
+  streams, plus a 64-char hold-buffer.
+
+**Rejected / wrong turns, recorded so they are not repeated:**
+- Two hypotheses were chased before the environment one: the keep-alive evicting the
+  cache, and extraction firing every turn. Both are real improvements; **neither was
+  the cause.**
+- The generalisable lesson: **when the same code is 3.5x slower in one environment
+  than another, stop bisecting the code.** The decisive test was running
+  `ConversationManager.chat()` in-process on the host (2.0s) against the identical
+  turn in the sandbox (7s).
+- Method that actually worked: compare against the RAW Model Runner (0.1-0.3s warm),
+  then bisect raw model → +system prompt → +tool schemas → tool itself → semantic
+  search. Every layer is measurable in isolation.
+- Latency here is **bimodal** (cold/warm model, cached/uncached prefix). One 11.5s
+  reading never reproduced; one 4.2s reading was the cache being populated. Take 3+.
+
+**Trade-off accepted:** the keep-alive holds ~4.4GB of RAM (qwen2.5) and the first
+request after a restart still pays ~5s to populate the cache. Both are opt-out
+(`model_keepalive_seconds=0`) and once-per-restart respectively.
+
+
 ### 2026-08-04 · Sandbox egress is now default-deny; Claude escalation stays network-gated
 
 **Status:** Decided by Mark. Docs updated (`SECURITY-AUDIT.md`, `SANDBOX-DEPLOYMENT.md`,

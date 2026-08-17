@@ -1,6 +1,6 @@
 # Victoria — Docker Sandboxes kit (verified working end-to-end).
 #
-# WHY A PACKED KIT: sbx (v0.35) kits are packed artifacts (spec.yaml + optional
+# WHY A PACKED KIT: sbx kits are packed artifacts (spec.yaml + optional
 # files/), NOT a raw YAML.
 #
 # DEPLOY WITH ./deploy-sandbox.sh — it is the supported entry point. sbx mounts a

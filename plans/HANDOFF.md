@@ -15,15 +15,16 @@
 > 5. `git commit -m "…"` with backticks corrupts the message (shell command-subst).
 >    Use `git commit -F -` with a quoted `<<'MSG'` heredoc, or `--body-file` for PRs.
 
-Last updated: 2026-08-13. `main` at `1d19bc6`. **358 tests pass.**
-All PRs through #94 merged; **#95 open** (stable prompt prefix — the last latency fix).
-`sbx` is now **v0.37.1** (the older notes below say v0.35).
+Last updated: 2026-08-13. `main` at `bdddf1a`. **365 tests pass.**
+All PRs through #96 merged. ⚠️ `sbx` **auto-updated to v0.38.0 mid-session** (older
+notes below say v0.35 / v0.37.1) and its control plane became unreliable immediately
+after — see §4.
 
-## ⚡ "Victoria pauses before answering" — SOLVED, and it was FOUR causes
+## ⚡ "Victoria pauses before answering" — SOLVED, and it was FIVE causes
 
-Mark reported this twice; each fix revealed the next one underneath. Do not treat a
+Mark reported this THREE times; each fix revealed the next underneath. Do not treat a
 slow reply as one bug. Measured end-to-end on the real HUD path (`/v1/chat/stream`),
-a weather question went from **~16s of silence** to **first words at 1.2s**:
+a weather question went from **~16s of silence** to **first words at ~1.4s**:
 
 | PR | Cause | Evidence |
 |---|---|---|
@@ -31,15 +32,21 @@ a weather question went from **~16s of silence** to **first words at 1.2s**:
 | #93 | Docker Model Runner evicts an idle model after ~5 min; the next question pays the reload | **5.3s cold vs 0.36s warm**; no TTL knob exists, so `victoria/core/model_warmer.py` pings every `model_keepalive_seconds` (0 disables; costs ~4.4GB RAM) |
 | #94 | Nothing streamed — the whole reply arrived as ONE chunk at the end | `+5.87s chunk_len=274` then done; 2 events for a 274-char answer. Post-tool synthesis now streams (41–78 events) |
 | #95 | Per-turn context injected into the SYSTEM message changed the prompt prefix, discarding llama.cpp's KV cache | stable prefix **0.25–0.30s** (`cached 3190/3199`) vs mutated **2.85–2.96s** (`cached 834/3211`) — ~10x, twice per tool question |
+| #96 | **Model calls relayed through the sandbox egress proxy** — `NO_PROXY` covered localhost + gateway but NOT `host.docker.internal` | same code, spaced 20s apart: **2.0s/turn on the host vs 6.9–8.8s in the sandbox** → 2.45–2.56s after the bypass. NOT in the code at all |
 
-**The diagnostic that found all four:** compare Victoria against the RAW Model Runner
+**The diagnostic that found all five:** compare Victoria against the RAW Model Runner
 (`curl host :12434 …` → 0.1–0.3s warm). If she is 10–50x slower, the time is ours, not
 the model's. Then bisect: raw model → +system prompt → +tool schemas → tool itself →
-semantic search. Every one of those is measurable in isolation, and three of the four
-causes were invisible from `/health`.
+semantic search. Every one of those is measurable in isolation, and three of the five
+causes were invisible from `/health`, and the last was not in the code at all — when
+the same code is 3.5x slower in one environment than another, STOP bisecting the code
+and compare environments (running `ConversationManager.chat()` in-process on the host
+vs the identical turn in the sandbox is what cracked it).
 
-Residual, accepted: the FIRST request after a restart is ~5s (populating the cache);
-every turn after is ~1.2s. Plain chat ~0.4–0.8s.
+Current measured state (sandbox, `:8001`): a tool question shows **first words at
+~1.4s** and completes in ~2.0s; spaced-out turns ~2.45–2.56s, matching the host
+baseline (2.0–2.13s). Plain chat ~0.4–0.8s. Residual, accepted: the FIRST request
+after a restart is ~5s while the prompt cache repopulates — once per restart.
 
 ⚠️ **Egress lens on the same lesson.** Default-deny egress has broken three separate
 things, none of which looked like a network problem. Before debugging anything odd in
@@ -52,7 +59,7 @@ silently empty search.
   embedding model on every query, got the proxy's ~142-byte 403 page, failed its SHA256
   check, and returned nothing — while `/health` still said `semantic_memory: true`.
   This also made every chat turn ~4s slower. Fix: allow-list
-  `chroma-onnx-models.s3.amazonaws.com`. NOTE it was only ONE of four causes of the
+  `chroma-onnx-models.s3.amazonaws.com`. NOTE it was only ONE of five causes of the
   reported "pausing" — see the table at the top before concluding a slow reply is
   explained.
 - **Escalation from the sandbox is denied** — that one is DELIBERATE (see below).
@@ -93,7 +100,7 @@ Obsidian-backed knowledge base.
 **Where the work is right now (newest first):**
 - **Sandbox egress is now DEFAULT-DENY, and escalation from the sandbox is OFF by
   policy (2026-08-04).** The org `NetworkAll: allow **` rule is **gone**; `sbx policy ls`
-  shows `kit  sandbox:victoria  network: N allow` (was 20; #90/#91 added build + embedding hosts), so the kit's `network.allowedDomains`
+  shows `kit  sandbox:victoria  network: 34 allow` (was 20; #90/#91/#96 added build, embedding + proxy-bypass entries), so the kit's `network.allowedDomains`
   **is** the live policy (verified: allow-listed → 200, Yahoo → 429 = allowed/rate-limited,
   `example.com` → **403**). ⚠️ **The allowlist is load-bearing:** any feature calling a
   host not in `sbx/spec.yaml` fails 403 until it's added + redeployed.
@@ -122,8 +129,8 @@ Obsidian-backed knowledge base.
 
 ## 2. Current State (what exists now)
 
-**Test suite: 358 pass** (`python -m pytest -q`, use `.venv/bin/python`).
-All PRs #39–#94 merged (#95 open). Most recent: #86 = Victoria owns her Obsidian knowledge base
+**Test suite: 365 pass** (`python -m pytest -q`, use `.venv/bin/python`).
+All PRs #39–#98 merged. Most recent: #86 = Victoria owns her Obsidian knowledge base
 (she used to deny filesystem access); #87 = the host-side uptime watchdog; #88 =
 watchdog recognises a signed-out `sbx`; #89 = egress/escalation security docs;
 **#90 = repaired the cold deploy**; **#91 = unblocked ChromaDB's embedding model**
@@ -316,6 +323,20 @@ tools `search_notes` / `read_note` / `list_notes` / `write_note`.
   `/var/lib/apt/lists/` and tells you nothing about the real install. Read the
   create-time error from the daemon log instead:
   `~/Library/Application Support/com.docker.sandboxes/sandboxes/sandboxd/daemon.log`.
+
+**sbx v0.38.0 (auto-updated 2026-08-13) — control plane became unreliable:**
+- Symptoms in one session: THREE wedges; `POST /sandbox/victoria/start` → **500** in a
+  loop; two `sbx run` invocations hanging **34 and 39 minutes**; `sbx ls` and
+  `sbx exec` hanging while `sbx daemon status` answered instantly.
+- Victoria survives it: the container starts and serves even when `sbx run`'s attach
+  hangs — check `curl -4 127.0.0.1:8001/health` before assuming she is down.
+- Recovery that worked: `pkill -9 -f 'sbx exec'` / `'sbx ls'`, then kill and restart
+  the daemon **detached** (`nohup sbx daemon start &` — it runs in the FOREGROUND, so a
+  timeout wrapper kills it), then re-run the deploy. If that fails, the next remedy is
+  a Docker Desktop restart (Mark's documented one; affects his whole Docker env, so
+  ASK). **Never kill `/usr/libexec/sandboxd`** — that is Apple's, not Docker's.
+- This is now a bigger availability risk than latency ever was. If it keeps recurring,
+  consider pinning the sbx version.
 
 **sbx control-plane wedge (recurs; the watchdog survives it, repairs queue):**
 - Symptom: `sbx daemon status` answers instantly ("running") while `sbx ls`/`sbx exec`
