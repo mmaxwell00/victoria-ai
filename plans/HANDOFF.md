@@ -129,8 +129,8 @@ Obsidian-backed knowledge base.
 
 ## 2. Current State (what exists now)
 
-**Test suite: 358 pass** (`python -m pytest -q`, use `.venv/bin/python`).
-All PRs #39–#94 merged (#95 open). Most recent: #86 = Victoria owns her Obsidian knowledge base
+**Test suite: 365 pass** (`python -m pytest -q`, use `.venv/bin/python`).
+All PRs #39–#98 merged. Most recent: #86 = Victoria owns her Obsidian knowledge base
 (she used to deny filesystem access); #87 = the host-side uptime watchdog; #88 =
 watchdog recognises a signed-out `sbx`; #89 = egress/escalation security docs;
 **#90 = repaired the cold deploy**; **#91 = unblocked ChromaDB's embedding model**
