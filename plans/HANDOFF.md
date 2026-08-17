@@ -15,7 +15,7 @@
 > 5. `git commit -m "…"` with backticks corrupts the message (shell command-subst).
 >    Use `git commit -F -` with a quoted `<<'MSG'` heredoc, or `--body-file` for PRs.
 
-Last updated: 2026-08-13. `main` at `bdddf1a`. **360 tests pass. NO open PRs.**
+Last updated: 2026-08-13. `main` at `bdddf1a`. **365 tests pass.**
 All PRs through #96 merged. ⚠️ `sbx` **auto-updated to v0.38.0 mid-session** (older
 notes below say v0.35 / v0.37.1) and its control plane became unreliable immediately
 after — see §4.
