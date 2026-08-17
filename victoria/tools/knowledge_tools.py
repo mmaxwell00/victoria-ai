@@ -84,9 +84,20 @@ async def search_notes(query: str, folder: str = "", vault: str = "all") -> str:
 async def read_note(path: str, vault: str = "") -> str:
     v = _vault_or_default(vault)
     text = knowledge_base.read_note(v, path)
-    if text is None:
-        return f"I couldn't find '{path}'{f' in {v}' if v else ''}."
-    return text
+    if text is not None:
+        return text
+    # Miss: read_note already tolerates a missing .md / wrong case / missing
+    # folder, so a miss is either genuinely absent or ambiguous. Help the caller.
+    matches = knowledge_base.find_notes(v, path)
+    if len(matches) > 1:
+        return (
+            f"Several notes match '{path}': " + ", ".join(matches)
+            + ". Tell me which one (use its full path)."
+        )
+    return (
+        f"I couldn't find '{path}'{f' in {v}' if v else ''}. "
+        "Use list_notes to see the exact paths."
+    )
 
 
 @registry.tool(

@@ -151,16 +151,70 @@ class KnowledgeBase:
         v = self.get(vault_name)
         if not v or not v.exists:
             return None
-        try:
-            target = self._resolve(v, self._with_md(path))
-        except ValueError:
-            return None
-        if not target.is_file():
+        target = self._locate(v, path)
+        if target is None:
             return None
         text = target.read_text(encoding="utf-8", errors="replace")
         if len(text) > self.max_note_chars:
             text = text[: self.max_note_chars] + "\n\n…[truncated]…"
         return text
+
+    def find_notes(self, vault_name: str, path: str) -> list[str]:
+        """Relative paths of notes that loosely match ``path`` — lets a caller
+        disambiguate when read_note can't pin a single note."""
+        v = self.get(vault_name)
+        if not v or not v.exists:
+            return []
+        return sorted(
+            p.relative_to(v.root).as_posix() for p in self._candidate_notes(v, path)
+        )
+
+    def _locate(self, vault: Vault, path: str) -> Optional[Path]:
+        """Resolve ``path`` to one note, tolerating an imprecise request (the
+        local model often drops the ``.md``, gets the case wrong, omits the
+        folder, or prepends the vault name). An exact, path-safe match always
+        wins; a loose match is used only when it is unambiguous (exactly one
+        candidate). Traversal / reserved paths never match — the loose search
+        only ever yields real note files already inside the vault root."""
+        try:
+            exact = self._resolve(vault, self._with_md(path))
+            if exact.is_file():
+                return exact
+        except ValueError:
+            pass
+        cands = self._candidate_notes(vault, path)
+        return cands[0] if len(cands) == 1 else None
+
+    def _candidate_notes(self, vault: Vault, path: str) -> list[Path]:
+        """Notes matching ``path`` loosely: case-insensitive, extension
+        optional, matched on the full relative path OR the basename (so a bare
+        note name is found in any folder). Full-relative matches take priority
+        over basename-only ones; an ambiguous request returns every candidate
+        (so the caller can ask which), never a wrong guess."""
+        want = (path or "").strip().strip("/").lower()
+        if not want:
+            return []
+
+        def _stem(s: str) -> str:
+            for e in _NOTE_EXTS:
+                if s.endswith(e):
+                    return s[: -len(e)]
+            return s
+
+        want = _stem(want)
+        vprefix = vault.name.lower() + "/"           # tolerate a stray "<vault>/" prefix
+        if want.startswith(vprefix):
+            want = want[len(vprefix):]
+        want_base = want.rsplit("/", 1)[-1]
+        rel_hits: list[Path] = []
+        base_hits: list[Path] = []
+        for p in self._iter_notes(vault):
+            rel = _stem(p.relative_to(vault.root).as_posix().lower())
+            if rel == want:
+                rel_hits.append(p)
+            elif rel.rsplit("/", 1)[-1] == want_base:
+                base_hits.append(p)
+        return rel_hits or base_hits
 
     def search(
         self, query: str, vault_name: str = "all", folder: str = "", limit: int = 8
