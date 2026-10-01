@@ -85,6 +85,36 @@ Items awaiting decision before implementation can proceed.
 
 ## Decided
 
+### 2026-10-01 · Semantic recall never carries live data; recalled memories are dated
+
+**Status:** Decided (fix for a user-visible bug found in a state review).
+
+**Context:** "What's the weather in London today?" was answered for weeks with the
+same August 4 reading, word for word, in fresh sessions. Recall surfaced the old
+answer with no date; the local model treated it as a fact it already had and skipped
+`get_weather`; the repeat was stored and recalled again. On the live store (371
+entries) the top London hits were that answer and its copies; the other recall slots
+were the same question asked earlier (cosine distance 0.000 / 0.012). Only `role` and
+`session_id` were stored, so nothing could say how old a memory was.
+
+**Decision:**
+1. Assistant answers carrying live data (weather, market prices, headlines, the
+   date/time — `semantic_memory._TIME_SENSITIVE_RE`) are **not stored**, and existing
+   ones are **filtered at recall** (no migration; 67 of 185 stored answers match).
+   User questions are kept — they hold no stale facts.
+2. Every entry is timestamped (`ts`); recall labels each item with its date
+   (`undated` for older entries) under a header saying past chats may be out of date
+   and tools are for anything live.
+3. Recalled user messages that are echoes of this same question (distance < 0.05) are
+   dropped; search over-fetches (n×4) so filtered slots are refilled.
+
+**Rejected:** a recency cut-off (would also drop durable facts like preferences);
+purging the store (filtering at read time makes it unnecessary and reversible); a
+cosine-distance threshold for all hits (not calibrated yet — follow-up).
+
+**Trade-off:** a few non-live replies that mention weather or markets (e.g. dashboard
+set-up confirmations) are no longer recalled. Cheap — they carry no durable facts.
+
 ### 2026-08-04 · Sandbox egress is now default-deny; Claude escalation stays network-gated
 
 **Status:** Decided by Mark. Docs updated (`SECURITY-AUDIT.md`, `SANDBOX-DEPLOYMENT.md`,

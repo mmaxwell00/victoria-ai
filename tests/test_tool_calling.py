@@ -667,3 +667,26 @@ async def test_stream_with_tools_chains_a_second_tool_call():
     assert names == ["get_weather", "get_weather"]
     # The streamed call's arguments were reassembled from fragments.
     assert mock_registry.execute.await_args_list[1].kwargs == {"location": "Austin"}
+
+
+def test_recalled_memories_are_dated_and_framed_as_history():
+    """A recalled answer must carry its age and must not read as a current fact —
+    an undated one is how an August 4 weather reading kept being repeated."""
+    memory = make_memory()
+    router = make_router()
+    mock_sem = make_semantic_memory(
+        available=True,
+        search_results=[
+            {"content": "Mark travels to London often", "role": "user", "session_id": "a",
+             "ts": 1785801600.0},   # 2026-08-04
+            {"content": "Mark prefers Celsius", "role": "user", "session_id": "b"},
+        ],
+    )
+    manager = ConversationManager(memory=memory, router=router, semantic_memory=mock_sem)
+
+    ctx = manager._turn_context("What's the weather in London?", session_id="new")
+
+    assert "- (2026-08-04) Mark travels to London often" in ctx
+    assert "- (undated) Mark prefers Celsius" in ctx
+    assert "may be out of date" in ctx
+    assert "use your tools for anything live" in ctx
