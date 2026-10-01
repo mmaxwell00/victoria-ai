@@ -5,6 +5,7 @@ from victoria.config import (
     ESCALATION_SENTINEL,
     ESCALATION_INSTRUCTION,
 )
+from datetime import datetime, timezone
 from typing import AsyncIterator, Optional, TYPE_CHECKING
 import asyncio
 import logging
@@ -12,6 +13,16 @@ import re
 import uuid
 
 logger = logging.getLogger(__name__)
+
+
+def _recall_date(ts: Optional[float]) -> str:
+    """'2026-08-04' for a recalled memory; 'undated' for one stored before timestamps."""
+    if not ts:
+        return "undated"
+    try:
+        return datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime("%Y-%m-%d")
+    except (TypeError, ValueError, OverflowError, OSError):
+        return "undated"
 
 # How much of a streamed reply to hold back before showing anything. Both things we
 # must never leak — a bare `[ESCALATE]` sentinel and a tool-refusal — are short and
@@ -627,8 +638,17 @@ class ConversationManager:
                 logger.exception("Semantic recall failed; continuing without it")
                 memories = []
             if memories:
-                recalled = "\n".join(f"- {m['content'][:200]}" for m in memories)
-                parts.append(f"Relevant context from past conversations:\n{recalled}")
+                # Dated, and framed as history: an undated past answer reads to the
+                # local model as a current fact, and it will repeat it rather than
+                # call a tool (see `semantic_memory._TIME_SENSITIVE_RE`).
+                recalled = "\n".join(
+                    f"- ({_recall_date(m.get('ts'))}) {m['content'][:200]}" for m in memories
+                )
+                parts.append(
+                    "Relevant context from past conversations (earlier chats — they may "
+                    "be out of date; never present them as current, and use your tools "
+                    f"for anything live):\n{recalled}"
+                )
 
         for skill in self._relevant_skills(user_message):
             parts.append(

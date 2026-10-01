@@ -171,3 +171,147 @@ def test_count_returns_zero_when_unavailable(tmp_path):
         else:
             sys.modules.pop("chromadb", None)
         _load_fresh_semantic_memory()
+
+
+# ---------------------------------------------------------------------------
+# 6. Stale live data must never be recalled as a fact
+#
+# Regression: "What's the weather in London today?" was answered for weeks with
+# an August 4 reading. Recall surfaced the old answer (undated), the local model
+# repeated it instead of calling get_weather, and each repeat was stored and
+# recalled again. Measured on the live store: the two other recall slots were
+# the same question asked earlier (cosine distance 0.000 / 0.012).
+# ---------------------------------------------------------------------------
+
+STALE_LONDON = (
+    "The weather in London today, August 4, 2026, is currently 21°C, with a high "
+    "of 24°C and a low of 18°C. Expect mostly sunny conditions."
+)
+
+
+@pytest.mark.parametrize("text", [
+    STALE_LONDON,
+    "It's 77°F in Tokyo and clear.",
+    "The forecast for Dallas is rain tomorrow.",
+    "AAPL is trading at $231, and the NASDAQ is up 1.2%.",
+    "Here are today's headlines from NBC News.",
+    "Today's date is Thursday, 1st October 2026.",
+    "The current time is 14:32 UTC.",
+])
+def test_time_sensitive_answers_are_detected(text):
+    from victoria.core.semantic_memory import is_time_sensitive
+    assert is_time_sensitive(text)
+
+
+@pytest.mark.parametrize("text", [
+    "Paris is the capital of France.",
+    "You told me you prefer Python over Go.",
+    "Your Obsidian vault has notes under Brain, Docker and Personal.",
+    "",
+])
+def test_ordinary_answers_are_not_time_sensitive(text):
+    from victoria.core.semantic_memory import is_time_sensitive
+    assert not is_time_sensitive(text)
+
+
+def _mock_memory(tmp_path, count_return=10):
+    mock_chromadb, _client, mock_collection = _make_chromadb_mock(count_return=count_return)
+    with patch.dict(sys.modules, {"chromadb": mock_chromadb}):
+        mod = _load_fresh_semantic_memory()
+        mem = mod.SemanticMemory(db_path=str(tmp_path / "chroma"))
+    return mem, mock_collection
+
+
+def test_add_skips_time_sensitive_answers_but_keeps_the_question(tmp_path):
+    """The live answer is not stored (it would go stale); the question is."""
+    mem, coll = _mock_memory(tmp_path)
+
+    mem.add("s1", "user", "What's the weather in London today?")
+    mem.add("s1", "assistant", STALE_LONDON)
+
+    assert coll.add.call_count == 1
+    assert coll.add.call_args.kwargs["documents"] == ["What's the weather in London today?"]
+
+
+def test_add_timestamps_every_entry(tmp_path):
+    mem, coll = _mock_memory(tmp_path)
+    before = __import__("time").time()
+
+    mem.add("s1", "assistant", "Paris is the capital of France.")
+
+    meta = coll.add.call_args.kwargs["metadatas"][0]
+    assert meta["role"] == "assistant" and meta["session_id"] == "s1"
+    assert meta["ts"] >= before
+
+
+def test_search_drops_stale_answers_and_echoes_but_fills_n(tmp_path):
+    """Entries stored before this fix are filtered at READ time — no migration —
+    and over-fetching means the filtered slots are refilled with useful hits."""
+    mem, coll = _mock_memory(tmp_path, count_return=50)
+    coll.query.return_value = {
+        "documents": [[
+            "What's the weather in London today?",   # echo of the query
+            STALE_LONDON,                            # legacy live answer
+            "Mark lives near Dallas and travels to London often.",
+            "You asked me to track London on the dashboard.",
+            "London is five hours ahead of Dallas.",
+        ]],
+        "metadatas": [[
+            {"role": "user", "session_id": "a"},
+            {"role": "assistant", "session_id": "b"},
+            {"role": "user", "session_id": "c", "ts": 1785000000.0},
+            {"role": "assistant", "session_id": "d", "ts": 1785100000.0},
+            {"role": "assistant", "session_id": "e"},
+        ]],
+        "distances": [[0.0, 0.26, 0.40, 0.45, 0.50]],
+    }
+
+    results = mem.search("What's the weather in London today?", n=3)
+
+    contents = [r["content"] for r in results]
+    assert STALE_LONDON not in contents
+    assert "What's the weather in London today?" not in contents
+    assert len(results) == 3
+    assert results[0]["ts"] == 1785000000.0
+    assert results[2]["ts"] is None          # legacy entry, still usable
+    assert coll.query.call_args.kwargs["n_results"] == 12   # over-fetched n*4
+
+
+def test_search_tolerates_a_result_without_distances(tmp_path):
+    mem, coll = _mock_memory(tmp_path)
+    coll.query.return_value = {
+        "documents": [["Paris is the capital of France."]],
+        "metadatas": [[{"role": "assistant", "session_id": "x"}]],
+    }
+    assert mem.search("French capital", n=3)[0]["content"].startswith("Paris")
+
+
+def test_stale_weather_answer_is_not_recalled_real_chromadb(tmp_path):
+    """End to end on a real ChromaDB: replay the live store's London case."""
+    pytest.importorskip("chromadb")
+    from victoria.core.semantic_memory import SemanticMemory
+
+    mem = SemanticMemory(db_path=str(tmp_path / "chroma"))
+    if not mem.available:
+        pytest.skip("SemanticMemory initialised but not available (no embedder)")
+
+    # Written the way the old code wrote it: no timestamp, no filter.
+    mem._collection.add(
+        ids=["legacy-q", "legacy-a", "useful"],
+        documents=[
+            "What is the weather in London today?",
+            STALE_LONDON,
+            "Mark is flying to London next week for a customer meeting.",
+        ],
+        metadatas=[
+            {"session_id": "old", "role": "user"},
+            {"session_id": "old", "role": "assistant"},
+            {"session_id": "older", "role": "user"},
+        ],
+    )
+
+    results = mem.search("What's the weather in London today?", n=3, exclude_session="new")
+
+    contents = [r["content"] for r in results]
+    assert STALE_LONDON not in contents
+    assert "What is the weather in London today?" not in contents
