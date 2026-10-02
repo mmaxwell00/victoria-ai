@@ -27,13 +27,15 @@ calls through the sandbox proxy (7s → 2.5s/turn), #98 `read_note` tolerates im
 note paths, #99 never recall stale live data.
 **#97 is still open** (`docs: repo-wide currency audit`, opened 2026-08-14) — it
 predates #98/#99, so expect it to need a refresh before it merges.
-`sbx` is now **v0.37.1** (the older notes below say v0.35).
+`sbx` is now **v0.46.0** (verified `sbx version` 2026-10-02; older notes below say
+v0.35 / v0.37.1 / v0.38.0 — it auto-updates without asking, so re-check rather than
+trusting any version written here).
 
-## ⚡ "Victoria pauses before answering" — SOLVED, and it was FOUR causes
+## ⚡ "Victoria pauses before answering" — SOLVED, and it was FIVE causes
 
-Mark reported this twice; each fix revealed the next one underneath. Do not treat a
+Mark reported this THREE times; each fix revealed the next underneath. Do not treat a
 slow reply as one bug. Measured end-to-end on the real HUD path (`/v1/chat/stream`),
-a weather question went from **~16s of silence** to **first words at 1.2s**:
+a weather question went from **~16s of silence** to **first words at ~1.4s**:
 
 | PR | Cause | Evidence |
 |---|---|---|
@@ -41,15 +43,21 @@ a weather question went from **~16s of silence** to **first words at 1.2s**:
 | #93 | Docker Model Runner evicts an idle model after ~5 min; the next question pays the reload | **5.3s cold vs 0.36s warm**; no TTL knob exists, so `victoria/core/model_warmer.py` pings every `model_keepalive_seconds` (0 disables; costs ~4.4GB RAM) |
 | #94 | Nothing streamed — the whole reply arrived as ONE chunk at the end | `+5.87s chunk_len=274` then done; 2 events for a 274-char answer. Post-tool synthesis now streams (41–78 events) |
 | #95 | Per-turn context injected into the SYSTEM message changed the prompt prefix, discarding llama.cpp's KV cache | stable prefix **0.25–0.30s** (`cached 3190/3199`) vs mutated **2.85–2.96s** (`cached 834/3211`) — ~10x, twice per tool question |
+| #96 | **Model calls relayed through the sandbox egress proxy** — `NO_PROXY` covered localhost + gateway but NOT `host.docker.internal` | same code, spaced 20s apart: **2.0s/turn on the host vs 6.9–8.8s in the sandbox** → 2.45–2.56s after the bypass. NOT in the code at all |
 
-**The diagnostic that found all four:** compare Victoria against the RAW Model Runner
+**The diagnostic that found all five:** compare Victoria against the RAW Model Runner
 (`curl host :12434 …` → 0.1–0.3s warm). If she is 10–50x slower, the time is ours, not
 the model's. Then bisect: raw model → +system prompt → +tool schemas → tool itself →
-semantic search. Every one of those is measurable in isolation, and three of the four
-causes were invisible from `/health`.
+semantic search. Every one of those is measurable in isolation, and three of the five
+causes were invisible from `/health`, and the last was not in the code at all — when
+the same code is 3.5x slower in one environment than another, STOP bisecting the code
+and compare environments (running `ConversationManager.chat()` in-process on the host
+vs the identical turn in the sandbox is what cracked it).
 
-Residual, accepted: the FIRST request after a restart is ~5s (populating the cache);
-every turn after is ~1.2s. Plain chat ~0.4–0.8s.
+Current measured state (sandbox, `:8001`, reverified 2026-10-02 after the watchdog
+restart): plain chat **0.39s then 0.25s** warm; a tool question shows first words at
+~1.4s. Residual, accepted: the FIRST request after a restart is ~4-5s while the prompt
+cache repopulates — measured 4.0s today, once per restart.
 
 ⚠️ **Egress lens on the same lesson.** Default-deny egress has broken three separate
 things, none of which looked like a network problem. Before debugging anything odd in
@@ -416,6 +424,24 @@ tools `search_notes` / `read_note` / `list_notes` / `write_note`.
   `/var/lib/apt/lists/` and tells you nothing about the real install. Read the
   create-time error from the daemon log instead:
   `~/Library/Application Support/com.docker.sandboxes/sandboxes/sandboxd/daemon.log`.
+
+**sbx version churn — v0.38.0 made the control plane unreliable (2026-08-13):**
+- Symptoms in one session: THREE wedges; `POST /sandbox/victoria/start` → **500** in a
+  loop; two `sbx run` invocations hanging **34 and 39 minutes**; `sbx ls` and
+  `sbx exec` hanging while `sbx daemon status` answered instantly.
+- Victoria survives it: the container starts and serves even when `sbx run`'s attach
+  hangs — check `curl -4 127.0.0.1:8001/health` before assuming she is down.
+- Recovery that worked: `pkill -9 -f 'sbx exec'` / `'sbx ls'`, then kill and restart
+  the daemon **detached** (`nohup sbx daemon start &` — it runs in the FOREGROUND, so a
+  timeout wrapper kills it), then re-run the deploy. If that fails, the next remedy is
+  a Docker Desktop restart (Mark's documented one; affects his whole Docker env, so
+  ASK). **Never kill `/usr/libexec/sandboxd`** — that is Apple's, not Docker's.
+- **Status 2026-10-02: `sbx` is now v0.46.0 and behaving** — `sbx ls` answers promptly,
+  no wedge observed this session. v0.38.0's specific breakage looks to be behind us, so
+  pinning is NOT currently needed. Keep the recovery steps above: the wedge *class*
+  recurs across versions (see the next entry), and `sbx` auto-updates without asking —
+  so a sudden run of hangs is worth checking `sbx version` against what the handoff
+  last recorded.
 
 **sbx control-plane wedge (recurs; the watchdog survives it, repairs queue):**
 - Symptom: `sbx daemon status` answers instantly ("running") while `sbx ls`/`sbx exec`
