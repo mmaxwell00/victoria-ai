@@ -71,7 +71,7 @@ victoria-ai/
 │   ├── setup-watchdog.sh       # One-command watchdog install (launchd agent; --status / --uninstall)
 │   └── com.victoria.watchdog.plist.template      # launchd template installed by setup-watchdog.sh
 ├── skills/                     # Bundled skills (email-drafter, meeting-summariser, code_reviewskill)
-├── tests/                      # 365 pytest tests
+├── tests/                      # 382 pytest tests
 ├── setup-victoria-mac.sh       # One-command macOS installer
 ├── deploy-sandbox.sh           # Deploy Victoria into an isolated Docker Sandbox (sbx)
 ├── sbx/
@@ -111,7 +111,7 @@ victoria-ai/
 
 **Memory layers (layered, always on):**
 1. **Session memory** — full conversation history within a session (SQLite)
-2. **Semantic memory** — ChromaDB vector search across all past sessions; relevant context surfaces automatically
+2. **Semantic memory** — ChromaDB vector search across all past sessions; relevant context surfaces automatically, dated, and framed as history. Live-data answers (weather, markets, news, the date/time) are never stored or recalled — they go stale, and a recalled one gets repeated instead of the tool being called
 3. **User profile** — persistent preferences, style, and explicit memories injected into every system prompt
 
 ### Deployment topology — two ways to run
@@ -786,4 +786,4 @@ PIP_REQUIRE_HASHES=false pip install -r requirements.txt
 python3 -m pytest tests/ -v
 ```
 
-365 tests across memory & semantic recall, the local-model keep-alive, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.
+382 tests across memory & semantic recall (incl. stale live-data filtering), the local-model keep-alive, conversation, tools & tool-calling (incl. refusal-retry and history de-poisoning), local-first escalation, skills & GitHub import, MCP, the credentials vault, model selection, voice (transcribe / TTS / wake-word), the HUD dashboard (weather / stocks / news + conversational tracking), the Obsidian knowledge bases (search / read / write + path-safety), Telegram, user profiles, and API layers.
