@@ -1,9 +1,14 @@
 # Victoria AI — Session Handoff
 
 > Read this entire file before doing anything. It is the complete working context
-> for a fresh agent session with no other history. Repo: `~/victoria-ai`
-> (github.com/mmaxwell00/victoria-ai). Session shell cwd may differ; all repo work
-> happens in `~/victoria-ai`. After reading, confirm you're resuming from this file.
+> for a fresh agent session with no other history.
+>
+> ⚠️ **THE REPO MOVED.** It is now `~/sandboxes/victoria-ai/victoria-ai`
+> (github.com/mmaxwell00/victoria-ai) — **not** `~/victoria-ai`, which no longer
+> exists. Note the doubled path segment: the repo lives *inside* the staging
+> directory. All repo work happens there. Session shell cwd may differ.
+> Older notes below may still say `~/victoria-ai`; read that as the new path.
+> After reading, confirm you're resuming from this file.
 >
 > STANDING RULES (hard):
 > 1. NEVER self-merge a PR. Open it, report it, and wait for Mark to say "merge #N".
@@ -15,8 +20,13 @@
 > 5. `git commit -m "…"` with backticks corrupts the message (shell command-subst).
 >    Use `git commit -F -` with a quoted `<<'MSG'` heredoc, or `--body-file` for PRs.
 
-Last updated: 2026-08-13. `main` at `1d19bc6`. **358 tests pass.**
-All PRs through #94 merged; **#95 open** (stable prompt prefix — the last latency fix).
+Last updated: 2026-10-02. `main` at `dc497fd`. **382 tests pass**
+(`.venv/bin/python -m pytest -q`, reverified 2026-10-02 in the repo's own venv).
+All PRs through **#99 merged** — #95 stable prompt prefix, #96 stop relaying model
+calls through the sandbox proxy (7s → 2.5s/turn), #98 `read_note` tolerates imprecise
+note paths, #99 never recall stale live data.
+**#97 is still open** (`docs: repo-wide currency audit`, opened 2026-08-14) — it
+predates #98/#99, so expect it to need a refresh before it merges.
 `sbx` is now **v0.37.1** (the older notes below say v0.35).
 
 ## ⚡ "Victoria pauses before answering" — SOLVED, and it was FOUR causes
@@ -79,6 +89,68 @@ expiry also explains 2026-07-30's two container recycles and the
 `com.victoria.claude-bridge` SIGTERM (`last exit -15`). Separately, the sbx control
 plane can WEDGE (see §4) — different symptom, different fix.
 
+**It recurred for real, 2026-08-27 — all three safety nets were down at once.** Mark
+reported `http://127.0.0.1:8001` unreachable. `--status` (run on the host) showed the
+full failure chain the doc above predicted, simultaneously: (1) `com.victoria.watchdog`
+was **not loaded** at all (not crashed — never (re)installed after some earlier
+uninstall/reboot), (2) the host→sandbox port publish (`8001→8000`) was **gone**, so even
+though the app was fine, the host had no route to it, and (3) `sbx ls` failed — CLI
+signed out — so the watchdog *couldn't* have self-healed even if it had been loaded.
+Separately, inside the sandbox itself, the container had been freshly recycled (new
+`tini` PID 1) and `uvicorn` was simply not running (log's last write was two days
+stale) — the one-shot `startup` supervisor doesn't refire on a recycle, which is the
+whole reason the host watchdog exists. Fix, in order: started `uvicorn` directly inside
+the sandbox as an immediate stopgap; then on the host, `sbx login` → `sbx ports victoria
+--publish 127.0.0.1:8001:8000` → `./scripts/setup-watchdog.sh` (reinstall+load) →
+confirmed with `--status`. **Lesson:** don't stop at "the watchdog should have caught
+this" — check its three preconditions (loaded, port published, `sbx` authenticated)
+explicitly, because any one of them silently failing looks identical from the browser
+("site can't be reached").
+
+### 🆕 A FOURTH precondition, found 2026-10-02: "LOADED" does not mean RUNNING
+
+Victoria was down again — and this time **all three checks above PASSED**, which is
+precisely what makes this one worth reading. `--status` said `watchdog LOADED`, `sbx ls`
+answered fine (authenticated, no wedge), and the port publish was intact
+(`victoria … running  127.0.0.1:8001->8000/tcp`). `--status` even printed the reassuring
+"watchdog should repair within ~30s". It never could.
+
+**Cause: the watchdog plist pointed at a script that no longer exists.** The repo moved
+from `~/victoria-ai` to `~/sandboxes/victoria-ai/victoria-ai`, but
+`~/Library/LaunchAgents/com.victoria.watchdog.plist` still had
+`ProgramArguments → /Users/<you>/victoria-ai/scripts/victoria-watchdog.sh`. launchd
+cannot exec a missing file, so the agent was **registered but never ran** — it had been
+silently disarmed since the move.
+
+**The two tells, neither of which `--status` surfaces today:**
+- `launchctl list | grep com.victoria.watchdog` → `-  78  com.victoria.watchdog`.
+  A `-` in the **pid** column means not running; `78` is the **last exit status**
+  (launchd's "couldn't exec"). A healthy agent shows a real pid and `0`.
+- `~/Library/Logs/victoria-watchdog.log` was **zero bytes**. A watchdog that is actually
+  running writes a `watchdog start` line immediately, then a poll line every 30s. An
+  empty or stale log is the loudest possible signal, and it costs nothing to check.
+
+**Fix:** re-run `./scripts/setup-watchdog.sh` **from the current repo** — it derives the
+script path from its own location (`HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"`),
+so running it from the right place is the whole repair. It then self-healed in ~11s with
+no further help: `REPAIR: :8001 is down` → `supervised uvicorn relaunched` →
+`port … asserted` → `RECOVERED`. That also replaced the unsupervised `nohup uvicorn` the
+2026-08-27 session left behind, so she is back on the real `while true` supervisor.
+
+**Generalised lesson — the one to carry forward.** Every one of these outages is the same
+shape: *a safety net that reports healthy while being structurally unable to fire.* The
+watchdog is a host-side dependency chain, and ANY link breaking looks identical from the
+browser. Check all four explicitly, cheapest first:
+1. **Running?** `launchctl list | grep com.victoria.watchdog` → real pid, `last-exit=0`.
+   Then confirm the log is being written *now* — not merely that the file exists.
+2. **Pointing at a real script?** `plutil -p ~/Library/LaunchAgents/com.victoria.watchdog.plist`
+   — re-verify after ANY repo move or rename. This one is invisible to every other check.
+3. **Port published?** `sbx ls` → `127.0.0.1:8001->8000/tcp`.
+4. **`sbx` authenticated and unwedged?** a bounded `sbx ls` returns promptly.
+
+⚠️ **If you move or rename the repo, reinstall the watchdog in the same pass.** Nothing
+else will tell you, and the failure is silent until the next time you actually need it.
+
 ## 1. Who / Goal
 
 **User:** Mark Maxwell (Docker CSM/AE). Prefers direct action over questions —
@@ -122,8 +194,15 @@ Obsidian-backed knowledge base.
 
 ## 2. Current State (what exists now)
 
-**Test suite: 358 pass** (`python -m pytest -q`, use `.venv/bin/python`).
-All PRs #39–#94 merged (#95 open). Most recent: #86 = Victoria owns her Obsidian knowledge base
+**Test suite: 382 pass** (`.venv/bin/python -m pytest -q`, ~6s; reverified 2026-10-02).
+Note the venv here is **python 3.14** and lives in the repo root — the 2026-08-27 note
+that "pytest isn't installed" was a stale coding-sandbox venv, not this one.
+All PRs #39–#99 merged (**#97 still open**). Most recent: **#98 = `read_note` tolerates
+imprecise note paths** from the local model (case/folder/extension-insensitive, but
+refuses to guess between two same-named notes); **#99 = never recall stale live data**
+(she answered "weather in London today" with the same August 4 reading for weeks —
+live-data answers are no longer stored, existing ones are filtered at recall, and
+recalled items are now dated and framed as history). Earlier: #86 = Victoria owns her Obsidian knowledge base
 (she used to deny filesystem access); #87 = the host-side uptime watchdog; #88 =
 watchdog recognises a signed-out `sbx`; #89 = egress/escalation security docs;
 **#90 = repaired the cold deploy**; **#91 = unblocked ChromaDB's embedding model**
@@ -179,11 +258,32 @@ TTS 200, and STT transcribing real audio.
   else download from Hugging Face). STT (Whisper) + TTS (Piper) both work in-browser.
 - **Claude CLI (#72):** the kit installs `@anthropic-ai/claude-code` (npm, LAST +
   non-fatal); `CLAUDE_CLI_COMMAND` is the absolute path `/usr/local/share/npm-global/bin/claude`.
-- Sandbox named `victoria`; repo staged at `~/sandboxes/victoria-ai`; vault mounted from
+- Sandbox named `victoria`; repo staged at `~/sandboxes/victoria-ai` (the staging
+  mirror — **not** the git repo, which is one level deeper); vault mounted from
   `~/Obsidian/AI/AI-Victoria`; host Model Runner at `host.docker.internal:12434`; HUD
   published at **`http://127.0.0.1:8001`** (IPv4 — NOT localhost). `./deploy-sandbox.sh`
   reproduces it (cold rebuild ~15–20 min on this host).
-- **As of last session Victoria was running supervised in the sandbox** and healthy.
+- **As of 2026-10-02 Victoria is UP, supervised, and healthy** at `127.0.0.1:8001`:
+  `/health` 200, 14 tools, `semantic_memory: true`. Latency matches the post-#96
+  baseline — first turn after a restart 4.0s (cache populating, expected), then
+  **0.39s / 0.25s** warm. She is on the kit's real `while true` supervisor again; the
+  unsupervised `nohup uvicorn` the 2026-08-27 session left behind is gone (the watchdog
+  relaunched her properly — see the 2026-10-02 section at the top).
+
+⚠️ **The staging mirror is ORPHANED (open issue, 2026-10-02).** `~/sandboxes/victoria-ai`
+is the directory the sandbox actually mounts, and it is a *separate git clone* whose
+`origin` still points at `~/victoria-ai` — **a path that no longer exists**, so it cannot
+fetch or pull. Consequences to know about:
+  - It is **behind main** and will silently stay behind. `deploy-sandbox.sh` stages code
+    into it, so a deploy from the real repo is still correct — but anything reading the
+    mirror directly (including a future agent that lands in it by mistake) sees old code.
+  - It held an **uncommitted 2026-08-27 handoff update that never reached the repo** —
+    that content has now been recovered and merged into this file. Check it for other
+    stray edits before deleting or re-cloning anything.
+  - **Don't do repo work there.** Confirm with `git remote -v`: the real repo points at
+    `https://github.com/mmaxwell00/victoria-ai.git`; the mirror points at a dead path.
+  - Not yet decided: re-point the mirror's `origin` at GitHub, or re-create it from
+    `deploy-sandbox.sh` and stop treating it as a clone at all. Raised with Mark.
 
 **Native app:** runs via `uvicorn victoria.main:app` on `:8000`. Mark KILLED the native
 `:8000` instance last session (it was bound to `0.0.0.0`); it's currently stopped. The
@@ -437,6 +537,19 @@ answer (`http=200`). Operational notes if it ever misbehaves:
 **C) Later:** knowledge Phase 2 (persist profile/learned facts as markdown in the AI
 vault); Obsidian Local REST API / MCP.
 
+**C2) Open housekeeping from 2026-10-02 (small, but each one bites silently):**
+- **PR #97 is still open** (`docs: repo-wide currency audit`, branch
+  `docs/repo-currency-audit`, opened 2026-08-14). It audits docs against the code, but
+  #98 and #99 both landed after it and both touched `README.md`, `claude-md.md` and
+  `victoria-reference.md` — so it is near-certainly stale and conflicting. Review it
+  against current `main` before merging, or close and re-run the audit fresh.
+- **Decide what to do about the orphaned staging mirror** (`~/sandboxes/victoria-ai`,
+  dangling `origin` → the deleted `~/victoria-ai`). See the warning in §2.
+- **Re-run `./scripts/setup-watchdog.sh` after any repo move** — see the 2026-10-02
+  section at the top. Consider teaching `--status` to report the agent's real pid /
+  last-exit and to verify the plist's `ProgramArguments` still resolves; today it
+  reports "LOADED" for an agent launchd cannot even exec.
+
 **D) Small, optional, known:**
 - **The bridge listens on `0.0.0.0:8787`** (LAN-reachable; mTLS still required). Nothing
   needs it off-host — the sandbox can't reach it either — so binding to `127.0.0.1`
@@ -465,7 +578,11 @@ SECURITY-AUDIT.md                    # egress decision-C writeup + org-activatio
 docs/decisions-md.md                 # ADRs (newest at top of "## Decided"); bridge one-command+exec ADR 2026-07-27, host-bridge design 2026-07-24
 docs/claude-bridge-architecture.svg  # approved escalation design (+ 2 companion diagrams)
 docs/build-ai-assistant/references/victoria-reference.md  # keep counts in sync (repo + ~/.claude copy)
+~/sandboxes/victoria-ai/victoria-ai  # THE GIT REPO (origin = github.com/mmaxwell00/victoria-ai) — do repo work HERE
 ~/sandboxes/victoria-ai              # staged clone the sandbox mounts (MUST be under ~/sandboxes/**)
+                                     #   ORPHANED: its origin points at the deleted ~/victoria-ai — see §2
+~/Library/LaunchAgents/com.victoria.watchdog.plist  # watchdog agent; ProgramArguments MUST point at a real script (§top)
+~/Library/Logs/victoria-watchdog.log # empty/stale = the watchdog is not actually running
 ~/Obsidian/AI/AI-Victoria            # the vault mounted into the sandbox
 ~/.victoria/claude-oauth-token       # (optional) file-token fallback, never committed
 in-sandbox: /home/agent/venv         # py3.11 venv; /tmp/victoria.log = uvicorn log (pull with `sbx cp`)
