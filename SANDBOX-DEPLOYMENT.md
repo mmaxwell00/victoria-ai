@@ -2,11 +2,11 @@
 
 Run Victoria as a **persistent service inside an isolated Docker Sandbox** —
 hardware-isolated from the host filesystem/processes — while the heavy local LLM
-stays on the host's Docker Model Runner. Tightened egress (an allowlist) and
-secret-engine credentials are the **Phase 3** hardening target (see
-[`SECURITY-AUDIT.md`](SECURITY-AUDIT.md)); today the sandbox runs on the org's
-broad network allow. **Verified working end-to-end (Phase 2 — full dependency set
-+ ChromaDB semantic memory).**
+stays on the host's Docker Model Runner. **Egress is default-deny as of 2026-08-04**
+— the kit's allowlist IS the enforced policy, so anything not listed returns 403 (see
+[`SECURITY-AUDIT.md`](SECURITY-AUDIT.md)). **Verified working end-to-end:** full
+dependency set, ChromaDB semantic memory, voice (Whisper + Piper), and a tool-using
+answer showing first words in ~1.4s.
 
 ![Victoria running inside a Docker Sandbox](docs/screenshots/sbx-hud.png)
 
@@ -123,7 +123,7 @@ transitions, so an idle watchdog stays quiet).
 needs a kit pack + mounts, which is deliberately left to `./deploy-sandbox.sh`
 rather than fired unattended. The watchdog logs that case loudly instead.
 
-## Network reference — what to open (verified 2026-08-04)
+## Network reference — what to open (verified 2026-08-13)
 
 **Short answer: no firewall ports to open.** sbx egress is governed by *domain*
 allowlist, not ports, and every local port in play is loopback or Docker-internal.
@@ -136,7 +136,7 @@ allowlist, not ports, and every local port in play is loopback or Docker-interna
 | `127.0.0.1:8787` | Claude bridge | host-only; unreachable from the sandbox by design |
 
 The thing you actually maintain is `network.allowedDomains` in
-[`sbx/spec.yaml`](sbx/spec.yaml) — **20 hosts**, all verified reachable from inside:
+[`sbx/spec.yaml`](sbx/spec.yaml) — **34 entries**, all verified reachable from inside:
 
 | Purpose | Hosts |
 |---|---|
@@ -148,6 +148,7 @@ The thing you actually maintain is `network.allowedDomains` in
 | Skills / GitHub tools | `github.com`, `api.github.com`, `codeload.github.com`, `raw.githubusercontent.com`, `objects.githubusercontent.com` |
 | **Build-time deps** (cold deploy) | `pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`, `deb.debian.org`, Ubuntu apt mirrors (`ports/archive/security.ubuntu.com` + `:80`), `download.docker.com`, `*.githubusercontent.com` (release assets for `uv`'s CPython) |
 | Voice model download | `huggingface.co`, `*.huggingface.co`, `hf.co`, `**.hf.co` (Xet CDN) |
+| **Semantic memory** | `chroma-onnx-models.s3.amazonaws.com` — ChromaDB's embedding model. Blocking it kills recall SILENTLY (`/health` still says `semantic_memory: true`) and costs ~4s/turn |
 | Escalation (allow-listed, unused from the sandbox) | `api.anthropic.com` |
 
 Anything else returns **403**. Add the host here + redeploy to enable a new call.
@@ -207,7 +208,7 @@ Anything else returns **403**. Add the host here + redeploy to enable a new call
 - **Egress is DEFAULT-DENY as of 2026-08-04 — the kit allowlist is the firewall.**
   There is **no port to open**: sbx network policy is *domain*-based
   (`network.allowedDomains`), and `sbx policy ls` now shows
-  `kit  sandbox:victoria  network: 20 allow` (the old org `NetworkAll: allow **` that
+  `kit  sandbox:victoria  network: 34 allow` (the old org `NetworkAll: allow **` that
   made the block inert is gone). A host that isn't listed returns **403** —
   `example.com` does today, while `wttr.in`/`github.com` return 200. **Adding a feature
   that calls somewhere new means adding the host to `sbx/spec.yaml` and redeploying.**
@@ -221,6 +222,18 @@ Anything else returns **403**. Add the host here + redeploy to enable a new call
   for `uv`'s CPython, and Hugging Face's Xet CDN). Fixed in the kit — see the
   cold-deploy gotcha below. **Verify a cold deploy by running one, not by curling the
   list.**
+- **Model traffic must BYPASS the sandbox proxy, or every answer is ~3x slower.**
+  sbx injects `http_proxy`/`https_proxy` and a `NO_PROXY` that covers `localhost` and
+  the gateway but **not `host.docker.internal`** — so every local-model call (2-3 per
+  turn) gets relayed through the inspecting egress proxy. httpx honours proxy env by
+  default, so this is silent. Measured 2026-08-13, identical code and model, questions
+  spaced 20s apart: **2.0s/turn on the host vs 6.9-8.8s inside the sandbox**, fixed to
+  **2.45-2.56s** by adding `host.docker.internal` to `NO_PROXY` in the kit. `:12434` is
+  the one host port sbx already permits directly, so the bypass costs nothing and
+  widens nothing. If Victoria ever feels slow again, check this env var first.
+- **A "slow Victoria" is usually not the model.** Compare against the raw Model Runner
+  (`curl localhost:12434/... ` → 0.1-0.3s warm). If she is 10-50x slower, the time is
+  ours. Four other causes were found this way — see the 2026-08-13 ADR.
 - **A cold deploy needs BUILD hosts too — and a failed create leaves NO sandbox.**
   `deploy-sandbox.sh` runs `sbx rm` *before* create, so if creation fails you are left
   with nothing running (and the watchdog deliberately won't rebuild). Under default-deny
@@ -259,13 +272,13 @@ Anything else returns **403**. Add the host here + redeploy to enable a new call
 ## Isolation & credentials
 
 - **Egress (Q2):** the kit ships a `network.allowedDomains` allowlist, but it is
-  **inert by decision** — the org `NetworkAll` (`allow **`) overrides kit rules, so
-  a non-allowlisted host is still reachable (verified). sbx egress governance is
-  **org/team-scoped, not per-sandbox**, so hardening only Victoria isn't possible;
-  the sole lever is tightening the org-wide `NetworkAll` (Docker Home), which flips
-  *every* sandbox to default-deny. We chose to leave egress broad — the sandbox's
-  hardware isolation is the security property we wanted. See
-  [`SECURITY-AUDIT.md`](SECURITY-AUDIT.md).
+  **DONE, and not by us.** This entry used to say the allowlist was "inert by
+  decision" because the org `NetworkAll` (`allow **`) overrode kit rules. That rule is
+  **gone as of 2026-08-04**: `sbx policy ls` now shows the kit's own policy, so the
+  allowlist IS enforced default-deny for this sandbox — the outcome the old plan said
+  required an org-wide change, achieved without one. Consequence: the list is
+  load-bearing, and a missing host fails indirectly (corrupt download, "unsigned" apt
+  repo, silently empty search). See [`SECURITY-AUDIT.md`](SECURITY-AUDIT.md).
 - **Credentials (Q3):** use the **sbx credential engine** (`sbx secret set`) — the
   proxy injects creds without the value entering the VM as plaintext-at-rest.
   Empirically, the `github` service secret lands in the sandbox as env var
