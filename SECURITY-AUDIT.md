@@ -1,32 +1,44 @@
 ## Victoria Sandbox — Network Security Audit
 
-> **Status (verified 2026-08-04): the egress allowlist is now LIVE — default-deny
-> is in force.** This supersedes the earlier "INERT / leave egress broad" status.
-> The org policy `NetworkAll` (`allow **`) that used to override kit rules is **no
-> longer present**; `sbx policy ls` now shows the kit's own policy applying to this
-> sandbox:
+> **Status: CHECK IT, DON'T TRUST THIS LINE. The egress posture here has flipped
+> twice, so any sentence claiming a fixed state goes stale.** History:
+>
+> | When | Posture | Why |
+> |---|---|---|
+> | before 2026-08-04 | **broad** — kit allowlist INERT | org `NetworkAll` (`allow **`) overrode kit rules |
+> | 2026-08-04 → ~2026-10 | **default-deny** — kit allowlist enforced | `NetworkAll` disappeared; `kit sandbox:victoria network: 34 allow` became the live policy |
+> | **2026-10-29 (measured)** | **broad again** — kit allowlist INERT | `NetworkAll` is back (`org / all / network: 1 allow`); the kit's 34-entry rule is listed **inactive**, `APPLIES TO: (none)` |
+>
+> Measured from inside the sandbox on 2026-10-29 — a **non**-allow-listed host is
+> reachable, which is the definition of the list not being enforced:
 >
 > ```
-> ffb208da-…  kit  sandbox:victoria  network: 34 allow
+> example.com       (NOT allow-listed) = 200
+> api.elevenlabs.io (NOT allow-listed) = 200
+> wttr.in           (allow-listed)     = 200
 > ```
 >
-> So the `network.allowedDomains` block in [`sbx/spec.yaml`](sbx/spec.yaml) is the
-> effective policy. Confirmed empirically from inside the sandbox:
+> **How to check, in one command** (this is the only trustworthy answer):
 >
-> | Destination | Result |
-> |---|---|
-> | `wttr.in`, `github.com` (allow-listed) | **200** |
-> | `query1.finance.yahoo.com` (allow-listed) | **429** — allowed through; Yahoo rate-limit |
-> | `https://example.com` (**not** listed) | **403** — denied by the proxy |
+> ```bash
+> sbx exec victoria -- curl -s -o /dev/null -w '%{http_code}\n' -m12 https://example.com/
+> #   403 → default-deny IS in force; the kit allowlist is load-bearing
+> #   200 → egress is BROAD; the allowlist is documentation, not enforcement
+> ```
 >
-> **The allowlist is therefore load-bearing.** Any new feature that calls a host not
-> on the list will fail with **403** until the domain is added to `sbx/spec.yaml` and
-> the sandbox redeployed. Egress now runs through a Docker Sandboxes proxy at
-> `gateway.docker.internal:3128` (see the interception note below).
+> `sbx policy ls` alone is **not** sufficient — it has shown kit rules as present but
+> `APPLIES TO: (none)` while org rules silently won. Measure the behaviour.
 >
-> Victoria still also relies on **hardware / process / filesystem isolation** from
-> the host; egress lockdown is now an additional layer rather than a future step.
-> The host Model Runner is reached at `host.docker.internal:12434` (not `localhost`).
+> **Why the allowlist still matters even while inert:** it is the ready, correct
+> target config, and it is genuinely load-bearing the moment governance tightens
+> again — which has already happened once without warning. Keep it accurate. When it
+> *is* enforced, a missing host fails indirectly (a corrupt download, an "unsigned"
+> apt repo, a silently empty search), which is how three separate outages presented.
+>
+> Victoria relies first on **hardware / process / filesystem isolation** from the
+> host; egress lockdown is an additional layer whose state is set by org governance,
+> not by this repo. The host Model Runner is reached at `host.docker.internal:12434`
+> (not `localhost`).
 
 > **Host-directed TLS is intercepted (ssl-bumped), and only `:12434` is reachable.**
 > `host.docker.internal` is on the allowlist, but that does not make arbitrary host
@@ -65,9 +77,12 @@ can only be tightened in **Docker Home** (or the Governance API), not the local
 **Superseded (2026-08-04).** Decision (C) — "leave egress broad" — is no longer the
 state of the world, and no longer requires the org-wide change described above. The
 `NetworkAll` (`allow **`) rule is gone, so the kit's allowlist now *is* the policy
-for `sandbox:victoria`: **default-deny with 34 allowed hosts**, per-sandbox, with no
-blast radius across other sandboxes. The outcome path 1 was meant to achieve arrived
-without us tightening anything org-wide.
+for `sandbox:victoria`: default-deny with 34 allowed hosts, per-sandbox, with no blast
+radius across other sandboxes — the outcome path 1 was meant to achieve, arrived at
+without us tightening anything org-wide. **That window has since closed:** as of
+2026-10-29 `NetworkAll` is back and the kit rule is inactive again (see the status
+banner). Both states are reachable, so neither is "the" configuration — check before
+you rely on it.
 
 ## Claude escalation from the sandbox — denied, on purpose
 
@@ -92,10 +107,11 @@ or denies rather than something Victoria can arrange for herself.
   visible to network policy *and* keeps the credential out of the VM. Not
   implemented; recorded as the correct direction if the need arises.
 
-Verify the allowlist is in force (from the host):
+Verify whether the allowlist is in force (from the host) — do this before trusting any
+posture claim in this document:
 
 ```bash
-# a non-allowlisted host is DENIED (403 — this is the current, expected result):
+# a non-allowlisted host: 403 = default-deny in force; 200 = egress is broad/inert:
 sbx exec victoria -- curl -sS -m 6 -o /dev/null -w '%{http_code}\n' https://example.com
 # allowlisted paths still work — chat + dashboard:
 curl -4 -sS http://127.0.0.1:8001/health
