@@ -2,9 +2,11 @@
 
 Run Victoria as a **persistent service inside an isolated Docker Sandbox** —
 hardware-isolated from the host filesystem/processes — while the heavy local LLM
-stays on the host's Docker Model Runner. **Egress is default-deny as of 2026-08-04**
-— the kit's allowlist IS the enforced policy, so anything not listed returns 403 (see
-[`SECURITY-AUDIT.md`](SECURITY-AUDIT.md)). **Verified working end-to-end:** full
+stays on the host's Docker Model Runner. **Whether egress is locked down is set by org
+governance, not by this repo, and it has flipped twice** — check it rather than assume
+(`sbx exec victoria -- curl -s -o /dev/null -w '%{http_code}' https://example.com/`;
+403 = enforced, 200 = broad). Measured 2026-10-29: **broad**, kit allowlist inert. See
+[`SECURITY-AUDIT.md`](SECURITY-AUDIT.md). **Verified working end-to-end:** full
 dependency set, ChromaDB semantic memory, voice (Whisper + Piper), and a tool-using
 answer showing first words in ~1.4s.
 
@@ -275,8 +277,10 @@ Anything else returns **403**. Add the host here + redeploy to enable a new call
   **DONE, and not by us.** This entry used to say the allowlist was "inert by
   decision" because the org `NetworkAll` (`allow **`) overrode kit rules. That rule is
   **gone as of 2026-08-04**: `sbx policy ls` now shows the kit's own policy, so the
-  allowlist IS enforced default-deny for this sandbox — the outcome the old plan said
-  required an org-wide change, achieved without one. Consequence: the list is
+  allowlist was, for a period, enforced default-deny for this sandbox — the outcome the
+  old plan said required an org-wide change, achieved without one. As of 2026-10-29 the
+  org rule is back and the list is inert again; keep it correct regardless, because the
+  flip happens without warning. Consequence: the list is
   load-bearing, and a missing host fails indirectly (corrupt download, "unsigned" apt
   repo, silently empty search). See [`SECURITY-AUDIT.md`](SECURITY-AUDIT.md).
 - **Credentials (Q3):** use the **sbx credential engine** (`sbx secret set`) — the
